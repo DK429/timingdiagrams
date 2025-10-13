@@ -69,7 +69,22 @@
           <label><input type="radio" name="dir" value="AtoB" checked/> A → B</label>
           <label><input type="radio" name="dir" value="BtoA"/> B → A</label>
         </div>
-        <div class="hint">Click on the top row to set a departure time; shift‑drag to select a window.</div>
+        <div>
+          <strong>Coordination check:</strong>
+          <label>
+            From
+            <select id="coordFrom">
+              <option value="A">Junction A</option>
+              <option value="B">Junction B</option>
+            </select>
+          </label>
+          <label>
+            Stage
+            <select id="coordStage"></select>
+          </label>
+          <button id="coordBtn">Check</button>
+        </div>
+        <div class="hint">Click top row to set a departure; Shift‑drag selects a window. Coordination uses the selected junction/stage.</div>
       </div>
       <svg id="diagram" width="100%" height="420" role="img" aria-label="Time–stage diagram"></svg>
       <div id="readout" class="readout"></div>

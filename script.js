@@ -1,10 +1,8 @@
-// Minimal, dependency-free implementation
-// Data types by convention (not enforced): see README for spec.
+// Minimal, dependency-free implementation with coordination check
 
 const svg = () => document.getElementById('diagram');
 const readoutEl = () => document.getElementById('readout');
 
-// --- Helpers
 function $(id){ return document.getElementById(id); }
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 function mod(n, m){ return ((n % m) + m) % m; }
@@ -12,7 +10,6 @@ function sum(arr, f = x=>x){ return arr.reduce((a,b)=>a+f(b),0); }
 function elNS(tag){ return document.createElementNS('http://www.w3.org/2000/svg', tag); }
 function setAttrs(ele, attrs){ for(const k in attrs) ele.setAttribute(k, attrs[k]); return ele; }
 
-// --- Data IO
 function readJunction(which){
   const prefix = which === 'A' ? 'A' : 'B';
   const name = $(`${prefix}_name`).value.trim() || `Junction ${which}`;
@@ -44,7 +41,6 @@ function readConfig(){
 }
 
 function applyConfig(cfg){
-  // Junction A
   $('A_name').value = cfg.junctionA.name;
   $('A_cycle').value = cfg.junctionA.cycleTimeSec;
   $('A_start').value = cfg.junctionA.startTimeSec;
@@ -54,7 +50,6 @@ function applyConfig(cfg){
     document.querySelectorAll('#A_stage_rows tr')[i].querySelector('.st_dur').value = s.durationSec;
     document.querySelectorAll('#A_stage_rows tr')[i].querySelector('.ig_dur').value = cfg.junctionA.intergreens[i].durationSec;
   });
-  // Junction B
   $('B_name').value = cfg.junctionB.name;
   $('B_cycle').value = cfg.junctionB.cycleTimeSec;
   $('B_start').value = cfg.junctionB.startTimeSec;
@@ -67,9 +62,9 @@ function applyConfig(cfg){
   $('AB_travel').value = cfg.journeys.find(j=>j.from==='A'&&j.to==='B')?.travelTimeSec ?? 0;
   $('BA_travel').value = cfg.journeys.find(j=>j.from==='B'&&j.to==='A')?.travelTimeSec ?? 0;
   $('horizon').value = cfg.diagram?.horizonSec ?? 600;
+  populateCoordStages();
 }
 
-// --- UI rows
 function addStageRow(which, label='S', dur=10, ig=2){
   const tbody = document.getElementById(`${which}_stage_rows`);
   const tr = document.createElement('tr');
@@ -77,7 +72,7 @@ function addStageRow(which, label='S', dur=10, ig=2){
                   <td><input type="number" class="st_dur" min="1" value="${dur}"/></td>
                   <td><input type="number" class="ig_dur" min="0" value="${ig}"/></td>
                   <td><button class="small danger">✕</button></td>`;
-  tr.querySelector('button').addEventListener('click', ()=> { tr.remove(); });
+  tr.querySelector('button').addEventListener('click', ()=> { tr.remove(); populateCoordStages(); });
   tbody.appendChild(tr);
 }
 function setRows(which, count){
@@ -86,11 +81,9 @@ function setRows(which, count){
   for(let i=0;i<count;i++) addStageRow(which, `${which}${i+1}`, 10, 2);
 }
 
-// Seed a couple of rows by default
 setRows('A', 3);
 setRows('B', 3);
 
-// --- Validation
 function validateConfig(cfg){
   const errors = [];
   ['junctionA','junctionB'].forEach(key=>{
@@ -113,9 +106,7 @@ function validateConfig(cfg){
   return errors;
 }
 
-// --- Timing math
 function bandsOneCycle(j){
-  // returns [{type:'stage'|'intergreen', label?, start, end, index}]
   const out = [];
   let t = 0;
   for(let i=0;i<j.stages.length;i++){
@@ -126,7 +117,6 @@ function bandsOneCycle(j){
     out.push({type:'intergreen', start:t, end:t+ig, index:i});
     t += ig;
   }
-  // total should be j.cycleTimeSec
   return out;
 }
 
@@ -144,42 +134,29 @@ function phaseAt(j, tAbs){
       };
     }
   }
-  // handle exact end: treat as start of cycle
   const b0 = bands[0];
   return { which:b0.type, index:b0.index, label:b0.label??null, tInto:0, tRemaining:b0.end-b0.start };
 }
 
 function buildTiles(j, horizonSec, startAbs=0){
-  // produce repeated bands up to horizonSec in absolute time
   const tiles = [];
-  // start of first cycle boundary relative to 0
-  // find nearest <= 0 boundary for readability
   const firstCycleStart = j.startTimeSec;
   const cycle = j.cycleTimeSec;
   const start = 0;
   const end = horizonSec;
-  // Start at a boundary before 'start'
   let cycleStart = firstCycleStart;
   while(cycleStart > start) cycleStart -= cycle;
   while(cycleStart + cycle < start) cycleStart += cycle;
-  // Tile forward
   while(cycleStart < end){
     const bands = bandsOneCycle(j);
     for(const b of bands){
-      tiles.push({
-        type:b.type,
-        label:b.label,
-        startAbs: cycleStart + b.start,
-        endAbs: cycleStart + b.end
-      });
+      tiles.push({ type:b.type, label:b.label, startAbs: cycleStart + b.start, endAbs: cycleStart + b.end });
     }
     cycleStart += cycle;
   }
-  // Filter to within viewport
   return tiles.filter(b => b.endAbs >= start && b.startAbs <= end);
 }
 
-// --- SVG Diagram
 const MARGIN_LEFT = 60;
 const MARGIN_TOP = 20;
 const ROW_HEIGHT = 130;
@@ -195,7 +172,6 @@ function renderDiagram(cfg, selection){
   const width = s.clientWidth || s.parentElement.clientWidth || 960;
   const xScale = t => MARGIN_LEFT + (t/horizon) * (width - MARGIN_LEFT - 10);
 
-  // grid
   for(let t=0;t<=horizon;t+=10){
     const line = elNS('line');
     setAttrs(line, { x1:xScale(t), y1:MARGIN_TOP, x2:xScale(t), y2:HEIGHT-MARGIN_TOP, class:'gridLine'});
@@ -210,12 +186,11 @@ function renderDiagram(cfg, selection){
 
   function drawRow(j, rowIndex){
     const yTop = MARGIN_TOP + rowIndex*(ROW_HEIGHT + ROW_GAP);
-    // label
     const lbl = elNS('text');
     setAttrs(lbl, {x:10, y:yTop+20, class:'rowLabel'});
     lbl.textContent = j.name;
     s.appendChild(lbl);
-    // bands
+
     const tiles = buildTiles(j, horizon, 0);
     for(const b of tiles){
       const rect = elNS('rect');
@@ -226,17 +201,15 @@ function renderDiagram(cfg, selection){
       s.appendChild(rect);
       if(b.label && b.type==='stage' && w>24){
         const t = elNS('text');
-        setAttrs(t, {x:x+4, y:yTop+50, class:'tag'});
+        setAttrs(t, {x:x + w/2, y:yTop + (ROW_HEIGHT-40)/2 + 30, class:'stageLabel'});
         t.textContent = b.label;
         s.appendChild(t);
       }
     }
-    // capture clicks on the top row only
     const hit = elNS('rect');
     setAttrs(hit, {x:MARGIN_LEFT, y:yTop+30, width:width-MARGIN_LEFT-10, height:ROW_HEIGHT-40, fill:'transparent'});
     hit.style.cursor = 'crosshair';
     if((rowIndex===0 && currentDir()==='AtoB') || (rowIndex===0 && currentDir()==='BtoA')){
-      // always allow clicking on the first row as the origin
       hit.addEventListener('mousedown', onMouseDown);
       s.addEventListener('mouseup', onMouseUp);
       s.addEventListener('mousemove', onMouseMove);
@@ -247,7 +220,6 @@ function renderDiagram(cfg, selection){
   drawRow(originJunction(cfg), 0);
   drawRow(destJunction(cfg), 1);
 
-  // selected departure / interval
   if(selection){
     const y0 = MARGIN_TOP+30;
     const y1 = y0 + ROW_HEIGHT-40;
@@ -261,15 +233,13 @@ function renderDiagram(cfg, selection){
       setAttrs(rect, {x:x0, y:y0, width:x1-x0, height:y1-y0, class:'arrivalHighlight'});
       s.appendChild(rect);
     }
-    // arrival marker
     if(selection.arrivals){
       selection.arrivals.forEach(a=>{
-        const yTop = MARGIN_TOP + (ROW_HEIGHT + ROW_GAP); // second row
+        const yTop = MARGIN_TOP + (ROW_HEIGHT + ROW_GAP);
         const ax = xScale(a.t);
         const aline = elNS('line');
         setAttrs(aline, {x1:x0, y1:y0, x2:ax, y2:yTop+30, class:'traceLine'});
         s.appendChild(aline);
-        // small indicator
         const mark = elNS('rect');
         setAttrs(mark, {x:ax-2, y:yTop+28, width:4, height:ROW_HEIGHT-36, fill:'#ff6'});
         s.appendChild(mark);
@@ -278,7 +248,6 @@ function renderDiagram(cfg, selection){
   }
 }
 
-// Interaction state
 let dragging = false;
 let dragStart = null;
 let selectionState = null;
@@ -298,12 +267,11 @@ function travelTime(cfg){
     : cfg.journeys.find(j=>j.from==='B'&&j.to==='A').travelTimeSec;
 }
 
-// mouse handlers
 function onMouseDown(ev){
   const cfg = readConfig();
   const errors = validateConfig(cfg);
   if(errors.length){ renderErrors(errors); return; }
-  dragging = ev.shiftKey; // shift-drag for interval
+  dragging = ev.shiftKey;
   const t = eventToTime(ev, cfg);
   dragStart = t;
   if(!dragging){
@@ -334,17 +302,14 @@ function eventToTime(ev, cfg){
   return clamp(Math.round(t), 0, horizon);
 }
 
-// Readout + arrival computation
 function computeArrivalReadout(cfg, sel){
   const origin = originJunction(cfg);
   const dest = destJunction(cfg);
   const tt = travelTime(cfg);
-  let html = '';
   const lines = [];
   function bandAt(j, t){ return phaseAt(j, t); }
 
   if(sel.t1 && sel.t1>sel.t0){
-    // interval mapping
     const arrivals = [{t: sel.t0 + tt}, {t: sel.t1 + tt}];
     sel.arrivals = arrivals;
     const a0 = bandAt(origin, sel.t0);
@@ -356,7 +321,6 @@ function computeArrivalReadout(cfg, sel){
     lines.push(`Travel time ${tt}s → arrival window [${sel.t0+tt}s → ${sel.t1+tt}s] at ${dest.name}`);
     lines.push(`Arrive starts in ${b0.which} ${b0.label ?? ''} (+${b0.tInto.toFixed(0)}s), ends in ${b1.which} ${b1.label ?? ''}`);
   }else{
-    // point mapping
     const tDep = sel.t0;
     const a = bandAt(origin, tDep);
     const tArr = tDep + tt;
@@ -364,20 +328,14 @@ function computeArrivalReadout(cfg, sel){
     sel.arrivals = [{t: tArr}];
     lines.push(`Depart ${origin.name} at t=${tDep}s → ${a.which}${a.label?(' '+a.label):''}, +${a.tInto.toFixed(0)}s into band`);
     lines.push(`Travel ${tt}s → arrive ${dest.name} at t=${tArr}s → ${b.which}${b.label?(' '+b.label):''}, +${b.tInto.toFixed(0)}s into band`);
-    // next green wait estimate if in intergreen
     if(b.which==='intergreen'){
-      // find next stage start time
       const bands = bandsOneCycle(dest);
       const cyclePos = mod(tArr - dest.startTimeSec, dest.cycleTimeSec);
-      // find current band index
       let idx = -1; for(let i=0;i<bands.length;i++){ if(cyclePos>=bands[i].start && cyclePos<bands[i].end){ idx=i; break; } }
-      // walk to next stage
       let wait = 0;
       let k = idx;
       while(true){
-        if(bands[k].type==='stage'){
-          wait = 0; break; // we're already in stage
-        }
+        if(bands[k].type==='stage'){ wait = 0; break; }
         const next = (k+1)%bands.length;
         const from = (k===idx) ? (bands[k].end - cyclePos) : (bands[k].end - bands[k].start);
         wait += from;
@@ -387,17 +345,101 @@ function computeArrivalReadout(cfg, sel){
       lines.push(`Est. wait until next stage: ~${Math.round(wait)}s`);
     }
   }
-  html = lines.map(l=>`<div>${l}</div>`).join('');
-  readoutEl().innerHTML = html;
+  readoutEl().innerHTML = lines.map(l=>`<div>${l}</div>`).join('');
 }
 
 function renderErrors(errors){
   readoutEl().innerHTML = `<div class="bad"><strong>Fix these first:</strong><ul>${errors.map(e=>`<li>${e}</li>`).join('')}</ul></div>`;
 }
 
-// --- Buttons
+// --- Coordination Check ---
+function populateCoordStages(){
+  const cfg = readConfig();
+  const from = $('coordFrom').value;
+  const j = from==='A' ? cfg.junctionA : cfg.junctionB;
+  const sel = $('coordStage');
+  if(!sel) return;
+  sel.innerHTML = '';
+  j.stages.forEach((st, i)=>{
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = st.label;
+    sel.appendChild(opt);
+  });
+}
+document.addEventListener('DOMContentLoaded', populateCoordStages);
+document.addEventListener('input', (e)=>{
+  if(e.target && (e.target.id.startsWith('A_') || e.target.id.startsWith('B_'))) {
+    populateCoordStages();
+  }
+});
+document.getElementById('coordFrom').addEventListener('change', ()=>{
+  const from = $('coordFrom').value;
+  const dirVal = from==='A' ? 'AtoB' : 'BtoA';
+  document.querySelector(`input[name="dir"][value="${dirVal}"]`).checked = true;
+  populateCoordStages();
+  const cfg = readConfig();
+  const errors = validateConfig(cfg);
+  if(!errors.length) renderDiagram(cfg, selectionState);
+});
+$('coordBtn').addEventListener('click', ()=>{
+  const cfg = readConfig();
+  const errors = validateConfig(cfg);
+  if(errors.length){ renderErrors(errors); return; }
+  renderDiagram(cfg, selectionState);
+  const from = $('coordFrom').value;
+  const stageIndex = Number($('coordStage').value);
+  const origin = from==='A' ? cfg.junctionA : cfg.junctionB;
+  const dest   = from==='A' ? cfg.junctionB : cfg.junctionA;
+  const tt = from==='A'
+    ? cfg.journeys.find(j=>j.from==='A'&&j.to==='B').travelTimeSec
+    : cfg.journeys.find(j=>j.from==='B'&&j.to==='A').travelTimeSec;
+
+  const tiles = buildTiles(origin, cfg.diagram.horizonSec, 0).filter(b=>b.type==='stage');
+  const match = tiles.find(b => b.label === origin.stages[stageIndex].label && b.endAbs>0);
+  if(!match){
+    renderErrors([`Could not find stage ${origin.stages[stageIndex].label} within the current horizon.`]);
+    return;
+  }
+  const tFront = Math.max(0, match.startAbs);
+  const tBack  = Math.min(cfg.diagram.horizonSec, match.endAbs);
+  const aFront = tFront + tt;
+  const aBack  = tBack  + tt;
+
+  const sEl = svg();
+  const width = sEl.clientWidth || sEl.parentElement.clientWidth || 960;
+  const horizon = cfg.diagram.horizonSec;
+  const xScale = t => MARGIN_LEFT + (t/horizon) * (width - MARGIN_LEFT - 10);
+  const y0 = MARGIN_TOP+30;
+  const yTopDest = MARGIN_TOP + (ROW_HEIGHT + ROW_GAP);
+
+  function addLine(x1,y1_,x2,y2_, cls){
+    const ln = elNS('line'); setAttrs(ln, {x1:x1,y1:y1_,x2:x2,y2:y2_, class:cls}); sEl.appendChild(ln);
+  }
+
+  addLine(xScale(tFront), y0, xScale(aFront), yTopDest+30, 'coordLine');
+  addLine(xScale(tBack ), y0, xScale(aBack ), yTopDest+30, 'coordLine');
+
+  const a0 = Math.max(0, Math.min(aFront, aBack));
+  const a1 = Math.min(horizon, Math.max(aFront, aBack));
+  if(a1 > a0){
+    const rect = elNS('rect');
+    setAttrs(rect, {x:xScale(a0), y:yTopDest+30, width:xScale(a1)-xScale(a0), height:ROW_HEIGHT-40, class:'arrivalHighlight'});
+    sEl.appendChild(rect);
+  }
+
+  const bFront = phaseAt(dest, aFront);
+  const bBack  = phaseAt(dest, aBack);
+  readoutEl().innerHTML = [
+    `<div><strong>Coordination check:</strong> ${origin.name} Stage <em>${origin.stages[stageIndex].label}</em> (${Math.round(tFront)}s→${Math.round(tBack)}s)</div>`,
+    `<div>Travel time = ${tt}s → arrivals at ${dest.name}: [${Math.round(aFront)}s → ${Math.round(aBack)}s]</div>`,
+    `<div>Arrive starts in ${bFront.which}${bFront.label?(' '+bFront.label):''}; ends in ${bBack.which}${bBack.label?(' '+bBack.label):''}</div>`
+  ].join('');
+});
+
+// Buttons
 document.querySelectorAll('[data-add-stage]').forEach(btn=>{
-  btn.addEventListener('click', ()=> addStageRow(btn.getAttribute('data-add-stage')));
+  btn.addEventListener('click', ()=> { addStageRow(btn.getAttribute('data-add-stage')); populateCoordStages(); });
 });
 $('validateBtn').addEventListener('click', ()=>{
   const cfg = readConfig();
@@ -454,10 +496,8 @@ applyConfig({
   diagram:{horizonSec:600}
 });
 
-// Auto-plot on load
 document.addEventListener('DOMContentLoaded', ()=>{
   const cfg = readConfig();
   const errors = validateConfig(cfg);
   if(!errors.length) renderDiagram(cfg, null);
 });
-
