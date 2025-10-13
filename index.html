@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>2‑Junction Signals Explorer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>2‑Junction Signals Explorer</h1>
+    <p>Standalone static app — open this file directly, no server needed.</p>
+  </header>
+
+  <main>
+    <section class="panel inputs">
+      <div class="junctions">
+        <div class="junction" id="junctionAForm">
+          <h2>Junction A</h2>
+          <div class="grid">
+            <label>Junction name <input id="A_name" value="Junction A"/></label>
+            <label>Cycle time (s) <input id="A_cycle" type="number" min="1" value="90"/></label>
+            <label>Start offset (s) <input id="A_start" type="number" value="0"/></label>
+          </div>
+          <h3>Stages</h3>
+          <table class="stages">
+            <thead><tr><th>Label</th><th>Duration (s)</th><th>Intergreen after (s)</th><th></th></tr></thead>
+            <tbody id="A_stage_rows"></tbody>
+          </table>
+          <button class="small" data-add-stage="A">+ Add stage</button>
+        </div>
+
+        <div class="junction" id="junctionBForm">
+          <h2>Junction B</h2>
+          <div class="grid">
+            <label>Junction name <input id="B_name" value="Junction B"/></label>
+            <label>Cycle time (s) <input id="B_cycle" type="number" min="1" value="88"/></label>
+            <label>Start offset (s) <input id="B_start" type="number" value="12"/></label>
+          </div>
+          <h3>Stages</h3>
+          <table class="stages">
+            <thead><tr><th>Label</th><th>Duration (s)</th><th>Intergreen after (s)</th><th></th></tr></thead>
+            <tbody id="B_stage_rows"></tbody>
+          </table>
+          <button class="small" data-add-stage="B">+ Add stage</button>
+        </div>
+      </div>
+
+      <div class="journeys">
+        <h2>Journey times</h2>
+        <div class="grid">
+          <label>A → B (s) <input id="AB_travel" type="number" min="0" value="22"/></label>
+          <label>B → A (s) <input id="BA_travel" type="number" min="0" value="24"/></label>
+          <label>Diagram horizon (s) <input id="horizon" type="number" min="60" value="600"/></label>
+        </div>
+        <div class="buttons">
+          <button id="validateBtn">Validate</button>
+          <button id="plotBtn">Plot diagram</button>
+          <button id="exportBtn">Export JSON</button>
+          <label class="importLabel">Import JSON <input id="importInput" type="file" accept="application/json"/></label>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel diagram">
+      <div class="diagramHeader">
+        <div>
+          <strong>Direction:</strong>
+          <label><input type="radio" name="dir" value="AtoB" checked/> A → B</label>
+          <label><input type="radio" name="dir" value="BtoA"/> B → A</label>
+        </div>
+        <div class="hint">Click on the top row to set a departure time; shift‑drag to select a window.</div>
+      </div>
+      <svg id="diagram" width="100%" height="420" role="img" aria-label="Time–stage diagram"></svg>
+      <div id="readout" class="readout"></div>
+    </section>
+  </main>
+
+  <footer>
+    <small>© 2025 — Starter build. No external libraries.</small>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
