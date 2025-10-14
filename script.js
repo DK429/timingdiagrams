@@ -394,6 +394,8 @@ function openPreview(){
 document.getElementById('previewBtn').addEventListener('click', openPreview);
 
 // Draw
+function posMod(a,m){ return ((a % m) + m) % m; }
+
 function ensureArrowDefs(s){
   if(s.querySelector('defs#arrowDefs')) return;
   const defs = elNS('defs'); defs.id='arrowDefs';
@@ -477,20 +479,28 @@ function render(){
       }
     }
 
-    // Per-row cycle markers & labels
+    // Per-row cycle markers & labels aligned to junction start offset
     if(j.cycleTimeSec && j.cycleTimeSec > 0){
       const Cj = j.cycleTimeSec;
-      for(let tt=Cj; tt<=horizon; tt+=Cj){
+      const t0 = j.startTimeSec || 0; // cycle boundary anchor
+      // First marker >= 0
+      let first = t0;
+      while(first < 0) first += Cj;
+      while(first - Cj >= 0) first -= Cj;
+      // Vertical red lines at t = t0 + k*Cj
+      for(let tt=first; tt<=horizon; tt+=Cj){
+        if(tt <= 0) continue; // skip at 0 to avoid double-emphasis with origin
         const xl = xScale(tt);
         const ln = elNS('line');
         setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
         s.appendChild(ln);
       }
+      // Bottom labels under this row's lower ticks showing (t - t0) mod Cj in 5s steps
       const yBottomLbl = yBandBot + 16;
       for(let tt=0; tt<=horizon; tt+=5){
         const tx = elNS('text');
         setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
-        tx.textContent = String(tt % Cj) + 's';
+        tx.textContent = String(posMod(tt - t0, Cj)) + 's';
         s.appendChild(tx);
       }
     }
