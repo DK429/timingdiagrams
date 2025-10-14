@@ -11,7 +11,7 @@ const sum = (arr, f=x=>x) => arr.reduce((a,b)=>a+f(b),0);
 
 const state = {
   junctions: [], journeys: {}, horizonSec: 600, overlays: [],
-  rowOrder: ['A','B','C','D'], showMainGrid: true,
+  rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'skip',
 };
 
 // Tabs
@@ -347,7 +347,9 @@ function render(){
     const origin = getJ(ov.origin.junc), dest = getJ(ov.dest.junc);
     if(!origin || !dest) return;
     const path = channelPath(origin.id, dest.id); if(path.length===0) return;
-    const tiles = tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label && b.endAbs>0);
+    const tiles = (state.overrunMode==='skip')
+      ? tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label && b.startAbs>=0 && b.endAbs<=horizon)
+      : tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label && b.endAbs>0 && b.startAbs<horizon);
     const mode = ov.origin.mode;
 
     const hopDraw = (t0, fromId, hopId, color, isBack=false) => {
@@ -457,6 +459,7 @@ $('importInput').addEventListener('change', (e)=>{
   r.readAsText(f);
 });
 $('showMainGrid').addEventListener('change', render);
+$('overrunMode').addEventListener('change', ()=>{ state.overrunMode = $('overrunMode').value; render(); });
 
 // Seed A..D and adjacent journeys
 function seed(){
