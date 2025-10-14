@@ -1,11 +1,9 @@
-# Signal Plan Checker — v1.0.1
+# Signal Plan Checker — v1.0.4
 
-**This update (v1.0.1) includes:**
-- ✅ Validation button & messages **on the Data tab**
-- ✅ Default seed data **valid** (stages + intergreens == cycle) for all junctions
-- ✅ Plot now spans the full canvas on first open/focus
-- ✅ Print Preview & Overlays moved into collapsible **details** to maximise plot area
-- ✅ Horizon defaults to **max(cycle) + 20s** (auto-updates when cycles change)
-- ✅ iPad-friendly inputs (text + inputmode numeric, commit on blur/change)
+- Fresh, clean build fixing the 1.0.3 boot error.
+- Default seed: **60s** cycle, offset **0**, stages/intergreens **(15/5, 15/5, 15/5)** for A–D.
+- Horizon: defaults to **max(cycle)+20s**, re-renders on blur/change.
+- Plot button now validates and always renders.
+- Live “Total used” below each junction (updates on every change).
 
-Open `index.html` on iPad Pro or desktop — layout adapts to the screen.
+Open `index.html` in your browser.

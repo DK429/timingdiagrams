@@ -1,6 +1,6 @@
-// Signal Plan Checker v1.0.3
+// Signal Plan Checker v1.0.4
 const APP_NAME = 'Signal Plan Checker';
-const APP_VERSION = '1.0.3';
+const APP_VERSION = '1.0.4';
 
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
@@ -55,7 +55,6 @@ function attachSanitizers(root=document){
 }
 
 // Data tab
-
 function updateTotalsForJunction(id){
   const j = getJ(id); if(!j) return;
   const stSum = (j.stages||[]).reduce((a,b)=> a + (num(b.durationSec)), 0);
@@ -66,18 +65,19 @@ function updateTotalsForJunction(id){
 
 function addJunction(id){
   if(state.junctions.length >= MAX_JUNCTIONS) return;
-  // Default: valid 90s cycles
+  // Default: cycle 60s, offset 0; stages 15 each, intergreens 5 each -> 45 + 15 = 60
   const j = { id, name:`Junction ${id}`, cycleTimeSec:60, startTimeSec:0,
     stages:[{label:`${id}1`,durationSec:15},{label:`${id}2`,durationSec:15},{label:`${id}3`,durationSec:15}],
     intergreens:[{durationSec:5},{durationSec:5},{durationSec:5}] };
   state.junctions.push(j);
-  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render();
+  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render(); updateDataValidation();
 }
+
 function removeJunction(id){
   state.junctions = state.junctions.filter(j=>j.id!==id);
   Object.keys(state.journeys).forEach(k=>{ if(k.startsWith(id+'->')||k.endsWith('->'+id)) delete state.journeys[k]; });
   state.overlays = state.overlays.filter(ov => ov.origin.junc!==id && ov.dest.junc!==id);
-  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render();
+  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render(); updateDataValidation();
 }
 
 function renderJunctionList(){
@@ -125,8 +125,7 @@ function renderJunctionList(){
       if(inp.dataset.bind==='name') j.name = inp.value;
       if(inp.dataset.bind==='start') j.startTimeSec = num(inp.value);
       if(inp.dataset.bind==='cycle') { j.cycleTimeSec = num(inp.value); if(state.horizonIsDefault){ setDefaultHorizon(); } }
-      rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render();
-      updateDataValidation();
+      rebuildJourneyMatrix(); refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id);
     };
     inp.addEventListener('blur', commit);
     inp.addEventListener('change', commit);
@@ -137,7 +136,7 @@ function renderJunctionList(){
       if(inp.dataset.st==='label') j.stages[idx].label = inp.value;
       if(inp.dataset.st==='dur') j.stages[idx].durationSec = num(inp.value);
       if(inp.dataset.st==='ig') j.intergreens[idx].durationSec = num(inp.value);
-      refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id); renderJunctionListTotals && renderJunctionListTotals();
+      refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id);
     };
     inp.addEventListener('blur', commit);
     inp.addEventListener('change', commit);
@@ -146,7 +145,7 @@ function renderJunctionList(){
     btn.addEventListener('click', ()=>{
       const j = getJ(btn.dataset.addStage);
       const n = j.stages.length+1;
-      j.stages.push({label:`${j.id}{n}`, durationSec:10});
+      j.stages.push({label:`${j.id}${n}`, durationSec:10});
       j.intergreens.push({durationSec:2});
       renderJunctionList();
     });
@@ -155,24 +154,17 @@ function renderJunctionList(){
     btn.addEventListener('click', ()=>{
       const j = getJ(btn.dataset.delStage); const idx = Number(btn.dataset.idx);
       j.stages.splice(idx,1); j.intergreens.splice(idx,1);
-      renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id); renderJunctionListTotals && renderJunctionListTotals();
+      renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id);
     });
   });
   container.querySelectorAll('[data-remove-j]').forEach(btn=>{
-    btn.addEventListener('click', ()=> { removeJunction(btn.dataset.removeJ); updateDataValidation(); });
-  })
-  // Update totals rows
-  state.junctions.forEach(j=>{
-    const stSum = (j.stages||[]).reduce((a,b)=> a + (num(b.durationSec)), 0);
-    const igSum = (j.intergreens||[]).reduce((a,b)=> a + (num(b.durationSec)), 0);
-    const totEl = document.getElementById('tot_'+j.id);
-    if(totEl){ totEl.textContent = `Total used: ${stSum + igSum}s (stages ${stSum}s + intergreens ${igSum}s) / cycle ${j.cycleTimeSec}s`; }
+    btn.addEventListener('click', ()=> { removeJunction(btn.dataset.removeJ); });
   });
-;
 
-  // init totals for all
+  // Init totals for all
   state.junctions.forEach(j=> updateTotalsForJunction(j.id));
 }
+
 $('addJunctionBtn').addEventListener('click', ()=>{
   const next = DEFAULT_IDS.find(id => !getJ(id));
   if(next) addJunction(next);
@@ -606,21 +598,22 @@ function render(){
     }
   }
 
-  // Data tab
-
-function updateTotalsForJunction(id){
-  const j = getJ(id); if(!j) return;
-  const stSum = (j.stages||[]).reduce((a,b)=> a + (num(b.durationSec)), 0);
-  const igSum = (j.intergreens||[]).reduce((a,b)=> a + (num(b.durationSec)), 0);
-  const totEl = document.getElementById('tot_'+id);
-  if(totEl){ totEl.textContent = `Total used: ${stSum + igSum}s (stages ${stSum}s + intergreens ${igSum}s) / cycle ${j.cycleTimeSec}s`; }
-}
- validation hint
+  // Data tab validation hint
   updateDataValidation();
 }
 
 // Validate button (on Data tab)
 $('validateBtn').addEventListener('click', updateDataValidation);
+
+// Plot button: validate + render
+$('plotBtn').addEventListener('click', ()=>{
+  const errs = validate();
+  const dataOut = document.getElementById('dataValidation');
+  if(errs.length && dataOut){
+    dataOut.innerHTML = `<div class="bad"><strong>Fix these first:</strong><ul>${errs.map(e=>`<li>${e}</li>`).join('')}</ul></div>`;
+  }
+  render();
+});
 
 // Export/Import/TD
 $('exportBtn').addEventListener('click', ()=>{
@@ -736,7 +729,7 @@ function openPreview(){
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Print Preview</title><style>${css}</style></head><body>
     <div id="page"><div id="sheet"><div id="plotHolder"></div></div></div>
     <script>
-      (function(){ const holder=document.getElementById('plotHolder'); const svg=${JSON.stringify('')};
+      (function(){ const holder=document.getElementById('plotHolder'); 
         holder.appendChild(window.opener.document.getElementById('diagram').cloneNode(true));
         const s=holder.querySelector('svg');
         function fit(){ const bw=holder.clientWidth,bh=holder.clientHeight;
@@ -758,30 +751,19 @@ function seed(){
   state.journeys['B->C']=26; state.journeys['C->B']=23;
   state.journeys['C->D']=28; state.journeys['D->C']=29;
   setDefaultHorizon(); refreshOverlayPickers(); renderLegend(); updateDataValidation();
-  // Render after layout settles to ensure full-width
+  // First render after layout settles
   requestAnimationFrame(()=> render());
   window.addEventListener('resize', ()=> requestAnimationFrame(()=> render()));
+
+  // Horizon commit handlers
+  const h = $('horizon');
+  if(h){
+    const commit = ()=>{ state.horizonIsDefault = false; state.horizonSec = num(h.value)||Math.max(60, maxCycle()+20); render(); };
+    h.addEventListener('blur', commit);
+    h.addEventListener('change', commit);
+  }
 }
 document.addEventListener('DOMContentLoaded', ()=>{
   attachSanitizers();
   seed();
-});
-// Track manual horizon edits (render on blur/change and while typing if desired)
-(function(){
-  const h = document.getElementById('horizon');
-  if(!h) return;
-  const commit = ()=>{ state.horizonIsDefault = false; state.horizonSec = num(h.value)||Math.max(60, maxCycle()+20); render(); };
-  h.addEventListener('blur', commit);
-  h.addEventListener('change', commit);
-})();        
-
-
-// Plot button: validate and render
-document.getElementById('plotBtn')?.addEventListener('click', ()=>{
-  const errs = validate();
-  const dataOut = document.getElementById('dataValidation');
-  if(errs.length){
-    if(dataOut) dataOut.innerHTML = `<div class="bad"><strong>Fix these first:</strong><ul>${errs.map(e=>`<li>${e}</li>`).join('')}</ul></div>`;
-  }
-  render();
 });
