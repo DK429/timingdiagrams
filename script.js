@@ -1,4 +1,4 @@
-// v3 fixed: Clip/Skip + robust Print Preview
+// v3: Arrows + Custom overlays + Preview
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
 const svgEl = () => document.getElementById('diagram');
@@ -190,12 +190,15 @@ function channelBox(i){
 // Overlays
 function refreshOverlayPickers(){
   const o = $('ovOrigin'), d = $('ovDest'), s = $('ovStage');
-  if(!o || !d || !s) return;
-  o.innerHTML=''; d.innerHTML=''; s.innerHTML='';
+  const coO=$('coOrigin'), coD=$('coDest');
+  if(o) o.innerHTML=''; if(d) d.innerHTML=''; if(s) s.innerHTML='';
+  if(coO) coO.innerHTML=''; if(coD) coD.innerHTML='';
   presentRowOrder().forEach(id=>{
     const j = getJ(id); if(!j) return;
-    const o1=document.createElement('option'); o1.value=id; o1.textContent=j.name; o.appendChild(o1);
-    const d1=document.createElement('option'); d1.value=id; d1.textContent=j.name; d.appendChild(d1);
+    if(o){ const o1=document.createElement('option'); o1.value=id; o1.textContent=j.name; o.appendChild(o1); }
+    if(d){ const d1=document.createElement('option'); d1.value=id; d1.textContent=j.name; d.appendChild(d1); }
+    if(coO){ const o2=document.createElement('option'); o2.value=id; o2.textContent=j.name; coO.appendChild(o2); }
+    if(coD){ const d2=document.createElement('option'); d2.value=id; d2.textContent=j.name; coD.appendChild(d2); }
   });
   const j0 = getJ(presentRowOrder()[0]);
   j0?.stages.forEach((st,i)=>{
@@ -217,7 +220,23 @@ $('addOverlayBtn').addEventListener('click', ()=>{
   const opacity = Number(document.getElementById('ovOpacity').value || 0.8);
   if(origin===dest){ readoutEl().innerHTML = '<div class="bad">Origin and destination must differ.</div>'; return; }
   const id = `ov${Date.now()}${Math.floor(Math.random()*1000)}`;
-  state.overlays.push({ id, origin:{ junc: origin, stageIndex, mode }, dest:{ junc: dest }, color, opacity, showFrontBack:true, showArrivalWindow:true, laneOffset:0 });
+  state.overlays.push({ id, type:'stage', origin:{ junc: origin, stageIndex, mode }, dest:{ junc: dest }, color, opacity, showFrontBack:true, showArrivalWindow:true, laneOffset:0 });
+  renderLegend(); render();
+});
+
+$('addCustomOverlayBtn').addEventListener('click', ()=>{
+  const origin = $('coOrigin').value;
+  const dest = $('coDest').value;
+  let tStart = Number($('coStart').value||0);
+  let tEnd = Number($('coEnd').value||0);
+  if(origin===dest){ readoutEl().innerHTML = '<div class="bad">Origin and destination must differ.</div>'; return; }
+  if(!isFinite(tStart)||!isFinite(tEnd)){ readoutEl().innerHTML = '<div class="bad">Enter numeric start/end times.</div>'; return; }
+  if(tEnd < tStart){ const tmp=tStart; tStart=tEnd; tEnd=tmp; }
+  const color = $('coColor').value || '#9c27b0';
+  const opacity = Number($('coOpacity').value || 0.8);
+  const id = `cov${Date.now()}${Math.floor(Math.random()*1000)}`;
+  const repeat = !!document.getElementById('coRepeat')?.checked;
+  state.overlays.push({ id, type:'custom', origin:{ junc: origin, tStart, tEnd }, dest:{ junc: dest }, color, opacity, repeatCycle: repeat, showFrontBack:true, showArrivalWindow:true });
   renderLegend(); render();
 });
 
@@ -227,7 +246,12 @@ function renderLegend(){
     const item=document.createElement('div'); item.className='item';
     const sw=document.createElement('span'); sw.className='swatch'; sw.style.background=ov.color;
     const path = channelPath(ov.origin.junc, ov.dest.junc); const pathTag = path.length? ` (${path.join(', ')})` : '';
-    const lbl=document.createElement('span'); lbl.textContent = `${getJ(ov.origin.junc)?.name}:${getJ(ov.origin.junc)?.stages[ov.origin.stageIndex]?.label} → ${getJ(ov.dest.junc)?.name}${pathTag}`;
+    const lbl=document.createElement('span');
+    if(ov.type==='custom'){
+      lbl.textContent = `${getJ(ov.origin.junc)?.name} [${ov.origin.tStart}–${ov.origin.tEnd}s${ov.repeatCycle?' ×':''}] → ${getJ(ov.dest.junc)?.name}${pathTag}`;
+    }else{
+      lbl.textContent = `${getJ(ov.origin.junc)?.name}:${getJ(ov.origin.junc)?.stages[ov.origin.stageIndex]?.label} → ${getJ(ov.dest.junc)?.name}${pathTag}`;
+    }
     const op=document.createElement('input'); op.type='range'; op.min='0.1'; op.max='1'; op.step='0.05'; op.value=String(typeof ov.opacity==='number'? ov.opacity : 0.8);
     const opVal=document.createElement('span'); opVal.textContent = ` ${Math.round((typeof ov.opacity==='number'? ov.opacity : 0.8)*100)}%`;
     op.addEventListener('input', ()=>{ ov.opacity = Number(op.value); opVal.textContent = ` ${Math.round(ov.opacity*100)}%`; render(); });
@@ -257,7 +281,7 @@ function otherEndOf(channelId, current){ const [x,y] = channelId.split('-'); ret
 
 // TD save/load
 function buildTdPayload(){
-  return { version:'v3-td-clip-preview', junctions:state.junctions, journeys:state.journeys, horizonSec:state.horizonSec, rowOrder:state.rowOrder, overlays:state.overlays, showMainGrid:state.showMainGrid, overrunMode: state.overrunMode };
+  return { version:'v3-td-arrows-custom', junctions:state.junctions, journeys:state.journeys, horizonSec:state.horizonSec, rowOrder:state.rowOrder, overlays:state.overlays, showMainGrid:state.showMainGrid, overrunMode: state.overrunMode };
 }
 function loadTdPayload(obj){
   if(!obj || typeof obj!=='object') throw new Error('Invalid TD file.');
@@ -284,7 +308,113 @@ document.getElementById('loadTdInput').addEventListener('change', (e)=>{
   r.readAsText(f);
 });
 
+// Print preview window
+function paperSizeMm(paper){
+  switch(paper){
+    case 'A3': return {w: 297, h: 420};
+    case 'A4': return {w: 210, h: 297};
+    case 'Legal': return {w: 215.9, h: 355.6};
+    case 'Letter': default: return {w: 215.9, h: 279.4};
+  }
+}
+function openPreview(){
+  const paper = $('printPaper').value;
+  const orient = $('printOrientation').value;
+  const margins = $('printMargins').value;
+  const legendOn = $('printLegend').checked;
+  const readoutOn = $('printReadout').checked;
+  const scalePct = Number($('printScale').value||'100');
+  const title = ($('printTitle').value||'').trim();
+  const notes = ($('printNotes').value||'').trim();
+
+  const mm = paperSizeMm(paper);
+  const pageWmm = orient==='landscape' ? mm.h : mm.w;
+  const pageHmm = orient==='landscape' ? mm.w : mm.h;
+  const marginMap = { default: 10, none: 0, narrow: 6, wide: 20 };
+  const marginMm = marginMap[margins] ?? 10;
+
+  const sheet = document.getElementById('printSheet').cloneNode(true);
+  sheet.querySelector('#printHeader')?.classList.remove('printOnly');
+  sheet.querySelector('#printFooter')?.classList.remove('printOnly');
+  const order = presentRowOrder().join(' → ');
+  const dateStr = new Date().toLocaleString();
+  sheet.querySelector('#printHeader').innerHTML =
+    `<div class='title'>${title || 'Signals timing diagram'}</div>`+
+    `<div class='meta'>Rows: ${order} &nbsp;&nbsp; Date: ${dateStr}</div>`+
+    (notes? `<div class='notes'>${notes}</div>` : '');
+  sheet.querySelector('#printFooter').innerHTML =
+    `<div>Horizon: ${$('horizon').value || ''} s &nbsp;&nbsp; Overlays: ${state.overlays.length}</div>`;
+
+  if(legendOn) sheet.appendChild(legendEl().cloneNode(true));
+  if(readoutOn) sheet.appendChild(readoutEl().cloneNode(true));
+
+  const svg = svgEl().cloneNode(true);
+  sheet.querySelector('#plotHolder').innerHTML = '';
+  sheet.querySelector('#plotHolder').appendChild(svg);
+
+  const w = window.open('', '_blank');
+  const css = `
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    #page{width:${pageWmm}mm;height:${pageHmm}mm;margin:0 auto;display:flex;align-items:stretch;justify-content:center;padding:${marginMm}mm}
+    #sheet{width:100%;height:100%;display:flex;flex-direction:column}
+    #sheet .title{font-weight:600;font-size:14px}
+    #sheet .meta{opacity:.8;font-size:12px;margin-bottom:4px}
+    #sheet #plotHolder{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    #sheet svg{max-width:100%;max-height:100%}
+    @page { size: ${paper} ${orient}; margin: 0; }
+    @media print{ body{-webkit-print-color-adjust:exact; print-color-adjust:exact} }
+  `;
+  const manualScale = Math.max(0.5, Math.min(2.0, scalePct/100));
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Print Preview</title><style>${css}</style></head><body>
+    <div id="page"><div id="sheet">${sheet.innerHTML}</div></div>
+    <script>
+      (function(){
+        const svg = document.querySelector('#sheet svg');
+        const holder = document.querySelector('#sheet #plotHolder');
+        function fit(){
+          const bw = holder.clientWidth, bh = holder.clientHeight;
+          if(!bw||!bh) return;
+          const bb = svg.getBBox ? svg.getBBox() : null;
+          const sw = (bb && bb.width) ? bb.width : svg.getBoundingClientRect().width || bw;
+          const sh = (bb && bb.height)? bb.height: svg.getBoundingClientRect().height || bh;
+          const s = Math.min(bw/sw, bh/sh) * ${manualScale};
+          svg.style.transformOrigin = 'center center';
+          svg.style.transform = 'scale('+s+')';
+        }
+        window.addEventListener('load', fit);
+        window.addEventListener('resize', fit);
+        setTimeout(fit, 60);
+        window.fit = fit;
+        setTimeout(()=>window.print(), 120);
+      })();
+    </script>
+  </body></html>`;
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+document.getElementById('previewBtn').addEventListener('click', openPreview);
+
 // Draw
+function ensureArrowDefs(s){
+  if(s.querySelector('defs#arrowDefs')) return;
+  const defs = elNS('defs'); defs.id='arrowDefs';
+  const marker = elNS('marker');
+  marker.setAttribute('id','arrow');
+  marker.setAttribute('viewBox','0 0 10 10');
+  marker.setAttribute('refX','8');
+  marker.setAttribute('refY','5');
+  marker.setAttribute('markerWidth','6');
+  marker.setAttribute('markerHeight','6');
+  marker.setAttribute('orient','auto');
+  const path = elNS('path');
+  path.setAttribute('d','M 0 0 L 10 5 L 0 10 z');
+  path.setAttribute('fill','context-stroke');
+  marker.appendChild(path);
+  defs.appendChild(marker);
+  s.appendChild(defs);
+}
+
 function render(){
   const s = svgEl(); s.innerHTML='';
   $('overrunMode').value = state.overrunMode;
@@ -293,12 +423,14 @@ function render(){
   const width = s.clientWidth || s.parentElement.clientWidth || 960;
   const HEIGHT = rowY(presentRowOrder().length - 1) + BAND_HEIGHT + 80;
   s.setAttribute('height', String(HEIGHT));
-  const xScale = t => MARGIN_LEFT + (t/horizon)*(width - MARGIN_LEFT - 10);
+  const xScale = t => 60 + (t/horizon)*(width - 60 - 10);
+
+  ensureArrowDefs(s);
 
   // Main grid
   if(showMainGrid){
     for(let t=0;t<=horizon;t+=10){
-      const ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:MARGIN_TOP/2,x2:xScale(t),y2:HEIGHT-MARGIN_TOP/2,class:'gridLine'}); s.appendChild(ln);
+      const ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:8,x2:xScale(t),y2:HEIGHT-8,class:'gridLine'}); s.appendChild(ln);
       if(t%30===0){ const tx=elNS('text'); setAttrs(tx,{x:xScale(t)+2,y:12,class:'axisLabel'}); tx.textContent=`${t}s`; s.appendChild(tx); }
     }
   }else{
@@ -344,26 +476,48 @@ function render(){
     }
   }
 
-  // Overlays — repeat for all occurrences; robust Skip/Clip
+  // Overlays
   state.overlays.forEach(ov=>{
     const origin = getJ(ov.origin.junc), dest = getJ(ov.dest.junc);
     if(!origin || !dest) return;
     const path = channelPath(origin.id, dest.id); if(path.length===0) return;
 
-    let tiles = tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label);
+    let tiles;
+    if(ov.type==='custom'){
+      const j = getJ(ov.origin.junc);
+      if(!j){ tiles=[]; }
+      else if(ov.repeatCycle){
+        tiles = [];
+        const C = j.cycleTimeSec||0; const start0 = j.startTimeSec||0; const H = state.horizonSec;
+        if(C>0){
+          // find first cycle intersecting [0,H]
+          let cStart = start0; while(cStart>0) cStart -= C; while(cStart + C < 0) cStart += C;
+          while(cStart < H){
+            const a = cStart + ov.origin.tStart; const b = cStart + ov.origin.tEnd;
+            tiles.push({type:'custom', startAbs: a, endAbs: b});
+            cStart += C;
+          }
+        } else {
+          tiles = [{type:'custom', startAbs: ov.origin.tStart, endAbs: ov.origin.tEnd}];
+        }
+      } else {
+        tiles = [{type:'custom', startAbs: ov.origin.tStart, endAbs: ov.origin.tEnd}];
+      }
+    }else{
+      tiles = tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label);
+    }
     if(state.overrunMode==='skip'){
       tiles = tiles.filter(b=>b.startAbs>=0 && b.endAbs<=horizon);
-    }else{ // clip
+    }else{
       tiles = tiles.filter(b=>b.endAbs>0 && b.startAbs<horizon);
     }
-    const mode = ov.origin.mode;
+    const mode = ov.type==='custom' ? 'interval' : ov.origin.mode;
 
-    const hopDraw = (t0, fromId, hopId, color, isBack=false) => {
+    const hopDraw = (t0, fromId, hopId, isBack=false) => {
       const toId = otherEndOf(hopId, fromId);
       const key = `${fromId}->${toId}`;
       if(!(key in state.journeys)) return {t1:t0, yStart:null, yEnd:null};
       const t1 = t0 + state.journeys[key];
-      const order = presentRowOrder();
       const [hA,hB] = hopId.split('-');
       const i = Math.min(order.indexOf(hA), order.indexOf(hB));
       const ch = channelBox(i);
@@ -375,6 +529,7 @@ function render(){
       const line = elNS('line');
       setAttrs(line,{x1:x1,y1:yStart,x2:x2,y2:yEnd,class:`coordLine ${isBack?'back':''}`});
       line.style.stroke = ov.color; line.style.opacity = (typeof ov.opacity==='number'? ov.opacity : 0.8);
+      line.setAttribute('marker-end','url(#arrow)');
       s.appendChild(line);
       return {t1, yStart, yEnd};
     };
@@ -388,15 +543,15 @@ function render(){
         const tStartOrEnd = (mode==='point') ? tFront : tBack;
         let t = tStartOrEnd, from = origin.id;
         for(const hop of path){
-          const res = hopDraw(t, from, hop, ov.color, false);
+          const res = hopDraw(t, from, hop, false);
           t = res.t1; from = otherEndOf(hop, from);
         }
-      }else{ // interval shading per hop
+      }else{ // interval with shading per hop
         let tf = tFront, tb = tBack, fromF = origin.id, fromB = origin.id;
         const quads = [];
         for(const hop of path){
-          const resF = hopDraw(tf, fromF, hop, ov.color, false);
-          const resB = hopDraw(tb, fromB, hop, ov.color, true);
+          const resF = hopDraw(tf, fromF, hop, false);
+          const resB = hopDraw(tb, fromB, hop, true);
           if(resF.yStart!==null && resB.yStart!==null){
             quads.push({ x1:xScale(state.overrunMode==='clip'? clamp(tf,0,horizon):tf), y1:resF.yStart,
                          x2:xScale(state.overrunMode==='clip'? clamp(resF.t1,0,horizon):resF.t1), y2:resF.yEnd,
@@ -473,94 +628,6 @@ $('importInput').addEventListener('change', (e)=>{
 $('showMainGrid').addEventListener('change', render);
 $('overrunMode').addEventListener('change', ()=>{ state.overrunMode = $('overrunMode').value; render(); });
 
-// Print preview window: exact paper size + orientation
-function paperSizeMm(paper){
-  switch(paper){
-    case 'A3': return {w: 297, h: 420};
-    case 'A4': return {w: 210, h: 297};
-    case 'Legal': return {w: 215.9, h: 355.6};
-    case 'Letter': default: return {w: 215.9, h: 279.4};
-  }
-}
-function openPreview(){
-  const paper = $('printPaper').value;
-  const orient = $('printOrientation').value; // portrait | landscape
-  const margins = $('printMargins').value;
-  const legendOn = $('printLegend').checked;
-  const readoutOn = $('printReadout').checked;
-  const scalePct = Number($('printScale').value||'100');
-  const title = ($('printTitle').value||'').trim();
-  const notes = ($('printNotes').value||'').trim();
-
-  const mm = paperSizeMm(paper);
-  const pageWmm = orient==='landscape' ? mm.h : mm.w;
-  const pageHmm = orient==='landscape' ? mm.w : mm.h;
-  const marginMap = { default: 10, none: 0, narrow: 6, wide: 20 };
-  const marginMm = marginMap[margins] ?? 10;
-
-  const sheet = document.getElementById('printSheet').cloneNode(true);
-  sheet.querySelector('#printHeader')?.classList.remove('printOnly');
-  sheet.querySelector('#printFooter')?.classList.remove('printOnly');
-  const order = presentRowOrder().join(' → ');
-  const dateStr = new Date().toLocaleString();
-  sheet.querySelector('#printHeader').innerHTML =
-    `<div class='title'>${title || 'Signals timing diagram'}</div>`+
-    `<div class='meta'>Rows: ${order} &nbsp;&nbsp; Date: ${dateStr}</div>`+
-    (notes? `<div class='notes'>${notes}</div>` : '');
-  sheet.querySelector('#printFooter').innerHTML =
-    `<div>Horizon: ${$('horizon').value || ''} s &nbsp;&nbsp; Overlays: ${state.overlays.length}</div>`;
-
-  if(legendOn) sheet.appendChild(legendEl().cloneNode(true));
-  if(readoutOn) sheet.appendChild(readoutEl().cloneNode(true));
-
-  const svg = svgEl().cloneNode(true);
-  sheet.querySelector('#plotHolder').innerHTML = '';
-  sheet.querySelector('#plotHolder').appendChild(svg);
-
-  const w = window.open('', '_blank');
-  const css = `
-    *{box-sizing:border-box}
-    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-    #page{width:${pageWmm}mm;height:${pageHmm}mm;margin:0 auto;display:flex;align-items:stretch;justify-content:center;padding:${marginMm}mm}
-    #sheet{width:100%;height:100%;display:flex;flex-direction:column}
-    #sheet .title{font-weight:600;font-size:14px}
-    #sheet .meta{opacity:.8;font-size:12px;margin-bottom:4px}
-    #sheet #plotHolder{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
-    #sheet svg{max-width:100%;max-height:100%}
-    @page { size: ${paper} ${orient}; margin: 0; }
-    @media print{ body{-webkit-print-color-adjust:exact; print-color-adjust:exact} }
-  `;
-  const manualScale = Math.max(0.5, Math.min(2.0, scalePct/100));
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Print Preview</title><style>${css}</style></head><body>
-    <div id="page"><div id="sheet">${sheet.innerHTML}</div></div>
-    <script>
-      (function(){
-        const svg = document.querySelector('#sheet svg');
-        const holder = document.querySelector('#sheet #plotHolder');
-        function fit(){
-          const bw = holder.clientWidth, bh = holder.clientHeight;
-          if(!bw||!bh) return;
-          const bb = svg.getBBox ? svg.getBBox() : null;
-          const sw = (bb && bb.width) ? bb.width : svg.getBoundingClientRect().width || bw;
-          const sh = (bb && bb.height)? bb.height: svg.getBoundingClientRect().height || bh;
-          const s = Math.min(bw/sw, bh/sh) * ${manualScale};
-          svg.style.transformOrigin = 'center center';
-          svg.style.transform = 'scale('+s+')';
-        }
-        window.addEventListener('load', fit);
-        window.addEventListener('resize', fit);
-        setTimeout(fit, 60);
-        window.fit = fit;
-        // trigger print automatically after sizing
-        setTimeout(()=>window.print(), 120);
-      })();
-    </script>
-  </body></html>`;
-  w.document.open(); w.document.write(html); w.document.close();
-}
-
-$('previewBtn').addEventListener('click', openPreview);
-
 // Seed A..D and sample journeys
 function seed(){
   ['A','B','C','D'].forEach(id=> addJunction(id));
@@ -573,9 +640,10 @@ function seed(){
   state.journeys['A->B']=22; state.journeys['B->A']=24;
   state.journeys['B->C']=26; state.journeys['C->B']=23;
   state.journeys['C->D']=28; state.journeys['D->C']=29;
-  state.overlays.push({ id:'demo1', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', opacity:0.8 });
-  state.overlays.push({ id:'demo2', origin:{junc:'B',stageIndex:1,mode:'point'}, dest:{junc:'A'}, color:'#1e88e5', opacity:0.9 });
-  state.overlays.push({ id:'demo3', origin:{junc:'C',stageIndex:0,mode:'pointEnd'}, dest:{junc:'B'}, color:'#43a047', opacity:0.85 });
+  // demo overlays
+  state.overlays.push({ id:'demo1', type:'stage', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', opacity:0.8 });
+  state.overlays.push({ id:'demo2', type:'stage', origin:{junc:'B',stageIndex:1,mode:'point'}, dest:{junc:'A'}, color:'#1e88e5', opacity:0.9 });
+  state.overlays.push({ id:'demo3', type:'custom', origin:{junc:'C',tStart:15,tEnd:35}, dest:{junc:'B'}, color:'#9c27b0', opacity:0.85 });
   setDefaultHorizon(); renderLegend(); render();
 }
 seed();

@@ -1,14 +1,12 @@
-# Signals Explorer v3 — Clip/Skip + Print Preview (fixed)
+# Signals Explorer v3 — Arrows + Custom Overlays
 
-## Fixes
-- **Clip/Skip overlays** now behave correctly:
-  - **Skip**: only renders occurrences fully inside the horizon.
-  - **Clip**: includes partial occurrences and clamps lines, shaded quads, and arrival windows to the horizon.
+- Directional **arrowheads** on overlay lines.
+- **Custom overlays**: user specifies origin junction and absolute times (start/end in seconds) to a destination junction.
+- **Skip/Clip** overrun handling for overlays.
+- Overlays **repeat** for each stage occurrence (stage-based overlays).
+- Interval overlays are **shaded** (~15% opacity) per hop, and the destination row shows an arrival window.
+- Stage bands in **green**, labelled inside; intergreens in grey.
+- **5s ticks** around stage bands; **10s light grid** between junctions.
+- **Print Preview** window: exact paper sizes (A4/A3/Letter/Legal), true portrait/landscape, auto-fit + manual scale.
 
-## Printing (accurate PDF)
-- **Print Preview** opens a clean window with ONLY the plot sheet (header + diagram + footer).
-- Exact **paper sizes** (A4/A3/Letter/Legal) and **true** portrait/landscape layout.
-- **Auto-fit** the SVG to the printable area with an optional **Scale** multiplier (80–140%).
-- Optional **Legend** and **Readout** can be included on the sheet.
-
-Open `index.html` locally in a browser.
+Open `index.html` locally in a browser. Save/load the full project state via **Save TD / Load TD**.

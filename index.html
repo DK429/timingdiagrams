@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Signals Explorer v3 — Clip/Skip + Print Preview</title>
+  <title>Signals Explorer v3 — Arrows + Custom Overlays</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
     <h1>Signals Explorer v3</h1>
-    <p>Clip/Skip overlays, repeated occurrences, shaded intervals, and accurate PDF printing via Preview.</p>
+    <p>Stage timing diagram with travel-time overlays. Now with directional arrows and custom overlays.</p>
   </header>
 
   <main>
@@ -106,6 +106,7 @@
         <div class="coordControls">
           <strong>Overlays:</strong>
           <div class="overlayForm">
+            <!-- Stage-based overlay form -->
             <label>Origin <select id="ovOrigin"></select></label>
             <label>Stage <select id="ovStage"></select></label>
             <label>Mode
@@ -119,6 +120,19 @@
             <label>Opacity <input id="ovOpacity" type="range" min="0.1" max="1" step="0.05" value="0.8"/></label>
             <label>Color <input id="ovColor" type="color" value="#ff5722"/></label>
             <button id="addOverlayBtn">Add overlay</button>
+          </div>
+
+          <!-- Custom (absolute time) overlay form -->
+          <div class="overlayForm" style="margin-top:6px;border-top:1px dashed #ddd;padding-top:6px">
+            <strong>Custom overlay:</strong>
+            <label>Origin <select id="coOrigin"></select></label>
+            <label>Start (s) <input id="coStart" type="number" value="0" /></label>
+            <label>End (s) <input id="coEnd" type="number" value="20" /></label>
+            <label>Destination <select id="coDest"></select></label>
+            <label>Opacity <input id="coOpacity" type="range" min="0.1" max="1" step="0.05" value="0.8"/></label>
+            <label>Color <input id="coColor" type="color" value="#9c27b0"/></label>
+<label><input id="coRepeat" type="checkbox" checked/> Repeat each cycle (relative to origin)</label>
+            <button id="addCustomOverlayBtn">Add custom</button>
           </div>
         </div>
       </div>
