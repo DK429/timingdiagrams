@@ -497,7 +497,11 @@ function render(){
       }
       // Bottom labels under this row's lower ticks showing (t - t0) mod Cj in 5s steps
       const yBottomLbl = yBandBot + 16;
-      for(let tt=0; tt<=horizon; tt+=5){
+      // start labelling from the junction's start offset so '0s' sits under the first boundary
+      let lab = t0;
+      while(lab < 0) lab += 5;
+      while(lab - 5 >= 0) lab -= 5;
+      for(let tt=lab; tt<=horizon; tt+=5){
         const tx = elNS('text');
         setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
         tx.textContent = String(posMod(tt - t0, Cj)) + 's';
@@ -668,10 +672,12 @@ $('overrunMode').addEventListener('change', ()=>{ state.overrunMode = $('overrun
 // Seed A..D and sample journeys
 function seed(){
   ['A','B','C','D'].forEach(id=> addJunction(id));
-  const JB = getJ('B'); JB.startTimeSec = 12; JB.cycleTimeSec = 88;
+  getJ('A').cycleTimeSec = 90; getJ('A').startTimeSec = 0;
+  getJ('C').cycleTimeSec = 90; getJ('C').startTimeSec = 0;
+  const JB = getJ('B'); JB.startTimeSec = 0; JB.cycleTimeSec = 90;
   JB.stages = [{label:'B1',durationSec:25},{label:'B2',durationSec:45},{label:'B3',durationSec:10}];
   JB.intergreens = [{durationSec:4},{durationSec:2},{durationSec:2}];
-  const JD = getJ('D'); JD.startTimeSec = 6; JD.cycleTimeSec = 92;
+  const JD = getJ('D'); JD.startTimeSec = 0; JD.cycleTimeSec = 90;
   JD.stages = [{label:'D1',durationSec:30},{label:'D2',durationSec:44},{label:'D3',durationSec:10}];
   JD.intergreens = [{durationSec:3},{durationSec:3},{durationSec:2}];
   state.journeys['A->B']=22; state.journeys['B->A']=24;
