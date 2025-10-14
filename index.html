@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Signal Plan Checker v1.0.7</title>
+  <title>Signal Plan Checker v1.0.8</title>
   <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
   <header>
     <h1>Signal Plan Checker</h1>
-    <p>v1.0.7 — timing diagram with overlays, per-row cycle markers, local labels, and iPad-friendly inputs.</p>
+    <p>v1.0.8 — timing diagram with overlays, per-row cycle markers, local labels, and iPad-friendly inputs.</p>
   </header>
 
   <main>
@@ -42,7 +42,7 @@
 
       <div class="buttons">
         <button type="button" id="validateBtn">Validate</button>
-        <span class="version">v1.0.7</span>
+        <span class="version">v1.0.8</span>
       </div>
       <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -67,6 +67,13 @@
             <select id="overrunMode">
               <option value="skip">Skip</option>
               <option value="clip" selected>Clip</option>
+            </select>
+          </label>
+          <div class="pairPickers">
+          <label>Phase wrap by
+            <select id="phaseWrapBy">
+              <option value="origin" selected>Origin cycle</option>
+              <option value="destination">Destination cycle</option>
             </select>
           </label>
         </div>
@@ -155,7 +162,7 @@
   </main>
 
   <footer>
-    <small>© 2025 — Signal Plan Checker v1.0.7</small>
+    <small>© 2025 — Signal Plan Checker v1.0.8</small>
   </footer>
 
   <script src="script.js"></script>

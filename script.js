@@ -1,6 +1,6 @@
-// Signal Plan Checker v1.0.7
+// Signal Plan Checker v1.0.8
 const APP_NAME = 'Signal Plan Checker';
-const APP_VERSION = '1.0.7';
+const APP_VERSION = '1.0.8';
 
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
@@ -16,7 +16,7 @@ function posMod(a,m){ return ((a % m) + m) % m; }
 
 const state = {
   junctions: [], journeys: {}, horizonSec: 0, horizonIsDefault: true, overlays: [],
-  rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip'
+  rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip', phaseWrapMode: 'origin'
 };
 
 // Tabs
@@ -592,7 +592,7 @@ function render(){
       // Split across boundary if needed
       let pieces = splitLineAtHorizon(t0, yStart, t1, yEnd, horizon);
       // phase-aware shift for wrapped tail
-      const shift = phaseShiftForHorizon(origin, horizon);
+      const shift = phaseShiftForHorizon((state.phaseWrapMode==='destination'? dest : origin), horizon);
       if(pieces.length===2 && pieces[0].t1===horizon && pieces[1].t0===0){
         const shifted = applyPhaseWrap(pieces[0].t0, pieces[1].t1, horizon, shift);
         // rebuild pieces as lines with preserved y interpolation
@@ -645,7 +645,7 @@ function render(){
       // Arrival window band on destination — phase-aware
       const destRowIdx = presentRowOrder().indexOf(dest.id);
       const yTop = rowY(destRowIdx)+10;
-      const shift = phaseShiftForHorizon(origin, H);
+      const shift = phaseShiftForHorizon((state.phaseWrapMode==='destination'? dest : origin), H);
       const aSraw = moduloTime(tf, H);
       const aEraw = moduloTime(tb, H);
       const parts = applyPhaseWrap(aSraw, aEraw, H, shift);
@@ -859,5 +859,28 @@ document.addEventListener('DOMContentLoaded', ()=>{
   seed();
 });
 
+// Safe boot: ensure default data is created exactly once
+(function safeSeed(){
+  try{
+    if(!Array.isArray(state.junctions) || state.junctions.length===0){
+      ['A','B','C','D'].forEach(id=> addJunction(id));
+      state.journeys['A->B']=22; state.journeys['B->A']=24;
+      state.journeys['B->C']=26; state.journeys['C->B']=23;
+      state.journeys['C->D']=28; state.journeys['D->C']=29;
+      setDefaultHorizon(); refreshOverlayPickers(); renderLegend(); updateDataValidation();
+    }
+    requestAnimationFrame(()=> render());
+  }catch(e){
+    console.error('Seed error:', e);
+  }
+})();
+
 // Re-render when toggling main grid visibility
 document.getElementById('showMainGrid')?.addEventListener('change', ()=> render());
+
+// Phase wrap selector
+document.getElementById('phaseWrapBy')?.addEventListener('change', (e)=>{
+  const val = e.target.value === 'destination' ? 'destination' : 'origin';
+  state.phaseWrapMode = val;
+  render();
+});
