@@ -1,503 +1,426 @@
-// Minimal, dependency-free implementation with coordination check
-
+// v3p: Channels + 10s channel grids + multi-overlays
+const MAX_JUNCTIONS = 4;
+const DEFAULT_IDS = ['A','B','C','D'];
 const svg = () => document.getElementById('diagram');
 const readoutEl = () => document.getElementById('readout');
-
+const legendEl = () => document.getElementById('legend');
 function $(id){ return document.getElementById(id); }
-function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
-function mod(n, m){ return ((n % m) + m) % m; }
-function sum(arr, f = x=>x){ return arr.reduce((a,b)=>a+f(b),0); }
 function elNS(tag){ return document.createElementNS('http://www.w3.org/2000/svg', tag); }
 function setAttrs(ele, attrs){ for(const k in attrs) ele.setAttribute(k, attrs[k]); return ele; }
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+const sum = (arr, f=x=>x) => arr.reduce((a,b)=>a+f(b),0);
 
-function readJunction(which){
-  const prefix = which === 'A' ? 'A' : 'B';
-  const name = $(`${prefix}_name`).value.trim() || `Junction ${which}`;
-  const cycleTimeSec = Number($(`${prefix}_cycle`).value);
-  const startTimeSec = Number($(`${prefix}_start`).value);
-  const rows = document.querySelectorAll(`#${which}_stage_rows tr`);
-  const stages = [];
-  const intergreens = [];
-  rows.forEach(r=>{
-    const label = r.querySelector('.st_label').value || `${which}${stages.length+1}`;
-    const dur = Number(r.querySelector('.st_dur').value);
-    const ig = Number(r.querySelector('.ig_dur').value);
-    stages.push({label, durationSec: dur});
-    intergreens.push({durationSec: ig});
+const state = {
+  junctions: [],                 // [{id,name,cycleTimeSec,startTimeSec,stages,intergreens}]
+  journeys: {},                  // key "A->B": seconds
+  horizonSec: 600,
+  overlays: [],                  // overlays to draw
+  rowOrder: ['A','B','C','D'],
+  showMainGrid: true,
+};
+
+// Tabs
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tabPanel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
   });
-  return { id: which, name, cycleTimeSec, startTimeSec, stages, intergreens };
-}
+});
 
-function readConfig(){
-  return {
-    junctionA: readJunction('A'),
-    junctionB: readJunction('B'),
-    journeys: [
-      { from: 'A', to: 'B', travelTimeSec: Number($('AB_travel').value) },
-      { from: 'B', to: 'A', travelTimeSec: Number($('BA_travel').value) }
-    ],
-    diagram: { horizonSec: Number($('horizon').value) }
-  };
+// Junction helpers
+function addJunction(id){
+  if(state.junctions.length >= MAX_JUNCTIONS) return;
+  const j = { id, name:`Junction ${id}`, cycleTimeSec:90, startTimeSec:0,
+    stages:[{label:`${id}1`,durationSec:30},{label:`${id}2`,durationSec:40},{label:`${id}3`,durationSec:10}],
+    intergreens:[{durationSec:5},{durationSec:3},{durationSec:2}] };
+  state.junctions.push(j);
+  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); render();
 }
-
-function applyConfig(cfg){
-  $('A_name').value = cfg.junctionA.name;
-  $('A_cycle').value = cfg.junctionA.cycleTimeSec;
-  $('A_start').value = cfg.junctionA.startTimeSec;
-  setRows('A', cfg.junctionA.stages.length);
-  cfg.junctionA.stages.forEach((s,i)=>{
-    document.querySelectorAll('#A_stage_rows tr')[i].querySelector('.st_label').value = s.label;
-    document.querySelectorAll('#A_stage_rows tr')[i].querySelector('.st_dur').value = s.durationSec;
-    document.querySelectorAll('#A_stage_rows tr')[i].querySelector('.ig_dur').value = cfg.junctionA.intergreens[i].durationSec;
-  });
-  $('B_name').value = cfg.junctionB.name;
-  $('B_cycle').value = cfg.junctionB.cycleTimeSec;
-  $('B_start').value = cfg.junctionB.startTimeSec;
-  setRows('B', cfg.junctionB.stages.length);
-  cfg.junctionB.stages.forEach((s,i)=>{
-    document.querySelectorAll('#B_stage_rows tr')[i].querySelector('.st_label').value = s.label;
-    document.querySelectorAll('#B_stage_rows tr')[i].querySelector('.st_dur').value = s.durationSec;
-    document.querySelectorAll('#B_stage_rows tr')[i].querySelector('.ig_dur').value = cfg.junctionB.intergreens[i].durationSec;
-  });
-  $('AB_travel').value = cfg.journeys.find(j=>j.from==='A'&&j.to==='B')?.travelTimeSec ?? 0;
-  $('BA_travel').value = cfg.journeys.find(j=>j.from==='B'&&j.to==='A')?.travelTimeSec ?? 0;
-  $('horizon').value = cfg.diagram?.horizonSec ?? 600;
-  populateCoordStages();
+function removeJunction(id){
+  state.junctions = state.junctions.filter(j=>j.id!==id);
+  Object.keys(state.journeys).forEach(k=>{ if(k.startsWith(id+'->')||k.endsWith('->'+id)) delete state.journeys[k]; });
+  state.overlays = state.overlays.filter(ov => ov.origin.junc!==id && ov.dest.junc!==id);
+  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); render();
 }
+function getJ(id){ return state.junctions.find(j=>j.id===id); }
+function presentRowOrder(){ return state.rowOrder.filter(id => !!getJ(id)); }
 
-function addStageRow(which, label='S', dur=10, ig=2){
-  const tbody = document.getElementById(`${which}_stage_rows`);
-  const tr = document.createElement('tr');
-  tr.innerHTML = `<td><input class="st_label" value="${label}"/></td>
-                  <td><input type="number" class="st_dur" min="1" value="${dur}"/></td>
-                  <td><input type="number" class="ig_dur" min="0" value="${ig}"/></td>
-                  <td><button class="small danger">✕</button></td>`;
-  tr.querySelector('button').addEventListener('click', ()=> { tr.remove(); populateCoordStages(); });
-  tbody.appendChild(tr);
-}
-function setRows(which, count){
-  const tbody = document.getElementById(`${which}_stage_rows`);
-  tbody.innerHTML = '';
-  for(let i=0;i<count;i++) addStageRow(which, `${which}${i+1}`, 10, 2);
-}
-
-setRows('A', 3);
-setRows('B', 3);
-
-function validateConfig(cfg){
-  const errors = [];
-  ['junctionA','junctionB'].forEach(key=>{
-    const j = cfg[key];
-    if(j.stages.length === 0) errors.push(`${j.name}: add at least one stage.`);
-    if(j.intergreens.length !== j.stages.length) errors.push(`${j.name}: intergreens count must match stages count.`);
-    if(j.cycleTimeSec <= 0) errors.push(`${j.name}: cycle time must be > 0.`);
-    j.stages.forEach((s, i)=>{
-      if(s.durationSec <= 0) errors.push(`${j.name}: Stage ${s.label} must have duration > 0.`);
-      if(j.intergreens[i].durationSec < 0) errors.push(`${j.name}: Intergreen after ${s.label} must be ≥ 0.`);
+// Data tab UI
+function renderJunctionList(){
+  const container = $('junctionList'); container.innerHTML='';
+  state.junctions.forEach((j)=>{
+    const card = document.createElement('div'); card.className='junctionCard';
+    card.innerHTML = `
+      <div class="junctionRow">
+        <label>Id <input value="${j.id}" disabled/></label>
+        <label>Name <input data-bind="name" data-id="${j.id}" value="${j.name}"/></label>
+        <label>Start offset (s) <input data-bind="start" data-id="${j.id}" type="number" value="${j.startTimeSec}"/></label>
+      </div>
+      <div class="junctionRow">
+        <label>Cycle time (s) <input data-bind="cycle" data-id="${j.id}" type="number" min="1" value="${j.cycleTimeSec}"/></label>
+      </div>
+      <h4>Stages</h4>
+      <table class="stagesTable">
+        <thead><tr><th>Label</th><th>Duration (s)</th><th>Intergreen after (s)</th><th></th></tr></thead>
+        <tbody id="stBody_${j.id}"></tbody>
+      </table>
+      <div class="stageBtns">
+        <button class="small" data-add-stage="${j.id}">+ Add stage</button>
+        ${state.junctions.length>2 ? `<button class="small" data-remove-j="${j.id}">Remove junction</button>` : ''}
+      </div>`;
+    container.appendChild(card);
+    const tbody = card.querySelector(`#stBody_${j.id}`);
+    j.stages.forEach((s,i)=>{
+      const tr = document.createElement('tr');
+      const ig = j.intergreens[i]?.durationSec ?? 0;
+      tr.innerHTML = `<td><input data-st="label" data-id="${j.id}" data-idx="${i}" value="${s.label}"/></td>
+                      <td><input type="number" min="1" data-st="dur" data-id="${j.id}" data-idx="${i}" value="${s.durationSec}"/></td>
+                      <td><input type="number" min="0" data-st="ig" data-id="${j.id}" data-idx="${i}" value="${ig}"/></td>
+                      <td><button class="small" data-del-stage="${j.id}" data-idx="${i}">✕</button></td>`;
+      tbody.appendChild(tr);
     });
-    const total = sum(j.stages, s=>s.durationSec) + sum(j.intergreens, ig=>ig.durationSec);
-    if(total !== j.cycleTimeSec){
-      errors.push(`${j.name}: stages + intergreens (${total}s) must equal cycle (${j.cycleTimeSec}s).`);
-    }
   });
-  const hasAB = cfg.journeys.find(j=>j.from==='A'&&j.to==='B');
-  const hasBA = cfg.journeys.find(j=>j.from==='B'&&j.to==='A');
-  if(!hasAB || !hasBA) errors.push('Provide both A→B and B→A journey times.');
+  container.querySelectorAll('input[data-bind]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const j = getJ(inp.dataset.id); if(!j) return;
+      if(inp.dataset.bind==='name') j.name = inp.value;
+      if(inp.dataset.bind==='start') j.startTimeSec = Number(inp.value);
+      if(inp.dataset.bind==='cycle') j.cycleTimeSec = Number(inp.value);
+      rebuildJourneyMatrix(); refreshOverlayPickers(); render();
+    });
+  });
+  container.querySelectorAll('input[data-st]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const j = getJ(inp.dataset.id); const idx = Number(inp.dataset.idx);
+      if(inp.dataset.st==='label') j.stages[idx].label = inp.value;
+      if(inp.dataset.st==='dur') j.stages[idx].durationSec = Number(inp.value);
+      if(inp.dataset.st==='ig') j.intergreens[idx].durationSec = Number(inp.value);
+      refreshOverlayPickers(); render();
+    });
+  });
+  container.querySelectorAll('[data-add-stage]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const j = getJ(btn.dataset.addStage);
+      const n = j.stages.length+1;
+      j.stages.push({label:`${j.id}${n}`, durationSec:10});
+      j.intergreens.push({durationSec:2});
+      renderJunctionList();
+    });
+  });
+  container.querySelectorAll('[data-del-stage]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const j = getJ(btn.dataset.delStage); const idx = Number(btn.dataset.idx);
+      j.stages.splice(idx,1); j.intergreens.splice(idx,1);
+      renderJunctionList(); refreshOverlayPickers(); render();
+    });
+  });
+  container.querySelectorAll('[data-remove-j]').forEach(btn=>{
+    btn.addEventListener('click', ()=> removeJunction(btn.dataset.removeJ));
+  });
+}
+$('addJunctionBtn').addEventListener('click', ()=>{
+  const next = DEFAULT_IDS.find(id => !getJ(id));
+  if(next) addJunction(next);
+});
+
+function rebuildJourneyMatrix(){
+  const cont = $('journeyMatrix'); cont.innerHTML = '';
+  const n = state.junctions.length; if(n<2){ cont.textContent='Add at least two junctions.'; return; }
+  const table = document.createElement('table'); table.className='stagesTable';
+  const thead = document.createElement('thead');
+  let hrow = '<tr><th>From \\ To</th>'; state.junctions.forEach(j=> hrow+=`<th>${j.name}</th>`); hrow+='</tr>';
+  thead.innerHTML = hrow; table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  state.junctions.forEach(fromJ=>{
+    const tr = document.createElement('tr'); let row = `<td><strong>${fromJ.name}</strong></td>`;
+    state.junctions.forEach(toJ=>{
+      if(fromJ.id===toJ.id) row += `<td style="text-align:center;color:#888">—</td>`;
+      else{
+        const key = `${fromJ.id}->${toJ.id}`; const val = state.journeys[key] ?? 20;
+        row += `<td><input data-journey="${key}" type="number" min="0" value="${val}" /></td>`;
+      }
+    });
+    tr.innerHTML = row; tbody.appendChild(tr);
+  });
+  table.appendChild(tbody); cont.appendChild(table);
+  cont.querySelectorAll('input[data-journey]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{ state.journeys[inp.dataset.journey] = Number(inp.value); render(); });
+  });
+}
+
+// Validation
+function validate(){
+  const errors = [];
+  if(state.junctions.length<2) errors.push('Add at least two junctions.');
+  state.junctions.forEach(j=>{
+    if(j.stages.length===0) errors.push(`${j.name}: add at least one stage.`);
+    if(j.intergreens.length!==j.stages.length) errors.push(`${j.name}: intergreens count must match stages count.`);
+    if(j.cycleTimeSec<=0) errors.push(`${j.name}: cycle time must be > 0.`);
+    const total = sum(j.stages, s=>s.durationSec) + sum(j.intergreens, ig=>ig.durationSec);
+    if(total !== j.cycleTimeSec) errors.push(`${j.name}: stages + intergreens (${total}s) must equal cycle (${j.cycleTimeSec}s).`);
+  });
+  // overlays must have journey times for every hop; validated in draw step too
   return errors;
 }
 
+// Timing helpers
 function bandsOneCycle(j){
-  const out = [];
-  let t = 0;
+  const out=[]; let t=0;
   for(let i=0;i<j.stages.length;i++){
-    const s = j.stages[i];
-    out.push({type:'stage', label:s.label, start:t, end:t+s.durationSec, index:i});
-    t += s.durationSec;
-    const ig = j.intergreens[i]?.durationSec ?? 0;
-    out.push({type:'intergreen', start:t, end:t+ig, index:i});
-    t += ig;
-  }
-  return out;
+    const s=j.stages[i]; out.push({type:'stage',label:s.label,start:t,end:t+s.durationSec,index:i}); t+=s.durationSec;
+    const ig=j.intergreens[i]?.durationSec ?? 0; out.push({type:'intergreen',start:t,end:t+ig,index:i}); t+=ig;
+  } return out;
 }
-
 function phaseAt(j, tAbs){
-  const tCycle = mod(tAbs - j.startTimeSec, j.cycleTimeSec);
+  const tCycle = ((tAbs - j.startTimeSec) % j.cycleTimeSec + j.cycleTimeSec) % j.cycleTimeSec;
   const bands = bandsOneCycle(j);
-  for(const b of bands){
-    if(tCycle >= b.start && tCycle < b.end){
-      return {
-        which: b.type,
-        index: b.index,
-        label: b.label ?? null,
-        tInto: tCycle - b.start,
-        tRemaining: b.end - tCycle
-      };
-    }
-  }
-  const b0 = bands[0];
-  return { which:b0.type, index:b0.index, label:b0.label??null, tInto:0, tRemaining:b0.end-b0.start };
+  for(const b of bands){ if(tCycle>=b.start && tCycle<b.end) return {which:b.type,index:b.index,label:b.label??null,tInto:tCycle-b.start,tRemaining:b.end-tCycle}; }
+  const b0=bands[0]; return {which:b0.type,index:b0.index,label:b0.label??null,tInto:0,tRemaining:b0.end-b0.start};
+}
+function tileBands(j, horizon){
+  const tiles=[]; let cycleStart=j.startTimeSec; const cycle=j.cycleTimeSec; const start=0,end=horizon;
+  while(cycleStart>start) cycleStart-=cycle; while(cycleStart+cycle<start) cycleStart+=cycle;
+  while(cycleStart<end){ const bands=bandsOneCycle(j); for(const b of bands){ tiles.push({type:b.type,label:b.label,startAbs:cycleStart+b.start,endAbs:cycleStart+b.end}); } cycleStart+=cycle; }
+  return tiles.filter(b=>b.endAbs>=start && b.startAbs<=end);
 }
 
-function buildTiles(j, horizonSec, startAbs=0){
-  const tiles = [];
-  const firstCycleStart = j.startTimeSec;
-  const cycle = j.cycleTimeSec;
-  const start = 0;
-  const end = horizonSec;
-  let cycleStart = firstCycleStart;
-  while(cycleStart > start) cycleStart -= cycle;
-  while(cycleStart + cycle < start) cycleStart += cycle;
-  while(cycleStart < end){
-    const bands = bandsOneCycle(j);
-    for(const b of bands){
-      tiles.push({ type:b.type, label:b.label, startAbs: cycleStart + b.start, endAbs: cycleStart + b.end });
-    }
-    cycleStart += cycle;
-  }
-  return tiles.filter(b => b.endAbs >= start && b.startAbs <= end);
+// Plot geometry
+const MARGIN_LEFT=60, MARGIN_TOP=20, BAND_HEIGHT=30, ROW_GAP=70, ROW_LABEL_YOFF=18;
+function rowY(index){ return MARGIN_TOP + index*(BAND_HEIGHT + ROW_GAP); }
+function channelBox(i){ // channel between row i and i+1
+  const yTop = rowY(i) + 10 + BAND_HEIGHT + 6;
+  const yBot = rowY(i+1) - 6;
+  return {y0:yTop, y1:yBot, mid:(yTop+yBot)/2};
 }
 
-const MARGIN_LEFT = 60;
-const MARGIN_TOP = 20;
-const ROW_HEIGHT = 130;
-const ROW_GAP = 30;
-const HEIGHT = ROW_HEIGHT*2 + ROW_GAP + MARGIN_TOP*2;
+// Overlays UI
+function refreshOverlayPickers(){
+  const o = $('ovOrigin'), d = $('ovDest'), s = $('ovStage');
+  if(!o || !d || !s) return;
+  o.innerHTML=''; d.innerHTML=''; s.innerHTML='';
+  presentRowOrder().forEach(id=>{
+    const j = getJ(id); if(!j) return;
+    const o1=document.createElement('option'); o1.value=id; o1.textContent=j.name; o.appendChild(o1);
+    const d1=document.createElement('option'); d1.value=id; d1.textContent=j.name; d.appendChild(d1);
+  });
+  const j0 = getJ(presentRowOrder()[0]);
+  j0?.stages.forEach((st,i)=>{
+    const opt=document.createElement('option'); opt.value=String(i); opt.textContent=st.label; s.appendChild(opt);
+  });
+}
+$('ovOrigin').addEventListener('change', ()=>{
+  const s = $('ovStage'); s.innerHTML='';
+  const j = getJ($('ovOrigin').value);
+  j?.stages.forEach((st,i)=>{ const opt=document.createElement('option'); opt.value=String(i); opt.textContent=st.label; s.appendChild(opt); });
+});
 
-function renderDiagram(cfg, selection){
-  const s = svg();
-  s.innerHTML = '';
-  s.setAttribute('height', HEIGHT.toString());
+$('addOverlayBtn').addEventListener('click', ()=>{
+  const origin = $('ovOrigin').value;
+  const dest = $('ovDest').value;
+  const stageIndex = Number($('ovStage').value);
+  const mode = $('ovMode').value;
+  const color = $('ovColor').value;
+  if(origin===dest){ readoutEl().innerHTML = '<div class="bad">Origin and destination must differ.</div>'; return; }
+  const id = `ov${Date.now()}${Math.floor(Math.random()*1000)}`;
+  state.overlays.push({
+    id,
+    origin:{ junc: origin, stageIndex, mode },
+    dest:{ junc: dest },
+    color, showFrontBack:true, showArrivalWindow:true, laneOffset:0
+  });
+  renderLegend();
+  render();
+});
 
-  const horizon = cfg.diagram.horizonSec;
+function renderLegend(){
+  const el = legendEl(); el.innerHTML='';
+  state.overlays.forEach(ov=>{
+    const item=document.createElement('div'); item.className='item';
+    const sw=document.createElement('span'); sw.className='swatch'; sw.style.background=ov.color;
+    const lbl=document.createElement('span'); lbl.textContent = `${getJ(ov.origin.junc)?.name}:${getJ(ov.origin.junc)?.stages[ov.origin.stageIndex]?.label} → ${getJ(ov.dest.junc)?.name}`;
+    const del=document.createElement('button'); del.className='small'; del.textContent='Remove'; del.addEventListener('click', ()=>{
+      state.overlays = state.overlays.filter(x=>x.id!==ov.id); renderLegend(); render();
+    });
+    item.appendChild(sw); item.appendChild(lbl); item.appendChild(del);
+    el.appendChild(item);
+  });
+}
+
+// Core: channels between junctions
+function channelPath(aId, bId){
+  const order = presentRowOrder();
+  const ai = order.indexOf(aId), bi = order.indexOf(bId);
+  if(ai===-1 || bi===-1) return [];
+  const path = [];
+  const step = ai < bi ? 1 : -1;
+  for(let i=ai; i!==bi; i+=step){
+    const id1 = order[i], id2 = order[i+step];
+    path.push(`${Math.min(id1,id2) === id1 ? id1 : id2}-${Math.max(id1,id2) === id2 ? id2 : id1}`);
+  }
+  return path;
+}
+function otherEndOf(channelId, current){
+  const [x,y] = channelId.split('-');
+  return current===x ? y : x;
+}
+
+// Drawing
+function render(){
+  const s = svg(); s.innerHTML='';
+  const horizon = state.horizonSec = Number($('horizon').value) || 600;
+  const showMainGrid = state.showMainGrid = $('showMainGrid').checked;
   const width = s.clientWidth || s.parentElement.clientWidth || 960;
-  const xScale = t => MARGIN_LEFT + (t/horizon) * (width - MARGIN_LEFT - 10);
+  const HEIGHT = rowY(presentRowOrder().length - 1) + BAND_HEIGHT + 20;
+  s.setAttribute('height', String(HEIGHT));
+  const xScale = t => MARGIN_LEFT + (t/horizon)*(width - MARGIN_LEFT - 10);
 
-  for(let t=0;t<=horizon;t+=10){
-    const line = elNS('line');
-    setAttrs(line, { x1:xScale(t), y1:MARGIN_TOP, x2:xScale(t), y2:HEIGHT-MARGIN_TOP, class:'gridLine'});
-    s.appendChild(line);
-    if(t % 30 === 0){
-      const label = elNS('text');
-      setAttrs(label, {x:xScale(t)+2, y:15, class:'axisLabel'});
-      label.textContent = `${t}s`;
-      s.appendChild(label);
+  // Main grid (optional)
+  if(showMainGrid){
+    for(let t=0;t<=horizon;t+=10){
+      const ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:MARGIN_TOP/2,x2:xScale(t),y2:HEIGHT-MARGIN_TOP/2,class:'gridLine'}); s.appendChild(ln);
+      if(t%30===0){ const tx=elNS('text'); setAttrs(tx,{x:xScale(t)+2,y:12,class:'axisLabel'}); tx.textContent=`${t}s`; s.appendChild(tx); }
+    }
+  }else{
+    for(let t=0;t<=horizon;t+=30){
+      const tx=elNS('text'); setAttrs(tx,{x:xScale(t)+2,y:12,class:'axisLabel'}); tx.textContent=`${t}s`; s.appendChild(tx);
     }
   }
 
-  function drawRow(j, rowIndex){
-    const yTop = MARGIN_TOP + rowIndex*(ROW_HEIGHT + ROW_GAP);
-    const lbl = elNS('text');
-    setAttrs(lbl, {x:10, y:yTop+20, class:'rowLabel'});
-    lbl.textContent = j.name;
-    s.appendChild(lbl);
-
-    const tiles = buildTiles(j, horizon, 0);
+  // Draw rows
+  const order = presentRowOrder();
+  order.forEach((id, rowIndex)=>{
+    const j = getJ(id);
+    const yTop = rowY(rowIndex);
+    const lbl = elNS('text'); setAttrs(lbl,{x:10,y:yTop+ROW_LABEL_YOFF,class:'rowLabel'}); lbl.textContent=j.name; s.appendChild(lbl);
+    const tiles = tileBands(j, horizon);
     for(const b of tiles){
       const rect = elNS('rect');
       const x = xScale(Math.max(0,b.startAbs));
       const x2 = xScale(Math.min(horizon,b.endAbs));
-      const w = Math.max(0, x2-x);
-      setAttrs(rect, {x:x, y:yTop+30, width:w, height:ROW_HEIGHT-40, class: b.type==='stage'?'stageRect':'intergreenRect'});
-      s.appendChild(rect);
+      const w = Math.max(0,x2-x);
+      setAttrs(rect,{x:x,y:yTop+10,width:w,height:BAND_HEIGHT,class:b.type==='stage'?'stageRect':'intergreenRect'}); s.appendChild(rect);
       if(b.label && b.type==='stage' && w>24){
-        const t = elNS('text');
-        setAttrs(t, {x:x + w/2, y:yTop + (ROW_HEIGHT-40)/2 + 30, class:'stageLabel'});
-        t.textContent = b.label;
-        s.appendChild(t);
+        const t=elNS('text'); setAttrs(t,{x:x+w/2,y:yTop+10+BAND_HEIGHT/2,class:'stageLabel'}); t.textContent=b.label; s.appendChild(t);
       }
     }
-    const hit = elNS('rect');
-    setAttrs(hit, {x:MARGIN_LEFT, y:yTop+30, width:width-MARGIN_LEFT-10, height:ROW_HEIGHT-40, fill:'transparent'});
-    hit.style.cursor = 'crosshair';
-    if((rowIndex===0 && currentDir()==='AtoB') || (rowIndex===0 && currentDir()==='BtoA')){
-      hit.addEventListener('mousedown', onMouseDown);
-      s.addEventListener('mouseup', onMouseUp);
-      s.addEventListener('mousemove', onMouseMove);
+  });
+
+  // Draw channel grids (10 s lines only inside channels)
+  for(let i=0;i<order.length-1;i++){
+    const ch = channelBox(i);
+    for(let t=0;t<=horizon;t+=10){
+      const ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:ch.y0,x2:xScale(t),y2:ch.y1,class:'channelGrid'}); s.appendChild(ln);
     }
-    s.appendChild(hit);
   }
 
-  drawRow(originJunction(cfg), 0);
-  drawRow(destJunction(cfg), 1);
+  // Draw overlays in channels
+  state.overlays.forEach(ov=>{
+    const origin = getJ(ov.origin.junc), dest = getJ(ov.dest.junc);
+    if(!origin || !dest){ return; }
+    // find first visible occurrence of origin stage within [0,horizon]
+    const tiles = tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label);
+    const match = tiles.find(b => b.endAbs>0); if(!match) return;
+    const tFront = Math.max(0, match.startAbs);
+    const tBack  = Math.min(horizon, match.endAbs);
+    const path = channelPath(origin.id, dest.id); if(path.length===0) return;
 
-  if(selection){
-    const y0 = MARGIN_TOP+30;
-    const y1 = y0 + ROW_HEIGHT-40;
-    const x0 = xScale(selection.t0);
-    const x1 = xScale(selection.t1 ?? selection.t0);
-    const vline = elNS('line');
-    setAttrs(vline, {x1:x0, y1:y0, x2:x0, y2:y1, class:'clickLine'});
-    s.appendChild(vline);
-    if(selection.t1 && selection.t1>selection.t0){
+    // per-hop draw (point: use tFront; interval: draw both front/back)
+    const hopDraw = (t0, fromId, hopId, color, isBack=false) => {
+      const toId = otherEndOf(hopId, fromId);
+      const key = `${fromId}->${toId}`;
+      if(!(key in state.journeys)) return t0; // skip if missing
+      const t1 = t0 + state.journeys[key];
+      // draw within corresponding channel strip
+      const order = presentRowOrder();
+      const i = Math.min(order.indexOf(fromId), order.indexOf(toId));
+      const ch = channelBox(i);
+      const y = ch.mid + (ov.laneOffset||0);
+      const line = elNS('line');
+      setAttrs(line,{x1:xScale(t0),y1:y,x2:xScale(t1),y2:y,class:`coordLine ${isBack?'back':''}`});
+      line.style.stroke = ov.color;
+      s.appendChild(line);
+      return t1;
+    };
+
+    if(ov.origin.mode==='point'){
+      let t = tFront;
+      let from = origin.id;
+      for(const hop of path){
+        t = hopDraw(t, from, hop, ov.color, false);
+        from = otherEndOf(hop, from);
+      }
+    }else{
+      let tf = tFront, tb = tBack, fromF = origin.id, fromB = origin.id;
+      for(const hop of path){
+        tf = hopDraw(tf, fromF, hop, ov.color, false);
+        tb = hopDraw(tb, fromB, hop, ov.color, true);
+        fromF = otherEndOf(hop, fromF); fromB = otherEndOf(hop, fromB);
+      }
+      // Highlight arrival window on destination row
+      const rowIndex = presentRowOrder().indexOf(dest.id);
+      const yTop = rowY(rowIndex)+10;
       const rect = elNS('rect');
-      setAttrs(rect, {x:x0, y:y0, width:x1-x0, height:y1-y0, class:'arrivalHighlight'});
+      const x0 = Math.max(0, Math.min(tf,tb));
+      const x1 = Math.min(horizon, Math.max(tf,tb));
+      setAttrs(rect,{x:xScale(x0),y:yTop,width:Math.max(0,xScale(x1)-xScale(x0)),height:BAND_HEIGHT,class:'arrivalHighlight'});
+      rect.style.fill = ov.color; rect.style.opacity = 0.2; // tint to overlay color
       s.appendChild(rect);
     }
-    if(selection.arrivals){
-      selection.arrivals.forEach(a=>{
-        const yTop = MARGIN_TOP + (ROW_HEIGHT + ROW_GAP);
-        const ax = xScale(a.t);
-        const aline = elNS('line');
-        setAttrs(aline, {x1:x0, y1:y0, x2:ax, y2:yTop+30, class:'traceLine'});
-        s.appendChild(aline);
-        const mark = elNS('rect');
-        setAttrs(mark, {x:ax-2, y:yTop+28, width:4, height:ROW_HEIGHT-36, fill:'#ff6'});
-        s.appendChild(mark);
-      });
-    }
-  }
-}
-
-let dragging = false;
-let dragStart = null;
-let selectionState = null;
-
-function currentDir(){
-  return document.querySelector('input[name="dir"]:checked').value;
-}
-function originJunction(cfg){
-  return currentDir()==='AtoB' ? cfg.junctionA : cfg.junctionB;
-}
-function destJunction(cfg){
-  return currentDir()==='AtoB' ? cfg.junctionB : cfg.junctionA;
-}
-function travelTime(cfg){
-  return currentDir()==='AtoB'
-    ? cfg.journeys.find(j=>j.from==='A'&&j.to==='B').travelTimeSec
-    : cfg.journeys.find(j=>j.from==='B'&&j.to==='A').travelTimeSec;
-}
-
-function onMouseDown(ev){
-  const cfg = readConfig();
-  const errors = validateConfig(cfg);
-  if(errors.length){ renderErrors(errors); return; }
-  dragging = ev.shiftKey;
-  const t = eventToTime(ev, cfg);
-  dragStart = t;
-  if(!dragging){
-    selectionState = { t0:t };
-    computeArrivalReadout(cfg, selectionState);
-    renderDiagram(cfg, selectionState);
-  }
-}
-function onMouseMove(ev){
-  if(!dragging || dragStart==null) return;
-  const cfg = readConfig();
-  const t = eventToTime(ev, cfg);
-  selectionState = { t0:Math.min(dragStart, t), t1:Math.max(dragStart, t) };
-  computeArrivalReadout(cfg, selectionState);
-  renderDiagram(cfg, selectionState);
-}
-function onMouseUp(ev){
-  dragging = false;
-  dragStart = null;
-}
-
-function eventToTime(ev, cfg){
-  const s = svg();
-  const horizon = cfg.diagram.horizonSec;
-  const width = s.clientWidth || s.parentElement.clientWidth || 960;
-  const x = clamp(ev.offsetX, MARGIN_LEFT, width-10);
-  const t = ( (x - MARGIN_LEFT) / (width - MARGIN_LEFT - 10) ) * horizon;
-  return clamp(Math.round(t), 0, horizon);
-}
-
-function computeArrivalReadout(cfg, sel){
-  const origin = originJunction(cfg);
-  const dest = destJunction(cfg);
-  const tt = travelTime(cfg);
-  const lines = [];
-  function bandAt(j, t){ return phaseAt(j, t); }
-
-  if(sel.t1 && sel.t1>sel.t0){
-    const arrivals = [{t: sel.t0 + tt}, {t: sel.t1 + tt}];
-    sel.arrivals = arrivals;
-    const a0 = bandAt(origin, sel.t0);
-    const a1 = bandAt(origin, sel.t1);
-    const b0 = bandAt(dest, sel.t0 + tt);
-    const b1 = bandAt(dest, sel.t1 + tt);
-    lines.push(`Interval at origin: [${sel.t0}s → ${sel.t1}s]`);
-    lines.push(`${origin.name} bands: start in ${a0.which} ${a0.label ?? ''}, end in ${a1.which} ${a1.label ?? ''}`);
-    lines.push(`Travel time ${tt}s → arrival window [${sel.t0+tt}s → ${sel.t1+tt}s] at ${dest.name}`);
-    lines.push(`Arrive starts in ${b0.which} ${b0.label ?? ''} (+${b0.tInto.toFixed(0)}s), ends in ${b1.which} ${b1.label ?? ''}`);
-  }else{
-    const tDep = sel.t0;
-    const a = bandAt(origin, tDep);
-    const tArr = tDep + tt;
-    const b = bandAt(dest, tArr);
-    sel.arrivals = [{t: tArr}];
-    lines.push(`Depart ${origin.name} at t=${tDep}s → ${a.which}${a.label?(' '+a.label):''}, +${a.tInto.toFixed(0)}s into band`);
-    lines.push(`Travel ${tt}s → arrive ${dest.name} at t=${tArr}s → ${b.which}${b.label?(' '+b.label):''}, +${b.tInto.toFixed(0)}s into band`);
-    if(b.which==='intergreen'){
-      const bands = bandsOneCycle(dest);
-      const cyclePos = mod(tArr - dest.startTimeSec, dest.cycleTimeSec);
-      let idx = -1; for(let i=0;i<bands.length;i++){ if(cyclePos>=bands[i].start && cyclePos<bands[i].end){ idx=i; break; } }
-      let wait = 0;
-      let k = idx;
-      while(true){
-        if(bands[k].type==='stage'){ wait = 0; break; }
-        const next = (k+1)%bands.length;
-        const from = (k===idx) ? (bands[k].end - cyclePos) : (bands[k].end - bands[k].start);
-        wait += from;
-        if(bands[next].type==='stage'){ break; }
-        k = next;
-      }
-      lines.push(`Est. wait until next stage: ~${Math.round(wait)}s`);
-    }
-  }
-  readoutEl().innerHTML = lines.map(l=>`<div>${l}</div>`).join('');
-}
-
-function renderErrors(errors){
-  readoutEl().innerHTML = `<div class="bad"><strong>Fix these first:</strong><ul>${errors.map(e=>`<li>${e}</li>`).join('')}</ul></div>`;
-}
-
-// --- Coordination Check ---
-function populateCoordStages(){
-  const cfg = readConfig();
-  const from = $('coordFrom').value;
-  const j = from==='A' ? cfg.junctionA : cfg.junctionB;
-  const sel = $('coordStage');
-  if(!sel) return;
-  sel.innerHTML = '';
-  j.stages.forEach((st, i)=>{
-    const opt = document.createElement('option');
-    opt.value = String(i);
-    opt.textContent = st.label;
-    sel.appendChild(opt);
   });
+
+  readoutEl().innerHTML = state.overlays.length
+    ? `<div>${state.overlays.length} overlay(s) rendered. Add more or remove from the legend.</div>`
+    : `<div>Tip: add overlays to draw journey lines in the channels. Non‑adjacent pairs will route across multiple channels.</div>`;
 }
-document.addEventListener('DOMContentLoaded', populateCoordStages);
-document.addEventListener('input', (e)=>{
-  if(e.target && (e.target.id.startsWith('A_') || e.target.id.startsWith('B_'))) {
-    populateCoordStages();
-  }
-});
-document.getElementById('coordFrom').addEventListener('change', ()=>{
-  const from = $('coordFrom').value;
-  const dirVal = from==='A' ? 'AtoB' : 'BtoA';
-  document.querySelector(`input[name="dir"][value="${dirVal}"]`).checked = true;
-  populateCoordStages();
-  const cfg = readConfig();
-  const errors = validateConfig(cfg);
-  if(!errors.length) renderDiagram(cfg, selectionState);
-});
-$('coordBtn').addEventListener('click', ()=>{
-  const cfg = readConfig();
-  const errors = validateConfig(cfg);
-  if(errors.length){ renderErrors(errors); return; }
-  renderDiagram(cfg, selectionState);
-  const from = $('coordFrom').value;
-  const stageIndex = Number($('coordStage').value);
-  const origin = from==='A' ? cfg.junctionA : cfg.junctionB;
-  const dest   = from==='A' ? cfg.junctionB : cfg.junctionA;
-  const tt = from==='A'
-    ? cfg.journeys.find(j=>j.from==='A'&&j.to==='B').travelTimeSec
-    : cfg.journeys.find(j=>j.from==='B'&&j.to==='A').travelTimeSec;
-
-  const tiles = buildTiles(origin, cfg.diagram.horizonSec, 0).filter(b=>b.type==='stage');
-  const match = tiles.find(b => b.label === origin.stages[stageIndex].label && b.endAbs>0);
-  if(!match){
-    renderErrors([`Could not find stage ${origin.stages[stageIndex].label} within the current horizon.`]);
-    return;
-  }
-  const tFront = Math.max(0, match.startAbs);
-  const tBack  = Math.min(cfg.diagram.horizonSec, match.endAbs);
-  const aFront = tFront + tt;
-  const aBack  = tBack  + tt;
-
-  const sEl = svg();
-  const width = sEl.clientWidth || sEl.parentElement.clientWidth || 960;
-  const horizon = cfg.diagram.horizonSec;
-  const xScale = t => MARGIN_LEFT + (t/horizon) * (width - MARGIN_LEFT - 10);
-  const y0 = MARGIN_TOP+30;
-  const yTopDest = MARGIN_TOP + (ROW_HEIGHT + ROW_GAP);
-
-  function addLine(x1,y1_,x2,y2_, cls){
-    const ln = elNS('line'); setAttrs(ln, {x1:x1,y1:y1_,x2:x2,y2:y2_, class:cls}); sEl.appendChild(ln);
-  }
-
-  addLine(xScale(tFront), y0, xScale(aFront), yTopDest+30, 'coordLine');
-  addLine(xScale(tBack ), y0, xScale(aBack ), yTopDest+30, 'coordLine');
-
-  const a0 = Math.max(0, Math.min(aFront, aBack));
-  const a1 = Math.min(horizon, Math.max(aFront, aBack));
-  if(a1 > a0){
-    const rect = elNS('rect');
-    setAttrs(rect, {x:xScale(a0), y:yTopDest+30, width:xScale(a1)-xScale(a0), height:ROW_HEIGHT-40, class:'arrivalHighlight'});
-    sEl.appendChild(rect);
-  }
-
-  const bFront = phaseAt(dest, aFront);
-  const bBack  = phaseAt(dest, aBack);
-  readoutEl().innerHTML = [
-    `<div><strong>Coordination check:</strong> ${origin.name} Stage <em>${origin.stages[stageIndex].label}</em> (${Math.round(tFront)}s→${Math.round(tBack)}s)</div>`,
-    `<div>Travel time = ${tt}s → arrivals at ${dest.name}: [${Math.round(aFront)}s → ${Math.round(aBack)}s]</div>`,
-    `<div>Arrive starts in ${bFront.which}${bFront.label?(' '+bFront.label):''}; ends in ${bBack.which}${bBack.label?(' '+bBack.label):''}</div>`
-  ].join('');
-});
 
 // Buttons
-document.querySelectorAll('[data-add-stage]').forEach(btn=>{
-  btn.addEventListener('click', ()=> { addStageRow(btn.getAttribute('data-add-stage')); populateCoordStages(); });
+$('plotBtn').addEventListener('click', ()=>{
+  const errors = validate();
+  if(errors.length){
+    readoutEl().innerHTML = `<div class="bad"><strong>Fix these first:</strong><ul>${errors.map(e=>`<li>${e}</li>`).join('')}</ul></div>`;
+    return;
+  }
+  render();
 });
 $('validateBtn').addEventListener('click', ()=>{
-  const cfg = readConfig();
-  const errors = validateConfig(cfg);
-  if(errors.length) renderErrors(errors);
+  const errors = validate();
+  if(errors.length) readoutEl().innerHTML = `<div class="bad"><strong>Fix these first:</strong><ul>${errors.map(e=>`<li>${e}</li>`).join('')}</ul></div>`;
   else readoutEl().innerHTML = `<div class="good">Config looks valid ✔️</div>`;
 });
-$('plotBtn').addEventListener('click', ()=>{
-  const cfg = readConfig();
-  const errors = validateConfig(cfg);
-  if(errors.length){ renderErrors(errors); return; }
-  selectionState = null;
-  renderDiagram(cfg, selectionState);
-});
 $('exportBtn').addEventListener('click', ()=>{
-  const cfg = readConfig();
-  const blob = new Blob([JSON.stringify(cfg, null, 2)], {type:'application/json'});
+  const payload = JSON.stringify(state, null, 2);
+  const blob = new Blob([payload], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = 'signals-config.json';
-  a.click();
+  a.href = url; a.download = 'signals-config-v3p.json'; a.click();
   setTimeout(()=> URL.revokeObjectURL(url), 1000);
 });
 $('importInput').addEventListener('change', (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ()=>{
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{
     try{
-      const cfg = JSON.parse(reader.result);
-      applyConfig(cfg);
+      const obj = JSON.parse(r.result);
+      state.junctions = obj.junctions ?? state.junctions;
+      state.journeys = obj.journeys ?? state.journeys;
+      state.horizonSec = obj.horizonSec ?? state.horizonSec;
+      state.overlays = obj.overlays ?? state.overlays;
+      renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); renderLegend(); render();
       readoutEl().innerHTML = `<div>Imported config.</div>`;
     }catch(err){
-      renderErrors([`Import failed: ${err.message}`]);
+      readoutEl().innerHTML = `<div class="bad">Import failed: ${err.message}</div>`;
     }
   };
-  reader.readAsText(file);
+  r.readAsText(f);
 });
+$('showMainGrid').addEventListener('change', render);
 
-// Initial demo config
-applyConfig({
-  junctionA:{
-    id:'A', name:'Junction A', cycleTimeSec:90, startTimeSec:0,
-    stages:[{label:'A1',durationSec:30},{label:'A2',durationSec:40},{label:'A3',durationSec:10}],
-    intergreens:[{durationSec:5},{durationSec:3},{durationSec:2}]
-  },
-  junctionB:{
-    id:'B', name:'Junction B', cycleTimeSec:88, startTimeSec:12,
-    stages:[{label:'B1',durationSec:25},{label:'B2',durationSec:45},{label:'B3',durationSec:10}],
-    intergreens:[{durationSec:4},{durationSec:2},{durationSec:2}]
-  },
-  journeys:[{from:'A',to:'B',travelTimeSec:22},{from:'B',to:'A',travelTimeSec:24}],
-  diagram:{horizonSec:600}
-});
-
-document.addEventListener('DOMContentLoaded', ()=>{
-  const cfg = readConfig();
-  const errors = validateConfig(cfg);
-  if(!errors.length) renderDiagram(cfg, null);
-});
+// Seed initial A,B; journeys and demo overlay
+addJunction('A'); addJunction('B');
+getJ('B').startTimeSec = 12; getJ('B').cycleTimeSec = 88;
+state.journeys['A->B'] = 22; state.journeys['B->A'] = 24;
+// Demo overlay: A:S1 interval → B
+state.overlays.push({ id:'demo1', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', showFrontBack:true, showArrivalWindow:true });
+renderLegend(); refreshOverlayPickers(); render();
