@@ -462,6 +462,14 @@ function render(){
 
     // Stage tiles
     const tiles = tileBands(j, horizon);
+    // Per-row validation badge (sum of stages+intergreens vs cycle)
+    const tot = (j.stages||[]).reduce((a,b)=>a + (b.durationSec||0), 0) + (j.intergreens||[]).reduce((a,b)=>a + (b.durationSec||0), 0);
+    if(Number.isFinite(tot) && j.cycleTimeSec && tot !== j.cycleTimeSec){
+      const warn=elNS('text'); setAttrs(warn,{x:(60 + (width - 60 - 10)), y:yBandTop-8, class:'axisLabel'});
+      warn.textContent = `⚠ ${tot}s ≠ ${j.cycleTimeSec}s`; warn.setAttribute('text-anchor','end'); warn.setAttribute('fill','#b00020');
+      s.appendChild(warn);
+    }
+
     for(const b of tiles){
       const rect = elNS('rect');
       const x = xScale(Math.max(0,b.startAbs));
@@ -676,10 +684,12 @@ function seed(){
   getJ('C').cycleTimeSec = 90; getJ('C').startTimeSec = 0;
   const JB = getJ('B'); JB.startTimeSec = 0; JB.cycleTimeSec = 90;
   JB.stages = [{label:'B1',durationSec:25},{label:'B2',durationSec:45},{label:'B3',durationSec:10}];
-  JB.intergreens = [{durationSec:4},{durationSec:2},{durationSec:2}];
+  // 80s stages -> need 10s intergreens to hit 90
+  JB.intergreens = [{durationSec:4},{durationSec:4},{durationSec:2}];
   const JD = getJ('D'); JD.startTimeSec = 0; JD.cycleTimeSec = 90;
   JD.stages = [{label:'D1',durationSec:30},{label:'D2',durationSec:44},{label:'D3',durationSec:10}];
-  JD.intergreens = [{durationSec:3},{durationSec:3},{durationSec:2}];
+  // 84s stages -> need 6s intergreens to hit 90
+  JD.intergreens = [{durationSec:2},{durationSec:2},{durationSec:2}];
   state.journeys['A->B']=22; state.journeys['B->A']=24;
   state.journeys['B->C']=26; state.journeys['C->B']=23;
   state.journeys['C->D']=28; state.journeys['D->C']=29;
