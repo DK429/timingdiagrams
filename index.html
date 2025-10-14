@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Signal Plan Checker v1.0.11</title>
+<title>Signal Plan Checker v1.0.12</title>
 <style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#1b1b1b}
 header{padding:16px 20px;border-bottom:1px solid #eee;background:#fafafa}
@@ -59,7 +59,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 <body>
 <header>
   <h1>Signal Plan Checker</h1>
-  <p>v1.0.11 — single-file build for iPad; timing diagrams with overlays, per-row cycle markers, and debug log.</p>
+  <p>v1.0.12 — single-file build for iPad; timing diagrams with overlays, per-row cycle markers, and debug log.</p>
 </header>
 
 <main>
@@ -90,7 +90,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
     <div class="buttons">
       <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
       <button type="button" id="validateBtn">Validate</button>
-      <span class="version">v1.0.11</span>
+      <span class="version">v1.0.12</span>
     </div>
     <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -179,7 +179,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 </main>
 
 <footer>
-  <small>© 2025 — Signal Plan Checker v1.0.11</small>
+  <small>© 2025 — Signal Plan Checker v1.0.12</small>
 </footer>
 
 <script>
@@ -468,32 +468,28 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
       return [{t0:t0,y0:y0,t1:h,y1:yAtH},{t0:0,y0:yAtH,t1:t1,y1:y1}];
     }
     function phaseShiftForHorizon(j,H){ var C=j&&j.cycleTimeSec||0; if(!C||!H) return 0; return H % C; }
-    function applyPhaseWrap(t0,t1,H,shift){
-      if(t1>=t0) return [{t0:t0,t1:t1}];
-      var a={t0:t0,t1:H}; var s0=0+shift, s1=t1+shift; s0=Math.max(0,Math.min(H,s0)); s1=Math.max(0,Math.min(H,s1));
-      if(s1<=s0) return [a]; var b={t0:s0,t1:s1}; return [a,b];
+    function mapTimePhase(tAbs, refJunc, H){
+      var C = (refJunc && refJunc.cycleTimeSec) || 0; if(!H) return 0;
+      var phi = (C>0) ? (H % C) : 0; // phase advance across the horizon
+      var m = tAbs % H; if(m<0) m += H; // base wrap
+      var w = (m + phi) % H; // shift to maintain phase continuity visually
+      return w;
     }
 
     function hopDraw(t0Raw, fromId, hopId, color, opacity, isBack, origin, dest){
       var toId = otherEndOf(hopId, fromId);
       var key = fromId+'->'+toId; if(!(key in state.journeys)) return {t1:t0Raw, pieces:[], yStart:null, yEnd:null};
       var dt = state.journeys[key];
-      var t0 = moduloTime(t0Raw, H); var t1 = moduloTime(t0Raw+dt, H);
+      var ref = (state.phaseWrapMode==='destination'? dest : origin);
+      var t0m = mapTimePhase(t0Raw, ref, H);
+      var t1m = mapTimePhase(t0Raw+dt, ref, H);
       var orderList = presentRowOrder(); var parts=hopId.split('-'); var i = Math.min(orderList.indexOf(parts[0]), orderList.indexOf(parts[1]));
       var ch = channelBox(i); var fromAbove = orderList.indexOf(fromId) < orderList.indexOf(toId);
       var yStart = fromAbove ? ch.y0 : ch.y1; var yEnd = fromAbove ? ch.y1 : ch.y0;
-      var pieces = splitLineAtHorizon(t0,yStart,t1,yEnd,H);
-      var ref = (state.phaseWrapMode==='destination'? dest : origin);
-      var shift = phaseShiftForHorizon(ref, H);
-      if(pieces.length===2 && pieces[0].t1===H && pieces[1].t0===0){
-        var shifted = applyPhaseWrap(pieces[0].t0, pieces[1].t1, H, shift);
-        var yh=pieces[0].y1, y0x=pieces[1].y0; pieces=[];
-        for(var si=0;si<shifted.length;si++){
-          var seg=shifted[si];
-          if(si===0) pieces.push({t0:seg.t0,y0:yStart,t1:seg.t1,y1:yh});
-          else pieces.push({t0:seg.t0,y0:y0x,t1:seg.t1,y1:yEnd});
-        }
-      }
+      var pieces;
+      if(t1m >= t0m){ pieces = [{t0:t0m,y0:yStart,t1:t1m,y1:yEnd}]; }
+      else { pieces = [ {t0:t0m,y0:yStart,t1:H,y1: yStart + (yEnd - yStart)*((H - t0m)/((t1m + H) - t0m))},
+                        {t0:0,  y0: yStart + (yEnd - yStart)*((H - t0m)/((t1m + H) - t0m)), t1:t1m, y1:yEnd} ]; }
       for(var p=0;p<pieces.length;p++){
         var seg=pieces[p]; var line=elNS('line');
         setAttrs(line,{x1:xScale(seg.t0),y1:seg.y0,x2:xScale(seg.t1),y2:seg.y1,class:'coordLine '+(isBack?'back':'' )});
@@ -554,10 +550,10 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
         }
 
         // arrival band on destination using phase-aware times
-        var shiftRef = (state.phaseWrapMode==='destination'? dest : origin);
-        var shift = phaseShiftForHorizon(shiftRef, H);
-        var aSraw = moduloTime(tf, H), aEraw = moduloTime(tb, H);
-        var parts = applyPhaseWrap(aSraw, aEraw, H, shift);
+        var refJ = (state.phaseWrapMode==='destination'? dest : origin);
+        var aS = mapTimePhase(tf, refJ, H);
+        var aE = mapTimePhase(tb, refJ, H);
+        var parts = (aE >= aS) ? [{t0:aS,t1:aE}] : [{t0:aS,t1:H},{t0:0,t1:aE}];
         var destRowIdx = presentRowOrder().indexOf(dest.id);
         var yTopDest = 20 + destRowIdx*(30+120) + 10;
         for(var pp=0;pp<parts.length;pp++){
