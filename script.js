@@ -1,7 +1,7 @@
-// Signal Plan Checker v1.0.0 (reset) — Safari-friendly + requested features
+// Signal Plan Checker v1.0.1
 const APP_NAME = 'Signal Plan Checker';
-const APP_VERSION = '1.0.0';
-// v4 latest: Safari-friendly inputs + requested features
+const APP_VERSION = '1.0.1';
+
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
 const svgEl = () => document.getElementById('diagram');
@@ -15,7 +15,7 @@ const num = v => { const n = Number(String(v||'').replace(/[^0-9]/g,'')); return
 function posMod(a,m){ return ((a % m) + m) % m; }
 
 const state = {
-  junctions: [], journeys: {}, horizonSec: 600, overlays: [],
+  junctions: [], journeys: {}, horizonSec: 0, overlays: [],
   rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip'
 };
 
@@ -26,6 +26,7 @@ document.querySelectorAll('.tab').forEach(btn=>{
     document.querySelectorAll('.tabPanel').forEach(p=>p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById(btn.dataset.tab).classList.add('active');
+    if(btn.dataset.tab==='plotTab'){ requestAnimationFrame(()=> render()); }
   });
 });
 
@@ -33,7 +34,7 @@ document.querySelectorAll('.tab').forEach(btn=>{
 function getJ(id){ return state.junctions.find(j=>j.id===id); }
 function presentRowOrder(){ return state.rowOrder.filter(id => !!getJ(id)); }
 function maxCycle(){ return Math.max(...state.junctions.map(j=>j.cycleTimeSec||0), 0); }
-function setDefaultHorizon(){ const def = Math.max(60, 3 * maxCycle()); const inp=$('horizon'); if(inp && !inp.value) inp.value = String(def); }
+function setDefaultHorizon(){ const def = Math.max(60, maxCycle() + 20); const inp=$('horizon'); if(inp && !num(inp.value)) inp.value = String(def); }
 function stageFill(idx){
   const shades=['#1b5e20','#2e7d32','#388e3c','#43a047','#4caf50','#66bb6a','#7cb342','#8bc34a'];
   return shades[idx % shades.length];
@@ -43,7 +44,6 @@ function alignIntergreens(j){
   while(j.intergreens.length < n) j.intergreens.push({durationSec:0});
   if(j.intergreens.length > n) j.intergreens = j.intergreens.slice(0,n);
 }
-
 function sanitizeNumericInput(el){
   const cleaned = (el.value||'').replace(/[^0-9]/g,'');
   if(el.value !== cleaned) el.value = cleaned;
@@ -57,9 +57,10 @@ function attachSanitizers(root=document){
 // Data tab
 function addJunction(id){
   if(state.junctions.length >= MAX_JUNCTIONS) return;
+  // Default: valid 90s cycles
   const j = { id, name:`Junction ${id}`, cycleTimeSec:90, startTimeSec:0,
-    stages:[{label:`${id}1`,durationSec:30},{label:`${id}2`,durationSec:40},{label:`${id}3`,durationSec:20}],
-    intergreens:[{durationSec:5},{durationSec:5},{durationSec:10}] };
+    stages:[{label:`${id}1`,durationSec:25},{label:`${id}2`,durationSec:45},{label:`${id}3`,durationSec:10}],
+    intergreens:[{durationSec:4},{durationSec:4},{durationSec:2}] };
   state.junctions.push(j);
   renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render();
 }
@@ -115,6 +116,7 @@ function renderJunctionList(){
       if(inp.dataset.bind==='start') j.startTimeSec = num(inp.value);
       if(inp.dataset.bind==='cycle') j.cycleTimeSec = num(inp.value);
       rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render();
+      updateDataValidation();
     };
     inp.addEventListener('blur', commit);
     inp.addEventListener('change', commit);
@@ -125,7 +127,7 @@ function renderJunctionList(){
       if(inp.dataset.st==='label') j.stages[idx].label = inp.value;
       if(inp.dataset.st==='dur') j.stages[idx].durationSec = num(inp.value);
       if(inp.dataset.st==='ig') j.intergreens[idx].durationSec = num(inp.value);
-      refreshOverlayPickers(); render();
+      refreshOverlayPickers(); render(); updateDataValidation();
     };
     inp.addEventListener('blur', commit);
     inp.addEventListener('change', commit);
@@ -134,7 +136,7 @@ function renderJunctionList(){
     btn.addEventListener('click', ()=>{
       const j = getJ(btn.dataset.addStage);
       const n = j.stages.length+1;
-      j.stages.push({label:`${j.id}${n}`, durationSec:10});
+      j.stages.push({label:`${j.id}{n}`, durationSec:10});
       j.intergreens.push({durationSec:2});
       renderJunctionList();
     });
@@ -143,11 +145,11 @@ function renderJunctionList(){
     btn.addEventListener('click', ()=>{
       const j = getJ(btn.dataset.delStage); const idx = Number(btn.dataset.idx);
       j.stages.splice(idx,1); j.intergreens.splice(idx,1);
-      renderJunctionList(); refreshOverlayPickers(); render();
+      renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation();
     });
   });
   container.querySelectorAll('[data-remove-j]').forEach(btn=>{
-    btn.addEventListener('click', ()=> removeJunction(btn.dataset.removeJ));
+    btn.addEventListener('click', ()=> { removeJunction(btn.dataset.removeJ); updateDataValidation(); });
   });
 }
 $('addJunctionBtn').addEventListener('click', ()=>{
@@ -200,6 +202,16 @@ function validate(){
   });
   return errors;
 }
+function updateDataValidation(){
+  const out = document.getElementById('dataValidation');
+  const errors = validate();
+  if(!out) return;
+  if(errors.length){
+    out.innerHTML = `<div class="bad"><strong>Fix these first:</strong><ul>${errors.map(e=>`<li>${e}</li>`).join('')}</ul></div>`;
+  }else{
+    out.innerHTML = `<div class="good">Config looks valid ✔️</div>`;
+  }
+}
 
 // Timing helpers
 function bandsOneCycle(j){
@@ -225,7 +237,7 @@ function channelBox(i){
   return {y0:yTop, y1:yBot, mid:(yTop+yBot)/2};
 }
 
-// Overlays
+// Overlays pickers
 function refreshOverlayPickers(){
   const o = $('ovOrigin'), d = $('ovDest'), s = $('ovStage');
   const coO=$('coOrigin'), coD=$('coDest');
@@ -241,12 +253,14 @@ function refreshOverlayPickers(){
   const j0 = getJ(presentRowOrder()[0]);
   if(s && j0){ s.innerHTML=''; j0.stages.forEach((st,i)=>{ const opt=document.createElement('option'); opt.value=String(i); opt.textContent=st.label; s.appendChild(opt); }); }
 }
-$('ovOrigin').addEventListener('change', ()=>{
+$('ovOrigin')?.addEventListener('change', ()=>{
   const s = $('ovStage'); if(!s) return; s.innerHTML='';
   const j = getJ($('ovOrigin').value);
   j?.stages.forEach((st,i)=>{ const opt=document.createElement('option'); opt.value=String(i); opt.textContent=st.label; s.appendChild(opt); });
 });
-$('addOverlayBtn').addEventListener('click', ()=>{
+
+// Overlays add
+$('addOverlayBtn')?.addEventListener('click', ()=>{
   const origin = $('ovOrigin').value;
   const dest = $('ovDest').value;
   const stageIndex = Number($('ovStage').value);
@@ -258,7 +272,7 @@ $('addOverlayBtn').addEventListener('click', ()=>{
   state.overlays.push({ id, type:'stage', origin:{ junc: origin, stageIndex, mode }, dest:{ junc: dest }, color, opacity });
   renderLegend(); render();
 });
-$('addCustomOverlayBtn').addEventListener('click', ()=>{
+$('addCustomOverlayBtn')?.addEventListener('click', ()=>{
   const origin = $('coOrigin').value;
   const dest = $('coDest').value;
   let tStart = num($('coStart').value||0);
@@ -333,11 +347,11 @@ function ensureArrowDefs(s){
 }
 
 function render(){
-  const s = svgEl(); s.innerHTML='';
-  const horizon = state.horizonSec = num($('horizon').value) || Math.max(60, 3*maxCycle());
-  $('horizon').value = String(horizon);
+  const s = svgEl(); if(!s) return; s.innerHTML='';
+  const horizon = state.horizonSec = num($('horizon').value) || Math.max(60, maxCycle()+20);
+  if(!$('horizon').value) $('horizon').value = String(horizon);
   const showMainGrid = state.showMainGrid = $('showMainGrid').checked;
-  const width = s.clientWidth || s.parentElement.clientWidth || 960;
+  const width = s.clientWidth || s.parentElement.clientWidth || document.body.clientWidth || 960;
   const HEIGHT = rowY(presentRowOrder().length - 1) + BAND_HEIGHT + 80;
   s.setAttribute('height', String(HEIGHT));
   const xScale = t => 60 + (t/horizon)*(width - 60 - 10);
@@ -450,7 +464,7 @@ function render(){
     }
   }
 
-  // Overlays (stage + custom), with arrows and shading, custom aligned to origin cycle
+  // Overlays — stage + custom; custom aligned to origin cycle
   state.overlays.forEach(ov=>{
     const origin = getJ(ov.origin.junc), dest = getJ(ov.dest.junc);
     if(!origin || !dest) return;
@@ -493,7 +507,7 @@ function render(){
       tiles = tiles.filter(b=>b.endAbs>0 && b.startAbs<horizon);
     }
 
-    const xScaleLocal = (t)=> 60 + (t/horizon)*(width - 60 - 10);
+    const xScaleLocal = (t)=> 60 + (t/horizon)*(svgEl().clientWidth - 60 - 10);
 
     const hopDraw = (t0, fromId, hopId, color, opacity, isBack=false) => {
       const toId = otherEndOf(hopId, fromId);
@@ -537,7 +551,7 @@ function render(){
       quads.forEach(q=>{
         const poly = elNS('polygon');
         const pts = `${q.x1},${q.y1} ${q.x2},${q.y2} ${q.x3},${q.y3} ${q.x4},${q.y4}`;
-        setAttrs(poly,{points:pts}); poly.setAttribute('fill', ov.color); poly.setAttribute('opacity','0.18'); s.appendChild(poly);
+        setAttrs(poly,{points:pts}); poly.setAttribute('fill', ov.color); poly.setAttribute('opacity','0.18'); svgEl().appendChild(poly);
       });
 
       // Arrival window band on destination
@@ -547,7 +561,7 @@ function render(){
       const rect = elNS('rect');
       setAttrs(rect,{x:xScaleLocal(x0Abs),y:yTop,width:Math.max(0,xScaleLocal(x1Abs)-xScaleLocal(x0Abs)),height:BAND_HEIGHT,class:'arrivalHighlight'});
       rect.style.fill = ov.color; rect.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
-      s.appendChild(rect);
+      svgEl().appendChild(rect);
     });
   });
 
@@ -557,7 +571,7 @@ function render(){
     const ch = channelBox(i);
     const midY = ch.mid;
     const leftX = 48;
-    const rightX = (s.clientWidth || s.parentElement.clientWidth || 960) - 16;
+    const rightX = (svgEl().clientWidth || 960) - 16;
     const keyF = `${from}->${to}`;
     const keyR = `${to}->${from}`;
     if(state.journeys[keyF] != null){
@@ -571,31 +585,20 @@ function render(){
     }
   }
 
-  readoutEl().innerHTML = (validate().length===0)
-    ? `<div class="good">Config looks valid ✔️</div>`
-    : `<div class="bad"><strong>Tip:</strong> Use Validate to see any mismatches.</div>`;
+  // Data tab validation hint
+  updateDataValidation();
 }
 
-// Validate button
-$('plotBtn').addEventListener('click', ()=>{
-  const errors = validate();
-  if(errors.length){
-    readoutEl().innerHTML = `<div class="bad"><strong>Fix these first:</strong><ul>${errors.map(e=>`<li>${e}</li>`).join('')}</ul></div>`;
-    return;
-  }
-  render();
-});
-$('validateBtn').addEventListener('click', ()=>{
-  const errors = validate();
-  if(errors.length) readoutEl().innerHTML = `<div class="bad"><strong>Fix these first:</strong><ul>${errors.map(e=>`<li>${e}</li>`).join('')}</ul></div>`;
-  else readoutEl().innerHTML = `<div class="good">Config looks valid ✔️</div>`;
-});
+// Validate button (on Data tab)
+$('validateBtn').addEventListener('click', updateDataValidation);
+
+// Export/Import/TD
 $('exportBtn').addEventListener('click', ()=>{
   const payload = JSON.stringify(state, null, 2);
   const blob = new Blob([payload], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'signals-config-v4.json'; a.click();
+  a.href = url; a.download = 'signals-config-v1.json'; a.click();
   setTimeout(()=> URL.revokeObjectURL(url), 1000);
 });
 $('importInput').addEventListener('change', (e)=>{
@@ -610,15 +613,43 @@ $('importInput').addEventListener('change', (e)=>{
       state.overlays = obj.overlays ?? state.overlays;
       state.overrunMode = obj.overrunMode ?? state.overrunMode;
       renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); renderLegend(); render();
-      readoutEl().innerHTML = `<div>Imported config.</div>`;
+      updateDataValidation();
+      document.querySelector('[data-tab=\"plotTab\"]')?.click();
     }catch(err){
-      readoutEl().innerHTML = `<div class="bad">Import failed: ${err.message}</div>`;
+      const out = document.getElementById('dataValidation');
+      if(out) out.innerHTML = `<div class="bad">Import failed: ${err.message}</div>`;
     }
   };
   r.readAsText(f);
 });
-$('showMainGrid').addEventListener('change', render);
-$('overrunMode').addEventListener('change', ()=>{ state.overrunMode = $('overrunMode').value; render(); });
+$('saveTdBtn').addEventListener('click', ()=>{
+  const payload = JSON.stringify(state, null, 2);
+  const blob = new Blob([payload], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'signal-plan-checker.td'; a.click();
+  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+});
+$('loadTdInput').addEventListener('change', (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    try{
+      const obj = JSON.parse(r.result);
+      state.junctions = obj.junctions ?? state.junctions;
+      state.journeys = obj.journeys ?? state.journeys;
+      state.horizonSec = obj.horizonSec ?? state.horizonSec;
+      state.overlays = obj.overlays ?? state.overlays;
+      state.overrunMode = obj.overrunMode ?? state.overrunMode;
+      renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); renderLegend(); render();
+      updateDataValidation();
+      document.querySelector('[data-tab=\"plotTab\"]')?.click();
+    }catch(err){
+      const out = document.getElementById('dataValidation');
+      if(out) out.innerHTML = `<div class="bad">TD load failed: ${err.message}</div>`;
+    }
+  };
+  r.readAsText(f);
+});
 
 // iPad/Safari guards
 window.addEventListener('keydown', (e)=>{
@@ -636,24 +667,72 @@ document.addEventListener('keydown', function(e){
   }
 }, {capture:true});
 
-// Seed A..D and sample journeys
+// Print preview
+function paperSizeMm(paper){
+  switch(paper){
+    case 'A3': return {w: 297, h: 420};
+    case 'A4': return {w: 210, h: 297};
+    case 'Legal': return {w: 215.9, h: 355.6};
+    case 'Letter': default: return {w: 215.9, h: 279.4};
+  }
+}
+function openPreview(){
+  const paper = document.getElementById('printPaper').value;
+  const orient = document.getElementById('printOrientation').value;
+  const margins = document.getElementById('printMargins').value;
+  const legendOn = document.getElementById('printLegend').checked;
+  const readoutOn = document.getElementById('printReadout').checked;
+  const scalePct = Number(document.getElementById('printScale').value||'100');
+  const title = (document.getElementById('printTitle').value||'').trim();
+  const notes = (document.getElementById('printNotes').value||'').trim();
+
+  const mm = paperSizeMm(paper);
+  const pageWmm = orient==='landscape' ? mm.h : mm.w;
+  const pageHmm = orient==='landscape' ? mm.w : mm.h;
+  const marginMap = { default: 10, none: 0, narrow: 6, wide: 20 };
+  const marginMm = marginMap[margins] ?? 10;
+
+  const s = svgEl().cloneNode(true);
+  const w = window.open('', '_blank');
+  const css = `*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    #page{{width:${{pageWmm}}mm;height:${{pageHmm}}mm;margin:0 auto;display:flex;align-items:stretch;justify-content:center;padding:${{marginMm}}mm}}
+    #sheet{{width:100%;height:100%;display:flex;flex-direction:column}}
+    #plotHolder{{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}}
+    svg{{max-width:100%;max-height:100%}}
+    @page {{ size: ${paper} ${orient}; margin: 0; }}
+    @media print{{ body{{-webkit-print-color-adjust:exact; print-color-adjust:exact}} }}`.replaceAll('{{','{').replaceAll('}}','}');
+
+  const manualScale = Math.max(0.5, Math.min(2.0, scalePct/100));
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Print Preview</title><style>${css}</style></head><body>
+    <div id="page"><div id="sheet"><div id="plotHolder"></div></div></div>
+    <script>
+      (function(){ const holder=document.getElementById('plotHolder'); const svg=${JSON.stringify('')};
+        holder.appendChild(window.opener.document.getElementById('diagram').cloneNode(true));
+        const s=holder.querySelector('svg');
+        function fit(){ const bw=holder.clientWidth,bh=holder.clientHeight;
+          const bb=s.getBBox? s.getBBox(): null; const sw=(bb&&bb.width)?bb.width:s.getBoundingClientRect().width||bw;
+          const sh=(bb&&bb.height)?bb.height:s.getBoundingClientRect().height||bh; const k=Math.min(bw/sw, bh/sh)*${manualScale};
+          s.style.transformOrigin='center center'; s.style.transform='scale('+k+')'; }
+        window.addEventListener('load', fit); window.addEventListener('resize', fit); setTimeout(fit,80); setTimeout(()=>window.print(), 140);
+      })();
+    </script></body></html>`;
+  w.document.open(); w.document.write(html); w.document.close();
+}
+document.getElementById('previewBtn')?.addEventListener('click', openPreview);
+
+// Seed: valid by default
 function seed(){
   ['A','B','C','D'].forEach(id=> addJunction(id));
-  // Consistent 90s default cycles/offsets (edit freely)
-  getJ('A').cycleTimeSec = 90; getJ('A').startTimeSec = 0;
-  getJ('B').cycleTimeSec = 90; getJ('B').startTimeSec = 0;
-  getJ('C').cycleTimeSec = 90; getJ('C').startTimeSec = 0;
-  getJ('D').cycleTimeSec = 90; getJ('D').startTimeSec = 0;
+  // Sample journey times both ways
   state.journeys['A->B']=22; state.journeys['B->A']=24;
   state.journeys['B->C']=26; state.journeys['C->B']=23;
   state.journeys['C->D']=28; state.journeys['D->C']=29;
-  // Demo overlays
-  state.overlays.push({ id:'demo1', type:'stage', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', opacity:0.85 });
-  state.overlays.push({ id:'demo2', type:'custom', origin:{junc:'B',tStart:15,tEnd:35}, dest:{junc:'C'}, color:'#9c27b0', opacity:0.85, repeatCycle:true });
-  setDefaultHorizon(); refreshOverlayPickers(); renderLegend(); render();
+  setDefaultHorizon(); refreshOverlayPickers(); renderLegend(); updateDataValidation();
+  // Render after layout settles to ensure full-width
+  requestAnimationFrame(()=> render());
+  window.addEventListener('resize', ()=> requestAnimationFrame(()=> render()));
 }
 document.addEventListener('DOMContentLoaded', ()=>{
-  // Basic autosanitizer attach and initial seed
   attachSanitizers();
   seed();
 });

@@ -1,14 +1,11 @@
-# Signal Plan Checker — v1.0.0
+# Signal Plan Checker — v1.0.1
 
-Version reset to **1.0.0**. Going forward, we’ll bump by **0.0.1** for each incremental update.
+**This update (v1.0.1) includes:**
+- ✅ Validation button & messages **on the Data tab**
+- ✅ Default seed data **valid** (stages + intergreens == cycle) for all junctions
+- ✅ Plot now spans the full canvas on first open/focus
+- ✅ Print Preview & Overlays moved into collapsible **details** to maximise plot area
+- ✅ Horizon defaults to **max(cycle) + 20s** (auto-updates when cycles change)
+- ✅ iPad-friendly inputs (text + inputmode numeric, commit on blur/change)
 
-**Included today:**
-- iPad/Safari input hardening (text+inputmode numeric, commit-on-blur)
-- Per-row cycle markers (red) aligned to each junction’s start offset
-- Custom overlays aligned to the origin junction’s cycle
-- Offset labels under junction names
-- Stage start/end labels (local cycle time) above the top tick lane
-- Stronger stage-shade contrast
-- Travel-time arrows (A→B→C→D left; reverse on right)
-
-Open `index.html` locally in your browser.
+Open `index.html` on iPad Pro or desktop — layout adapts to the screen.
