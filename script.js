@@ -1,3 +1,6 @@
+// Signal Plan Checker v1.0.0 (reset) — Safari-friendly + requested features
+const APP_NAME = 'Signal Plan Checker';
+const APP_VERSION = '1.0.0';
 // v4 latest: Safari-friendly inputs + requested features
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
