@@ -63,6 +63,34 @@ document.querySelectorAll('.tab').forEach(btn=>{
   });
 });
 
+
+function sanitizeNumericInput(el){
+  // Keep only digits; allow empty while typing
+  const cleaned = (el.value||'').replace(/[^0-9]/g,'');
+  if(el.value !== cleaned) el.value = cleaned;
+}
+function attachSanitizers(root=document){
+  root.querySelectorAll('input[type="text"][inputmode="numeric"]').forEach(inp=>{
+    inp.addEventListener('input', ()=> sanitizeNumericInput(inp), {passive:true});
+  });
+}
+document.addEventListener('DOMContentLoaded', ()=> attachSanitizers());
+// Also re-run after we rebuild dynamic DOM
+const __origRenderJList = renderJunctionList;
+renderJunctionList = function(){ __origRenderJList.apply(null, arguments); attachSanitizers(); };
+const __origRebuildJM = rebuildJourneyMatrix;
+rebuildJourneyMatrix = function(){ __origRebuildJM.apply(null, arguments); attachSanitizers(); };
+
+
+document.addEventListener('keydown', function(e){
+  const t = e.target;
+  const inEditable = t && (t.tagName==='INPUT' || t.tagName==='TEXTAREA' || t.isContentEditable);
+  const key = e.key;
+  if((key === 'Backspace' || key === 'Delete') && !inEditable){
+    e.preventDefault();
+  }
+}, {capture:true});
+
 // Helpers
 function alignIntergreens(j){
   if(!j) return; const n = (j.stages||[]).length; j.intergreens = Array.isArray(j.intergreens)? j.intergreens : [];
@@ -100,10 +128,10 @@ function renderJunctionList(){
       <div class="junctionRow">
         <label>Id <input value="${j.id}" disabled/></label>
         <label>Name <input data-bind="name" data-id="${j.id}" value="${j.name}"/></label>
-        <label>Start offset (s) <input data-bind="start" data-id="${j.id}" type="number" value="${j.startTimeSec}"/></label>
+        <label>Start offset (s) <input data-bind="start" data-id="${j.id}" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="${j.startTimeSec}"/></label>
       </div>
       <div class="junctionRow">
-        <label>Cycle time (s) <input data-bind="cycle" data-id="${j.id}" type="number" min="1" value="${j.cycleTimeSec}"/></label>
+        <label>Cycle time (s) <input data-bind="cycle" data-id="${j.id}" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" min="1" value="${j.cycleTimeSec}"/></label>
       </div>
       <h4>Stages</h4>
       <table class="stagesTable">
@@ -120,8 +148,8 @@ function renderJunctionList(){
       const tr = document.createElement('tr');
       const ig = j.intergreens[i]?.durationSec ?? 0;
       tr.innerHTML = `<td><input data-st="label" data-id="${j.id}" data-idx="${i}" value="${s.label}"/></td>
-                      <td><input type="number" min="1" data-st="dur" data-id="${j.id}" data-idx="${i}" value="${s.durationSec}"/></td>
-                      <td><input type="number" min="0" data-st="ig" data-id="${j.id}" data-idx="${i}" value="${ig}"/></td>
+                      <td><input type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" min="1" data-st="dur" data-id="${j.id}" data-idx="${i}" value="${s.durationSec}"/></td>
+                      <td><input type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" min="0" data-st="ig" data-id="${j.id}" data-idx="${i}" value="${ig}"/></td>
                       <td><button class="small" data-del-stage="${j.id}" data-idx="${i}">✕</button></td>`;
       tbody.appendChild(tr);
     });
@@ -187,7 +215,7 @@ function rebuildJourneyMatrix(){
       if(fromJ.id===toJ.id) row += `<td style="text-align:center;color:#888">—</td>`;
       else{
         const key = `${fromJ.id}->${toJ.id}`; const val = state.journeys[key] ?? 20;
-        row += `<td><input data-journey="${key}" type="number" min="0" value="${val}" /></td>`;
+        row += `<td><input data-journey="${key}" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" min="0" value="${val}" /></td>`;
       }
     });
     tr.innerHTML = row; tbody.appendChild(tr);
