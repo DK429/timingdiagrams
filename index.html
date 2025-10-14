@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Signal Plan Checker v1.0.8</title>
+  <title>Signal Plan Checker v1.0.9</title>
   <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
   <header>
     <h1>Signal Plan Checker</h1>
-    <p>v1.0.8 — timing diagram with overlays, per-row cycle markers, local labels, and iPad-friendly inputs.</p>
+    <p>v1.0.9 — timing diagram with overlays, per-row cycle markers, local labels, and iPad-friendly inputs.</p>
   </header>
 
   <main>
@@ -40,13 +40,13 @@
         </div>
       </div>
 
-      <div class="buttons">
+      <div class="buttons"><button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
         <button type="button" id="validateBtn">Validate</button>
-        <span class="version">v1.0.8</span>
+        <span class="version">v1.0.9</span>
       </div>
       <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
-      <div class="buttons">
+      <div class="buttons"><button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
         <button type="button" id="exportBtn">Export JSON</button>
         <label class="importLabel">Import JSON <input id="importInput" type="file" accept="application/json"/></label>
         <button type="button" id="saveTdBtn">Save TD</button>
@@ -159,10 +159,22 @@
       <div id="legend" class="legend"></div>
       <div id="readout" class="readout"></div>
     </section>
-  </main>
+  
+  <section id="debugSection" class="panel" style="margin-top:10px">
+    <details id="debugDetails" open>
+      <summary>Debug Log</summary>
+      <div id="debugLog" class="debugLog"></div>
+      <div style="margin-top:6px; display:flex; gap:8px; align-items:center">
+        <button type="button" id="clearDebugBtn" class="small">Clear log</button>
+        <span class="axisLabel">Tip: This panel shows errors on iPad where browser console isn't visible.</span>
+      </div>
+    </details>
+  </section>
+
+</main>
 
   <footer>
-    <small>© 2025 — Signal Plan Checker v1.0.8</small>
+    <small>© 2025 — Signal Plan Checker v1.0.9</small>
   </footer>
 
   <script src="script.js"></script>

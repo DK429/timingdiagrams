@@ -64,3 +64,9 @@ html, body{overscroll-behavior: contain;}
   main{padding:20px 24px}
   #diagram{height: 950px}
 }
+
+.secondary{background:#eef3ff;border-color:#c2d4ff}
+.debugLog{max-height:180px; overflow:auto; background:#0d1117; color:#c9d1d9; font-family:ui-monospace,Consolas,Monaco,monospace; font-size:12px; padding:8px; border-radius:6px; border:1px solid #30363d}
+.debugLog .err{color:#ffb4b4}
+.debugLog .warn{color:#ffd27f}
+.debugLog .info{color:#a5d6ff}

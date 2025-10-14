@@ -1,6 +1,6 @@
-// Signal Plan Checker v1.0.8
+// Signal Plan Checker v1.0.9
 const APP_NAME = 'Signal Plan Checker';
-const APP_VERSION = '1.0.8';
+const APP_VERSION = '1.0.9';
 
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
@@ -16,7 +16,93 @@ function posMod(a,m){ return ((a % m) + m) % m; }
 
 const state = {
   junctions: [], journeys: {}, horizonSec: 0, horizonIsDefault: true, overlays: [],
-  rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip', phaseWrapMode: 'origin'
+  rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip', phaseWrapMode: 'origin';
+
+// ===== Debug Utilities =====
+function logDebug(msg, level='info'){
+  try{
+    const box = document.getElementById('debugLog');
+    if(!box) return;
+    const time = new Date().toLocaleTimeString();
+    const div = document.createElement('div');
+    div.className = level;
+    div.textContent = `[${time}] ${msg}`;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }catch(e){/* no-op */}
+}
+
+window.addEventListener('error', (e)=>{
+  logDebug(`Error: ${e.message} @ ${e.filename}:${e.lineno}`, 'err');
+});
+window.addEventListener('unhandledrejection', (e)=>{
+  logDebug(`Unhandled rejection: ${e.reason}`, 'err');
+});
+document.addEventListener('DOMContentLoaded', ()=>{
+  document.getElementById('clearDebugBtn')?.addEventListener('click', ()=>{
+    const box = document.getElementById('debugLog'); if(box) box.innerHTML='';
+  });
+});
+
+// ===== Robust Seeding =====
+let __seeded = false;
+function buildDefaults(){
+  try{
+    state.junctions = [];
+    ['A','B','C','D'].forEach(id=> addJunction(id));
+    state.journeys = {
+      'A->B':22,'B->A':24,
+      'B->C':26,'C->B':23,
+      'C->D':28,'D->C':29
+    };
+    setDefaultHorizon();
+    refreshOverlayPickers(); renderLegend(); updateDataValidation();
+    __seeded = true;
+    logDebug('Default data seeded.', 'info');
+  }catch(e){
+    logDebug('Seeding error: '+e.message, 'err');
+  }
+}
+
+function safeBoot(){
+  try{
+    if(!__seeded || !Array.isArray(state.junctions) || state.junctions.length===0){
+      logDebug('SafeBoot: building defaults...', 'warn');
+      buildDefaults();
+    }
+    requestAnimationFrame(()=>{
+      try{ render(); logDebug('Initial render complete.', 'info'); }catch(e){ logDebug('Render error: '+e.message, 'err'); }
+    });
+  }catch(e){
+    logDebug('SafeBoot error: '+e.message, 'err');
+  }
+}
+
+// Ensure seeding after DOM and script are ready
+document.addEventListener('DOMContentLoaded', ()=>{
+  try{
+    setTimeout(safeBoot, 0);
+    // Second chance in case first attempt failed due to layout
+    setTimeout(()=>{ if(!__seeded) { logDebug('Retry seeding...', 'warn'); safeBoot(); } }, 50);
+  }catch(e){ logDebug('DOMContentLoaded boot error: '+e.message, 'err'); }
+});
+
+// Reset to defaults button
+document.addEventListener('DOMContentLoaded', ()=>{
+  document.getElementById('resetDefaultsBtn')?.addEventListener('click', ()=>{
+    try{
+      state.overlays = [];
+      buildDefaults();
+      renderLegend();
+      render();
+      updateDataValidation();
+      logDebug('State reset to defaults.', 'info');
+      // Switch to Plot tab to confirm visuals
+      document.querySelector('[data-tab="plotTab"]')?.click();
+    }catch(e){ logDebug('Reset failed: '+e.message, 'err'); }
+  });
+});
+
 };
 
 // Tabs
@@ -883,4 +969,19 @@ document.getElementById('phaseWrapBy')?.addEventListener('change', (e)=>{
   const val = e.target.value === 'destination' ? 'destination' : 'origin';
   state.phaseWrapMode = val;
   render();
+});
+
+// Live horizon typing (debounced)
+document.addEventListener('DOMContentLoaded', ()=>{
+  const h = document.getElementById('horizon');
+  if(!h) return;
+  let to=null;
+  h.addEventListener('input', ()=>{
+    if(to) clearTimeout(to);
+    to = setTimeout(()=>{
+      state.horizonIsDefault = false;
+      state.horizonSec = num(h.value)||Math.max(60, maxCycle()+20);
+      try{ render(); }catch(e){ logDebug('Horizon render error: '+e.message, 'err'); }
+    }, 120);
+  });
 });
