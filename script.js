@@ -1,6 +1,6 @@
-// Signal Plan Checker v1.0.6
+// Signal Plan Checker v1.0.7
 const APP_NAME = 'Signal Plan Checker';
-const APP_VERSION = '1.0.6';
+const APP_VERSION = '1.0.7';
 
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
@@ -341,6 +341,37 @@ function otherEndOf(channelId, current){ const [x,y] = channelId.split('-'); ret
 
 
 // ---- Wrap helpers (split at horizon boundary) ----
+// ---- Phase-aware time mapping (origin cycle) ----
+function phaseShiftForHorizon(origin, H){
+  const C = origin?.cycleTimeSec || 0;
+  if(!C || !H) return 0;
+  // Amount the origin's phase has advanced between 0 and H
+  return H % C; // shift to continue the phase logically after H
+}
+function applyPhaseWrap(t0, t1, H, shift){
+  // Input times are already modulo H (0..H). If t1 < t0, it wrapped.
+  // We return pieces in 0..H such that the wrapped part is shifted by 'shift' seconds to keep phase continuity.
+  if(t1 >= t0){
+    return [{t0, t1}];
+  }
+  // Two pieces: [t0..H] (no change), and [0..t1] shifted by 'shift'
+  const a = {t0, t1:H};
+  let s0 = 0 + shift, s1 = t1 + shift;
+  if(s0 >= H && s1 >= H){
+    // fully beyond horizon, nothing visible
+    return [a];
+  }
+  // clip shifted piece into [0..H]
+  s0 = Math.max(0, Math.min(H, s0));
+  s1 = Math.max(0, Math.min(H, s1));
+  if(s1 <= s0){
+    // degenerate after clipping; keep first piece only
+    return [a];
+  }
+  const b = {t0:s0, t1:s1};
+  return [a, b];
+}
+
 function splitLineAtHorizon(t0,y0,t1,y1,h){
   // returns [{t0,y0,t1,y1}] 1 or 2 pieces in [0,h] (with wrap handled)
   if(t0===t1){ return [{t0,y0,t1,y1}]; }
@@ -559,7 +590,21 @@ function render(){
       const yStart = fromAbove ? ch.y0 : ch.y1;
       const yEnd   = fromAbove ? ch.y1 : ch.y0;
       // Split across boundary if needed
-      const pieces = splitLineAtHorizon(t0, yStart, t1, yEnd, horizon);
+      let pieces = splitLineAtHorizon(t0, yStart, t1, yEnd, horizon);
+      // phase-aware shift for wrapped tail
+      const shift = phaseShiftForHorizon(origin, horizon);
+      if(pieces.length===2 && pieces[0].t1===horizon && pieces[1].t0===0){
+        const shifted = applyPhaseWrap(pieces[0].t0, pieces[1].t1, horizon, shift);
+        // rebuild pieces as lines with preserved y interpolation
+        // For simplicity, re-evaluate y using straight interpolation ratios
+        const yh = pieces[0].y1; // y at horizon
+        const y0 = pieces[1].y0; // y at 0 after wrap
+        pieces = [];
+        shifted.forEach((seg,i)=>{
+          if(i===0){ pieces.push({t0:seg.t0, y0:yStart, t1:seg.t1, y1:yh}); }
+          else { pieces.push({t0:seg.t0, y0:y0, t1:seg.t1, y1:yEnd}); }
+        });
+      }
       pieces.forEach(seg=>{
         const line = elNS('line');
         setAttrs(line,{x1:xScaleLocal(seg.t0),y1:seg.y0,x2:xScaleLocal(seg.t1),y2:seg.y1,class:`coordLine ${isBack?'back':''}`});
@@ -596,18 +641,21 @@ function render(){
       }
 
       
-      // Arrival window band on destination (wrap-aware) using *arrival* times
+      
+      // Arrival window band on destination — phase-aware
       const destRowIdx = presentRowOrder().indexOf(dest.id);
       const yTop = rowY(destRowIdx)+10;
-      // tf and tb now contain absolute arrival times after traversing the full path
-      const aS = moduloTime(tf, H);
-      const aE = moduloTime(tb, H);
-      if(aE >= aS){
+      const shift = phaseShiftForHorizon(origin, H);
+      const aSraw = moduloTime(tf, H);
+      const aEraw = moduloTime(tb, H);
+      const parts = applyPhaseWrap(aSraw, aEraw, H, shift);
+      parts.forEach(p=>{
         const rect = elNS('rect');
-        setAttrs(rect,{x:xScaleLocal(aS),y:yTop,width:Math.max(0,xScaleLocal(aE)-xScaleLocal(aS)),height:BAND_HEIGHT,class:'arrivalHighlight'});
+        setAttrs(rect,{x:xScaleLocal(p.t0),y:yTop,width:Math.max(0,xScaleLocal(p.t1)-xScaleLocal(p.t0)),height:BAND_HEIGHT,class:'arrivalHighlight'});
         rect.style.fill = ov.color; rect.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
         svgEl().appendChild(rect);
-      }else{
+      });
+}else{
         const r1 = elNS('rect');
         setAttrs(r1,{x:xScaleLocal(aS),y:yTop,width:Math.max(0,xScaleLocal(H)-xScaleLocal(aS)),height:BAND_HEIGHT,class:'arrivalHighlight'});
         r1.style.fill = ov.color; r1.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
