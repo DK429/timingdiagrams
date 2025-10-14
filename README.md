@@ -1,13 +1,7 @@
-# Signals Explorer v3p (channels + TD) — v2
+# Signals Explorer v3 — repeat + shaded intervals
 
-**New**
-- Overlay mode **Point (stage end)**.
-- **5‑second black tick markers** above and below each junction band.
-- **Auto horizon** defaults to **3 × (max cycle)** and updates when cycles change or when you add/remove junctions.
+- Overlays now **repeat for every occurrence** of the chosen stage across the horizon.
+- For **Interval (whole stage)** overlays, the area between the front/back lines is **shaded per hop** (≈15% opacity).
+- Still includes: channels (shared A–B, B–C, C–D), diagonal lines, 5‑s ticks around junction bands, per‑overlay opacity, and TD save/load.
 
-**Still here**
-- Channels between adjacent rows with 10‑s grids and diagonal journey lines (both directions in the same channel).
-- Multi‑overlays with opacity slider (and live adjustments in the legend).
-- Single‑file **TD save/load** (junctions, journeys, row order, horizon, overlays). Also keeps JSON export/import.
-
-Open `index.html` directly—no server needed.
+Open `index.html` (no server). Adjust journeys, cycles, stages in the Data tab; add overlays in Plot tab.

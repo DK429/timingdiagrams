@@ -1,4 +1,4 @@
-// v3p TD v2: stage-end point mode, 5s ticks around rows, auto horizon = 3x max cycle
+// v3 repeat + shade: repeating overlays each occurrence + hop shading @15%, stage-end points, 5s ticks, auto horizon
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
 const svg = () => document.getElementById('diagram');
@@ -256,7 +256,7 @@ function otherEndOf(channelId, current){ const [x,y] = channelId.split('-'); ret
 
 // TD save/load
 function buildTdPayload(){
-  return { version:'v3p-td-2', junctions:state.junctions, journeys:state.journeys, horizonSec:state.horizonSec, rowOrder:state.rowOrder, overlays:state.overlays, showMainGrid:state.showMainGrid };
+  return { version:'v3-td-1', junctions:state.junctions, journeys:state.journeys, horizonSec:state.horizonSec, rowOrder:state.rowOrder, overlays:state.overlays, showMainGrid:state.showMainGrid };
 }
 function loadTdPayload(obj){
   if(!obj || typeof obj!=='object') throw new Error('Invalid TD file.');
@@ -342,20 +342,18 @@ function render(){
     }
   }
 
-  // Overlays
+  // Overlays — repeat for all occurrences; shade interval area per hop (15%)
   state.overlays.forEach(ov=>{
     const origin = getJ(ov.origin.junc), dest = getJ(ov.dest.junc);
     if(!origin || !dest) return;
-    const tiles = tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label);
-    const match = tiles.find(b => b.endAbs>0); if(!match) return;
-    const tFront = Math.max(0, match.startAbs);
-    const tBack  = Math.min(horizon, match.endAbs);
     const path = channelPath(origin.id, dest.id); if(path.length===0) return;
+    const tiles = tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label && b.endAbs>0);
+    const mode = ov.origin.mode;
 
     const hopDraw = (t0, fromId, hopId, color, isBack=false) => {
       const toId = otherEndOf(hopId, fromId);
       const key = `${fromId}->${toId}`;
-      if(!(key in state.journeys)) return t0;
+      if(!(key in state.journeys)) return {t1:t0, yStart:null, yEnd:null};
       const t1 = t0 + state.journeys[key];
       const order = presentRowOrder();
       const [hA,hB] = hopId.split('-');
@@ -369,37 +367,52 @@ function render(){
       setAttrs(line,{x1:xScale(t0),y1:yStart,x2:xScale(t1),y2:yEnd,class:`coordLine ${isBack?'back':''}`});
       line.style.stroke = ov.color; line.style.opacity = (typeof ov.opacity==='number'? ov.opacity : 0.8);
       s.appendChild(line);
-      return t1;
+      return {t1, yStart, yEnd};
     };
 
-    const mode = ov.origin.mode;
-    if(mode==='point' || mode==='pointEnd'){
-      const tStartOrEnd = (mode==='point') ? tFront : tBack;
-      let t = tStartOrEnd, from = origin.id;
-      for(const hop of path){
-        t = hopDraw(t, from, hop, ov.color, false);
-        from = otherEndOf(hop, from);
+    tiles.forEach(match => {
+      const tFront = Math.max(0, match.startAbs);
+      const tBack  = Math.min(horizon, match.endAbs);
+      if(mode==='point' || mode==='pointEnd'){
+        const tStartOrEnd = (mode==='point') ? tFront : tBack;
+        let t = tStartOrEnd, from = origin.id;
+        for(const hop of path){
+          const res = hopDraw(t, from, hop, ov.color, false);
+          t = res.t1; from = otherEndOf(hop, from);
+        }
+      }else{ // interval with shading per hop
+        let tf = tFront, tb = tBack, fromF = origin.id, fromB = origin.id;
+        const quads = [];
+        for(const hop of path){
+          const resF = hopDraw(tf, fromF, hop, ov.color, false);
+          const resB = hopDraw(tb, fromB, hop, ov.color, true);
+          if(resF.yStart!==null && resB.yStart!==null){
+            quads.push({ x1:xScale(tf), y1:resF.yStart, x2:xScale(resF.t1), y2:resF.yEnd,
+                         x3:xScale(resB.t1), y3:resB.yEnd, x4:xScale(tb), y4:resB.yStart });
+          }
+          tf = resF.t1; tb = resB.t1;
+          fromF = otherEndOf(hop, fromF); fromB = otherEndOf(hop, fromB);
+        }
+        quads.forEach(q=>{
+          const poly = elNS('polygon');
+          const pts = `${q.x1},${q.y1} ${q.x2},${q.y2} ${q.x3},${q.y3} ${q.x4},${q.y4}`;
+          setAttrs(poly,{points:pts}); poly.setAttribute('fill', ov.color); poly.setAttribute('opacity','0.15'); s.appendChild(poly);
+        });
+        // Destination arrival window (kept)
+        const rowIndex = presentRowOrder().indexOf(dest.id);
+        const yTop = rowY(rowIndex)+10;
+        const x0Abs = Math.max(0, Math.min(tf,tb));
+        const x1Abs = Math.min(horizon, Math.max(tf,tb));
+        const rect = elNS('rect');
+        setAttrs(rect,{x:xScale(x0Abs),y:yTop,width:Math.max(0,xScale(x1Abs)-xScale(x0Abs)),height:BAND_HEIGHT,class:'arrivalHighlight'});
+        rect.style.fill = ov.color; rect.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
+        s.appendChild(rect);
       }
-    }else{ // interval
-      let tf = tFront, tb = tBack, fromF = origin.id, fromB = origin.id;
-      for(const hop of path){
-        tf = hopDraw(tf, fromF, hop, ov.color, false);
-        tb = hopDraw(tb, fromB, hop, ov.color, true);
-        fromF = otherEndOf(hop, fromF); fromB = otherEndOf(hop, fromB);
-      }
-      const rowIndex = presentRowOrder().indexOf(dest.id);
-      const yTop = rowY(rowIndex)+10;
-      const x0Abs = Math.max(0, Math.min(tf,tb));
-      const x1Abs = Math.min(horizon, Math.max(tf,tb));
-      const rect = elNS('rect');
-      setAttrs(rect,{x:xScale(x0Abs),y:yTop,width:Math.max(0,xScale(x1Abs)-xScale(x0Abs)),height:BAND_HEIGHT,class:'arrivalHighlight'});
-      rect.style.fill = ov.color; rect.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
-      s.appendChild(rect);
-    }
+    });
   });
 
   readoutEl().innerHTML = state.overlays.length
-    ? `<div>${state.overlays.length} overlay(s) rendered. Tip: try Point (stage end) mode.</div>`
+    ? `<div>${state.overlays.length} overlay(s) rendered across all occurrences.</div>`
     : `<div>Tip: add overlays to draw journey lines in the channels. Horizon defaults to 3×max(cycle).</div>`;
 }
 
@@ -422,7 +435,7 @@ $('exportBtn').addEventListener('click', ()=>{
   const blob = new Blob([payload], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'signals-config-v3p.json'; a.click();
+  a.href = url; a.download = 'signals-config-v3.json'; a.click();
   setTimeout(()=> URL.revokeObjectURL(url), 1000);
 });
 $('importInput').addEventListener('change', (e)=>{
@@ -460,7 +473,7 @@ function seed(){
   state.journeys['A->B']=22; state.journeys['B->A']=24;
   state.journeys['B->C']=26; state.journeys['C->B']=23;
   state.journeys['C->D']=28; state.journeys['D->C']=29;
-  // Demo overlays
+  // Demo overlays (include interval to show shading)
   state.overlays.push({ id:'demo1', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', opacity:0.8, showFrontBack:true, showArrivalWindow:true });
   state.overlays.push({ id:'demo2', origin:{junc:'B',stageIndex:1,mode:'point'}, dest:{junc:'A'}, color:'#1e88e5', opacity:0.9, showFrontBack:true, showArrivalWindow:true });
   state.overlays.push({ id:'demo3', origin:{junc:'C',stageIndex:0,mode:'pointEnd'}, dest:{junc:'B'}, color:'#43a047', opacity:0.85, showFrontBack:true, showArrivalWindow:true });
