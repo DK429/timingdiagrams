@@ -1,6 +1,6 @@
-// Signal Plan Checker v1.0.5
+// Signal Plan Checker v1.0.6
 const APP_NAME = 'Signal Plan Checker';
-const APP_VERSION = '1.0.5';
+const APP_VERSION = '1.0.6';
 
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
@@ -490,10 +490,12 @@ function render(){
   });
 
   // Channel 10s grids
-  for(let i=0;i<order.length-1;i++){
-    const ch = channelBox(i);
-    for(let t=0;t<=horizon;t+=10){
-      const ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:ch.y0,x2:xScale(t),y2:ch.y1,class:'channelGrid'}); s.appendChild(ln);
+  if(showMainGrid){
+    for(let i=0;i<order.length-1;i++){
+      const ch = channelBox(i);
+      for(let t=0;t<=horizon;t+=10){
+        const ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:ch.y0,x2:xScale(t),y2:ch.y1,class:'channelGrid'}); s.appendChild(ln);
+      }
     }
   }
 
@@ -593,26 +595,29 @@ function render(){
         fromF = otherEndOf(hop, fromF); fromB = otherEndOf(hop, fromB);
       }
 
-      // Arrival window band on destination (wrap-aware)
+      
+      // Arrival window band on destination (wrap-aware) using *arrival* times
       const destRowIdx = presentRowOrder().indexOf(dest.id);
       const yTop = rowY(destRowIdx)+10;
-      const a0 = moduloTime(seg.startAbs, H);
-      const a1 = moduloTime(seg.endAbs, H);
-      if(a1 >= a0){
+      // tf and tb now contain absolute arrival times after traversing the full path
+      const aS = moduloTime(tf, H);
+      const aE = moduloTime(tb, H);
+      if(aE >= aS){
         const rect = elNS('rect');
-        setAttrs(rect,{x:xScaleLocal(a0),y:yTop,width:Math.max(0,xScaleLocal(a1)-xScaleLocal(a0)),height:BAND_HEIGHT,class:'arrivalHighlight'});
+        setAttrs(rect,{x:xScaleLocal(aS),y:yTop,width:Math.max(0,xScaleLocal(aE)-xScaleLocal(aS)),height:BAND_HEIGHT,class:'arrivalHighlight'});
         rect.style.fill = ov.color; rect.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
         svgEl().appendChild(rect);
       }else{
         const r1 = elNS('rect');
-        setAttrs(r1,{x:xScaleLocal(a0),y:yTop,width:Math.max(0,xScaleLocal(H)-xScaleLocal(a0)),height:BAND_HEIGHT,class:'arrivalHighlight'});
+        setAttrs(r1,{x:xScaleLocal(aS),y:yTop,width:Math.max(0,xScaleLocal(H)-xScaleLocal(aS)),height:BAND_HEIGHT,class:'arrivalHighlight'});
         r1.style.fill = ov.color; r1.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
         svgEl().appendChild(r1);
         const r2 = elNS('rect');
-        setAttrs(r2,{x:xScaleLocal(0),y:yTop,width:Math.max(0,xScaleLocal(a1)-xScaleLocal(0)),height:BAND_HEIGHT,class:'arrivalHighlight'});
+        setAttrs(r2,{x:xScaleLocal(0),y:yTop,width:Math.max(0,xScaleLocal(aE)-xScaleLocal(0)),height:BAND_HEIGHT,class:'arrivalHighlight'});
         r2.style.fill = ov.color; r2.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
         svgEl().appendChild(r2);
       }
+
     });
   });
 
@@ -805,3 +810,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   attachSanitizers();
   seed();
 });
+
+// Re-render when toggling main grid visibility
+document.getElementById('showMainGrid')?.addEventListener('change', ()=> render());
