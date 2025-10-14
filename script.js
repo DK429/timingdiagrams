@@ -490,6 +490,20 @@ function ensurePrintStyleEl(){
   return el;
 }
 function mm(val){ return val + 'mm'; }
+function computeAutoScaleForPrint(container, rotate){
+  // Use viewport as proxy for printable page size
+  const pageW = window.innerWidth || 800;
+  const pageH = window.innerHeight || 600;
+  const cw = container.offsetWidth || container.clientWidth || 800;
+  const ch = container.offsetHeight || container.clientHeight || 600;
+  // If we rotate content, swap target page dims for fit calculation
+  const targetW = rotate ? pageH : pageW;
+  const targetH = rotate ? pageW : pageH;
+  // Leave a small padding margin inside page
+  const pad = 0.96;
+  const scale = Math.max(0.2, Math.min(2.0, pad * Math.min(targetW / cw, targetH / ch)));
+  return scale;
+}
 function applyScaleForPrint(svgEl, pct){
   // Temporarily scale SVG dimensions for printing
   const orig = { width: svgEl.getAttribute('width'), height: svgEl.getAttribute('height'), styleW: svgEl.style.width, styleH: svgEl.style.height };
@@ -540,11 +554,20 @@ function applyPrintSettings(){
 }
 document.getElementById('printBtn')?.addEventListener('click', ()=>{ 
   applyPrintSettings(); fillPrintHeaderFooter();
+  const sheet = document.getElementById('printSheet');
   const svgEl = document.getElementById('diagram');
   const pct = Number(document.getElementById('printScale')?.value || 100);
-  const restore = applyScaleForPrint(svgEl, pct);
-  const restoreTitle = ()=>{ document.title = oldTitle; window.removeEventListener('afterprint', restoreTitle); };
-  window.addEventListener('afterprint', ()=>{ restore(); });
-  setTimeout(()=>window.print(), 60);
+  const orient = (document.getElementById('printOrientation')?.value)||'portrait';
+  const rotate = (orient==='landscape');
+  document.body.classList.toggle('rotateLandscape', rotate);
+  // Let layout settle before measuring
+  requestAnimationFrame(()=>{
+    const autoScale = computeAutoScaleForPrint(sheet, rotate);
+    const manual = Math.max(0.5, Math.min(2.0, pct/100));
+    const finalScale = autoScale * manual;
+    sheet.style.transform = (rotate? 'translate(-50%,-50%) rotate(-90deg) scale('+finalScale+')' : 'translate(-50%,-50%) scale('+finalScale+')');
+    window.addEventListener('afterprint', ()=>{ sheet.style.transform=''; document.body.classList.remove('rotateLandscape'); });
+    setTimeout(()=>window.print(), 80);
+  });
 });
 seed();

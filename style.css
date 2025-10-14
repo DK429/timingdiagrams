@@ -70,3 +70,18 @@ body.print-readout-off .readout{display:none!important}
 #printFooter{border-top:1px solid #ddd; margin-top:6px}
 #printHeader .title{font-weight:600; font-size:14px}
 #printHeader .meta{opacity:.8}
+
+#printSheet{max-width: 100%; margin: 0 auto; padding: 0 6mm;}
+#plotHolder{display:flex; align-items:center; justify-content:center}
+@media print{
+  /* Hide everything except the printable sheet */
+  body *{visibility:hidden !important}
+  #printSheet, #printSheet *{visibility:visible !important}
+  #printSheet{position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);}
+}
+/* Rotation class when landscape = rotate content (not just paper) */
+.rotateLandscape #printSheet{}
+@media print{
+  .rotateLandscape #printSheet{ transform: translate(-50%,-50%) rotate(-90deg); transform-origin:center center; }
+}
+/* We'll inject scale via inline style from JS before printing */
