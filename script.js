@@ -488,7 +488,7 @@ function render(){
       if(!j){ tiles=[]; }
       else if(ov.repeatCycle){
         tiles = [];
-        const C = j.cycleTimeSec||0; const start0 = j.startTimeSec||0; const H = state.horizonSec;
+        const C = j.cycleTimeSec||0; const start0 = 0; const H = state.horizonSec;
         if(C>0){
           // find first cycle intersecting [0,H]
           let cStart = start0; while(cStart>0) cStart -= C; while(cStart + C < 0) cStart += C;
