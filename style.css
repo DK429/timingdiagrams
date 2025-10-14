@@ -70,3 +70,5 @@ html, body{overscroll-behavior: contain;}
 .debugLog .err{color:#ffb4b4}
 .debugLog .warn{color:#ffd27f}
 .debugLog .info{color:#a5d6ff}
+
+.debugLog:empty::before{content:'(no messages yet)'; color:#9aa6b2}

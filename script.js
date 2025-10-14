@@ -1,6 +1,6 @@
-// Signal Plan Checker v1.0.9
+// Signal Plan Checker v1.0.10
 const APP_NAME = 'Signal Plan Checker';
-const APP_VERSION = '1.0.9';
+const APP_VERSION = '1.0.10';
 
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
@@ -49,22 +49,28 @@ let __seeded = false;
 function buildDefaults(){
   try{
     state.junctions = [];
-    ['A','B','C','D'].forEach(id=> addJunction(id));
+    const makeJ = (id)=>({ id, name:`Junction ${id}`, cycleTimeSec:60, startTimeSec:0,
+      stages:[{label:`${id}1`,durationSec:15},{label:`${id}2`,durationSec:15},{label:`${id}3`,durationSec:15}],
+      intergreens:[{durationSec:5},{durationSec:5},{durationSec:5}] });
+    state.junctions.push(makeJ('A'), makeJ('B'), makeJ('C'), makeJ('D'));
+    state.rowOrder = ['A','B','C','D'];
     state.journeys = {
       'A->B':22,'B->A':24,
       'B->C':26,'C->B':23,
       'C->D':28,'D->C':29
     };
     setDefaultHorizon();
-    refreshOverlayPickers(); renderLegend(); updateDataValidation();
+    // render after DOM exists
+    renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); renderLegend(); updateDataValidation();
     __seeded = true;
-    logDebug('Default data seeded.', 'info');
+    logDebug('Default data seeded (direct populate).', 'info');
   }catch(e){
+    __seeded = false;
     logDebug('Seeding error: '+e.message, 'err');
   }
 }
 
-function safeBoot(){
+function safeBoot(){ logDebug('App booting...', 'info');
   try{
     if(!__seeded || !Array.isArray(state.junctions) || state.junctions.length===0){
       logDebug('SafeBoot: building defaults...', 'warn');
@@ -983,5 +989,14 @@ document.addEventListener('DOMContentLoaded', ()=>{
       state.horizonSec = num(h.value)||Math.max(60, maxCycle()+20);
       try{ render(); }catch(e){ logDebug('Horizon render error: '+e.message, 'err'); }
     }, 120);
+  });
+});
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  document.getElementById('forceInitBtn')?.addEventListener('click', ()=>{
+    try{
+      buildDefaults();
+      render();
+    }catch(e){ logDebug('Force init failed: '+e.message, 'err'); }
   });
 });
