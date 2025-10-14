@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Signals Explorer v3 — Arrows + Custom Overlays</title>
+  <title>Signals Explorer v3 — Full (DataTab Fix)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
     <h1>Signals Explorer v3</h1>
-    <p>Stage timing diagram with travel-time overlays. Now with directional arrows and custom overlays.</p>
+    <p>Timing diagram with overlays, per-row cycle markers, and print preview.</p>
   </header>
 
   <main>
@@ -64,10 +64,7 @@
               <option value="clip" selected>Clip</option>
             </select>
           </label>
-          <label>Cycle markers from
-    <select id="cycleRef"></select>
-  </label>
-</div>
+        </div>
 
         <div class="printSettings">
           <button id="previewBtn" class="secondary">Print Preview / PDF</button>
@@ -134,7 +131,7 @@
             <label>Destination <select id="coDest"></select></label>
             <label>Opacity <input id="coOpacity" type="range" min="0.1" max="1" step="0.05" value="0.8"/></label>
             <label>Color <input id="coColor" type="color" value="#9c27b0"/></label>
-<label><input id="coRepeat" type="checkbox" checked/> Repeat each cycle (relative to origin)</label>
+            <label><input id="coRepeat" type="checkbox" checked/> Repeat each cycle (anchored at 0)</label>
             <button id="addCustomOverlayBtn">Add custom</button>
           </div>
         </div>

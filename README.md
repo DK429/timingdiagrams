@@ -1,12 +1,15 @@
-# Signals Explorer v3 — Arrows + Custom Overlays
+# Signals Explorer v3 — Full (DataTab Fix)
 
-- Directional **arrowheads** on overlay lines.
-- **Custom overlays**: user specifies origin junction and absolute times (start/end in seconds) to a destination junction.
-- **Skip/Clip** overrun handling for overlays.
-- Overlays **repeat** for each stage occurrence (stage-based overlays).
-- Interval overlays are **shaded** (~15% opacity) per hop, and the destination row shows an arrival window.
-- Stage bands in **green**, labelled inside; intergreens in grey.
-- **5s ticks** around stage bands; **10s light grid** between junctions.
-- **Print Preview** window: exact paper sizes (A4/A3/Letter/Legal), true portrait/landscape, auto-fit + manual scale.
+This build fixes Data tab population and keeps all features:
 
-Open `index.html` locally in a browser. Save/load the full project state via **Save TD / Load TD**.
+- Junction editor (A–D), stages + intergreens, start offsets, cycle validation.
+- Journey matrix (directional travel times).
+- Plot: stage bars with per-stage green shades, labels; 1s short ticks + 5s long ticks; 10s channel grid.
+- **Per-row cycle markers & labels**: red cycle-end lines through each row; row-level bottom `(t mod cycle)` labels every 5s.
+- Overlays: **stage-based** and **custom** (start/end), both with directional arrowheads; interval shading and arrival windows.
+- Custom overlays can **repeat each cycle** (anchored at 0, no extra delay).
+- Overrun handling: **Skip/Clip**.
+- Save/Load `.td`, plus JSON import/export.
+- Print Preview: exact paper sizes + orientation, auto-fit with manual scale, optional legend/readout.
+
+Open `index.html` directly in your browser.

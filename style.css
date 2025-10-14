@@ -30,11 +30,12 @@ input, select, textarea{padding:8px;border:1px solid #ccc;border-radius:6px}
 svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 .readout{margin-top:8px;padding:8px;border:1px dashed #ddd;border-radius:6px;background:#fcfcfc;font-family:ui-monospace,Consolas,Monaco,monospace}
 
-.stageRect{fill:#4caf50;opacity:.9}
+.stageRect{opacity:.95}
 .intergreenRect{fill:#c7c7c7;opacity:.5}
 .gridLine{stroke:#e9e9e9;stroke-width:1}
 .channelGrid{stroke:#e9e9e9;stroke-width:1}
 .tick5{stroke:#000;stroke-width:1}
+.tick1{stroke:#000;stroke-width:1;opacity:.85}
 .axisLabel{font-size:10px;fill:#777}
 .rowLabel{font-size:12px;fill:#333}
 .coordLine{stroke:#111;stroke-width:2}
@@ -51,12 +52,9 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 #printSheet{max-width:100%; margin:0 auto; padding:0 6mm}
 #plotHolder{display:flex; align-items:center; justify-content:center}
 .printOnly{display:none}
+.cycleLine{stroke:#e53935;stroke-width:2}
+.cycleBottomLabel{font-size:10px;fill:#444}
 
 @media print{
   body{-webkit-print-color-adjust:exact; print-color-adjust:exact}
 }
-
-.tick1{stroke:#000;stroke-width:1;opacity:.85}
-
-.cycleLine{stroke:#e53935;stroke-width:2}
-.cycleBottomLabel{font-size:10px;fill:#444}
