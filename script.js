@@ -9,6 +9,7 @@ function elNS(tag){ return document.createElementNS('http://www.w3.org/2000/svg'
 function setAttrs(ele, attrs){ for(const k in attrs) ele.setAttribute(k, attrs[k]); return ele; }
 const sum = (arr, f=x=>x) => arr.reduce((a,b)=>a+f(b),0);
 const clamp = (v,min,max)=> Math.max(min, Math.min(max, v));
+function num(v){ const n = Number(v); return Number.isFinite(n) ? n : 0; }
 
 const state = {
   junctions: [], journeys: {}, horizonSec: 600, overlays: [],
@@ -26,6 +27,12 @@ document.querySelectorAll('.tab').forEach(btn=>{
 });
 
 // Helpers
+function alignIntergreens(j){
+  if(!j) return; const n = (j.stages||[]).length; j.intergreens = Array.isArray(j.intergreens)? j.intergreens : [];
+  while(j.intergreens.length < n) j.intergreens.push({durationSec:0});
+  if(j.intergreens.length > n) j.intergreens = j.intergreens.slice(0,n);
+}
+
 function getJ(id){ return state.junctions.find(j=>j.id===id); }
 function presentRowOrder(){ return state.rowOrder.filter(id => !!getJ(id)); }
 function maxCycle(){ return Math.max(...state.junctions.map(j=>j.cycleTimeSec||0), 0); }
@@ -50,7 +57,7 @@ function removeJunction(id){
 
 function renderJunctionList(){
   const container = $('junctionList'); if(!container) return; container.innerHTML='';
-  state.junctions.forEach((j)=>{
+  state.junctions.forEach((j)=>{ alignIntergreens(j);
     const card = document.createElement('div'); card.className='junctionCard';
     card.innerHTML = `
       <div class="junctionRow">
@@ -83,22 +90,26 @@ function renderJunctionList(){
     });
   });
   container.querySelectorAll('input[data-bind]').forEach(inp=>{
-    inp.addEventListener('input', ()=>{
+    const handler = ()=>{
       const j = getJ(inp.dataset.id); if(!j) return;
       if(inp.dataset.bind==='name') j.name = inp.value;
-      if(inp.dataset.bind==='start') j.startTimeSec = Number(inp.value);
-      if(inp.dataset.bind==='cycle') j.cycleTimeSec = Number(inp.value);
+      if(inp.dataset.bind==='start') j.startTimeSec = num(inp.value);
+      if(inp.dataset.bind==='cycle') j.cycleTimeSec = num(inp.value);
       rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render();
-    });
+    };
+    inp.addEventListener('input', handler);
+    inp.addEventListener('change', handler);
   });
   container.querySelectorAll('input[data-st]').forEach(inp=>{
-    inp.addEventListener('input', ()=>{
+    const handler = ()=>{
       const j = getJ(inp.dataset.id); const idx = Number(inp.dataset.idx);
       if(inp.dataset.st==='label') j.stages[idx].label = inp.value;
-      if(inp.dataset.st==='dur') j.stages[idx].durationSec = Number(inp.value);
-      if(inp.dataset.st==='ig') j.intergreens[idx].durationSec = Number(inp.value);
+      if(inp.dataset.st==='dur') j.stages[idx].durationSec = num(inp.value);
+      if(inp.dataset.st==='ig') j.intergreens[idx].durationSec = num(inp.value);
       refreshOverlayPickers(); render();
-    });
+    };
+    inp.addEventListener('input', handler);
+    inp.addEventListener('change', handler);
   });
   container.querySelectorAll('[data-add-stage]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -146,7 +157,9 @@ function rebuildJourneyMatrix(){
   });
   table.appendChild(tbody); cont.appendChild(table);
   cont.querySelectorAll('input[data-journey]').forEach(inp=>{
-    inp.addEventListener('input', ()=>{ state.journeys[inp.dataset.journey] = Number(inp.value); render(); });
+    const handler = ()=>{ state.journeys[inp.dataset.journey] = num(inp.value); render(); };
+    inp.addEventListener('input', handler);
+    inp.addEventListener('change', handler);
   });
 }
 
@@ -155,11 +168,16 @@ function validate(){
   const errors = [];
   if(state.junctions.length<2) errors.push('Add at least two junctions.');
   state.junctions.forEach(j=>{
+    alignIntergreens(j);
     if(j.stages.length===0) errors.push(`${j.name}: add at least one stage.`);
     if(j.intergreens.length!==j.stages.length) errors.push(`${j.name}: intergreens count must match stages count.`);
     if(j.cycleTimeSec<=0) errors.push(`${j.name}: cycle time must be > 0.`);
-    const total = sum(j.stages, s=>s.durationSec) + sum(j.intergreens, ig=>ig.durationSec);
-    if(total !== j.cycleTimeSec) errors.push(`${j.name}: stages + intergreens (${total}s) must equal cycle (${j.cycleTimeSec}s).`);
+    const stSum = (j.stages||[]).reduce((a,b)=> a + (Number(b.durationSec)||0), 0);
+    const igSum = (j.intergreens||[]).reduce((a,b)=> a + (Number(b.durationSec)||0), 0);
+    const total = stSum + igSum;
+    if(Number.isFinite(j.cycleTimeSec) && total !== j.cycleTimeSec){
+      errors.push(`${j.name}: stages + intergreens (${total}s = ${stSum}s + ${igSum}s) must equal cycle (${j.cycleTimeSec}s).`);
+    }
   });
   return errors;
 }
