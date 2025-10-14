@@ -1,6 +1,6 @@
-// Signal Plan Checker v1.0.1
+// Signal Plan Checker v1.0.2
 const APP_NAME = 'Signal Plan Checker';
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.2';
 
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
@@ -15,7 +15,7 @@ const num = v => { const n = Number(String(v||'').replace(/[^0-9]/g,'')); return
 function posMod(a,m){ return ((a % m) + m) % m; }
 
 const state = {
-  junctions: [], journeys: {}, horizonSec: 0, overlays: [],
+  junctions: [], journeys: {}, horizonSec: 0, horizonIsDefault: true, overlays: [],
   rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip'
 };
 
@@ -34,7 +34,7 @@ document.querySelectorAll('.tab').forEach(btn=>{
 function getJ(id){ return state.junctions.find(j=>j.id===id); }
 function presentRowOrder(){ return state.rowOrder.filter(id => !!getJ(id)); }
 function maxCycle(){ return Math.max(...state.junctions.map(j=>j.cycleTimeSec||0), 0); }
-function setDefaultHorizon(){ const def = Math.max(60, maxCycle() + 20); const inp=$('horizon'); if(inp && !num(inp.value)) inp.value = String(def); }
+function setDefaultHorizon(){ const def = Math.max(60, maxCycle() + 20); const inp=$('horizon'); if(!inp) return; if(state.horizonIsDefault || !num(inp.value)){ inp.value = String(def); state.horizonSec = def; state.horizonIsDefault = true; } }
 function stageFill(idx){
   const shades=['#1b5e20','#2e7d32','#388e3c','#43a047','#4caf50','#66bb6a','#7cb342','#8bc34a'];
   return shades[idx % shades.length];
@@ -59,8 +59,8 @@ function addJunction(id){
   if(state.junctions.length >= MAX_JUNCTIONS) return;
   // Default: valid 90s cycles
   const j = { id, name:`Junction ${id}`, cycleTimeSec:90, startTimeSec:0,
-    stages:[{label:`${id}1`,durationSec:25},{label:`${id}2`,durationSec:45},{label:`${id}3`,durationSec:10}],
-    intergreens:[{durationSec:4},{durationSec:4},{durationSec:2}] };
+    stages:[{label:`${id}1`,durationSec:30},{label:`${id}2`,durationSec:40},{label:`${id}3`,durationSec:20}],
+    intergreens:[{durationSec:0},{durationSec:0},{durationSec:0}] };
   state.junctions.push(j);
   renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render();
 }
@@ -93,7 +93,8 @@ function renderJunctionList(){
       <div class="stageBtns">
         <button type="button" class="small" data-add-stage="${j.id}">+ Add stage</button>
         ${state.junctions.length>2 ? `<button type="button" class="small" data-remove-j="${j.id}">Remove junction</button>` : ''}
-      </div>`;
+      </div>
+      <div class="totalsRow" id="tot_${j.id}" style="margin-top:6px;font-size:12px;color:#555"></div>`;
     container.appendChild(card);
     const tbody = card.querySelector(`#stBody_${j.id}`);
     j.stages.forEach((s,i)=>{
@@ -114,7 +115,7 @@ function renderJunctionList(){
       const j = getJ(inp.dataset.id); if(!j) return;
       if(inp.dataset.bind==='name') j.name = inp.value;
       if(inp.dataset.bind==='start') j.startTimeSec = num(inp.value);
-      if(inp.dataset.bind==='cycle') j.cycleTimeSec = num(inp.value);
+      if(inp.dataset.bind==='cycle') { j.cycleTimeSec = num(inp.value); if(state.horizonIsDefault){ setDefaultHorizon(); } }
       rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render();
       updateDataValidation();
     };
@@ -127,7 +128,7 @@ function renderJunctionList(){
       if(inp.dataset.st==='label') j.stages[idx].label = inp.value;
       if(inp.dataset.st==='dur') j.stages[idx].durationSec = num(inp.value);
       if(inp.dataset.st==='ig') j.intergreens[idx].durationSec = num(inp.value);
-      refreshOverlayPickers(); render(); updateDataValidation();
+      refreshOverlayPickers(); render(); updateDataValidation(); renderJunctionListTotals && renderJunctionListTotals();
     };
     inp.addEventListener('blur', commit);
     inp.addEventListener('change', commit);
@@ -145,12 +146,20 @@ function renderJunctionList(){
     btn.addEventListener('click', ()=>{
       const j = getJ(btn.dataset.delStage); const idx = Number(btn.dataset.idx);
       j.stages.splice(idx,1); j.intergreens.splice(idx,1);
-      renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation();
+      renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); renderJunctionListTotals && renderJunctionListTotals();
     });
   });
   container.querySelectorAll('[data-remove-j]').forEach(btn=>{
     btn.addEventListener('click', ()=> { removeJunction(btn.dataset.removeJ); updateDataValidation(); });
+  })
+  // Update totals rows
+  state.junctions.forEach(j=>{
+    const stSum = (j.stages||[]).reduce((a,b)=> a + (num(b.durationSec)), 0);
+    const igSum = (j.intergreens||[]).reduce((a,b)=> a + (num(b.durationSec)), 0);
+    const totEl = document.getElementById('tot_'+j.id);
+    if(totEl){ totEl.textContent = `Total used: ${stSum + igSum}s (stages ${stSum}s + intergreens ${igSum}s) / cycle ${j.cycleTimeSec}s`; }
   });
+;
 }
 $('addJunctionBtn').addEventListener('click', ()=>{
   const next = DEFAULT_IDS.find(id => !getJ(id));

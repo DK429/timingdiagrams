@@ -63,3 +63,8 @@ html, body{overscroll-behavior: contain;}
   main{padding:20px 24px}
   #diagram{height: 950px}
 }
+
+.diagramHeader .pairPickers{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.diagramHeader .pairPickers label{flex:0 0 auto}
+.diagramHeader{gap:8px}
+#plotHolder{margin-top:6px}
