@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Signals Explorer v3p (Channels + Overlays)</title>
+  <title>Signals Explorer v3p (channels)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
     <h1>Signals Explorer v3p</h1>
-    <p>Static app — open directly (no server). Multi‑row plot, channels with 10s grids, and multi‑overlays.</p>
+    <p>Multi‑row plot, shared channels with 10s grid, multi‑overlays (point or interval).</p>
   </header>
 
   <main>
@@ -69,7 +69,7 @@
             <label>Mode
               <select id="ovMode">
                 <option value="interval" selected>Interval (whole stage)</option>
-                <option value="point">Point (tOffset=0)</option>
+                <option value="point">Point (stage start)</option>
               </select>
             </label>
             <label>Destination
@@ -83,7 +83,7 @@
         </div>
       </div>
 
-      <svg id="diagram" width="100%" height="520" role="img" aria-label="Time–stage diagram"></svg>
+      <svg id="diagram" width="100%" height="900" role="img" aria-label="Time–stage diagram"></svg>
       <div id="legend" class="legend"></div>
       <div id="readout" class="readout"></div>
     </section>

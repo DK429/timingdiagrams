@@ -1,4 +1,4 @@
-// v3p: Channels + 10s channel grids + multi-overlays
+// v3p (fix2): doubled height + correct hop channel + diagonal lines
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
 const svg = () => document.getElementById('diagram');
@@ -11,10 +11,10 @@ function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 const sum = (arr, f=x=>x) => arr.reduce((a,b)=>a+f(b),0);
 
 const state = {
-  junctions: [],                 // [{id,name,cycleTimeSec,startTimeSec,stages,intergreens}]
-  journeys: {},                  // key "A->B": seconds
+  junctions: [],
+  journeys: {},
   horizonSec: 600,
-  overlays: [],                  // overlays to draw
+  overlays: [],
   rowOrder: ['A','B','C','D'],
   showMainGrid: true,
 };
@@ -161,7 +161,6 @@ function validate(){
     const total = sum(j.stages, s=>s.durationSec) + sum(j.intergreens, ig=>ig.durationSec);
     if(total !== j.cycleTimeSec) errors.push(`${j.name}: stages + intergreens (${total}s) must equal cycle (${j.cycleTimeSec}s).`);
   });
-  // overlays must have journey times for every hop; validated in draw step too
   return errors;
 }
 
@@ -186,12 +185,12 @@ function tileBands(j, horizon){
   return tiles.filter(b=>b.endAbs>=start && b.startAbs<=end);
 }
 
-// Plot geometry
-const MARGIN_LEFT=60, MARGIN_TOP=20, BAND_HEIGHT=30, ROW_GAP=70, ROW_LABEL_YOFF=18;
+// Plot geometry (doubled vertical spacing)
+const MARGIN_LEFT=60, MARGIN_TOP=20, BAND_HEIGHT=30, ROW_GAP=120, ROW_LABEL_YOFF=18;
 function rowY(index){ return MARGIN_TOP + index*(BAND_HEIGHT + ROW_GAP); }
 function channelBox(i){ // channel between row i and i+1
-  const yTop = rowY(i) + 10 + BAND_HEIGHT + 6;
-  const yBot = rowY(i+1) - 6;
+  const yTop = rowY(i) + 10 + BAND_HEIGHT + 10;
+  const yBot = rowY(i+1) - 10;
   return {y0:yTop, y1:yBot, mid:(yTop+yBot)/2};
 }
 
@@ -257,7 +256,10 @@ function channelPath(aId, bId){
   const step = ai < bi ? 1 : -1;
   for(let i=ai; i!==bi; i+=step){
     const id1 = order[i], id2 = order[i+step];
-    path.push(`${Math.min(id1,id2) === id1 ? id1 : id2}-${Math.max(id1,id2) === id2 ? id2 : id1}`);
+    // normalized id like 'B-C' (top-down order)
+    const top = order.indexOf(id1) < order.indexOf(id2) ? id1 : id2;
+    const bottom = (top===id1) ? id2 : id1;
+    path.push(`${top}-${bottom}`);
   }
   return path;
 }
@@ -272,8 +274,8 @@ function render(){
   const horizon = state.horizonSec = Number($('horizon').value) || 600;
   const showMainGrid = state.showMainGrid = $('showMainGrid').checked;
   const width = s.clientWidth || s.parentElement.clientWidth || 960;
-  const HEIGHT = rowY(presentRowOrder().length - 1) + BAND_HEIGHT + 20;
-  s.setAttribute('height', String(HEIGHT));
+  const HEIGHT = rowY(presentRowOrder().length - 1) + BAND_HEIGHT + 80;
+  s.setAttribute('height', String(HEIGHT)); // big canvas (height already large via ROW_GAP and +80)
   const xScale = t => MARGIN_LEFT + (t/horizon)*(width - MARGIN_LEFT - 10);
 
   // Main grid (optional)
@@ -326,17 +328,17 @@ function render(){
     const tBack  = Math.min(horizon, match.endAbs);
     const path = channelPath(origin.id, dest.id); if(path.length===0) return;
 
-    // per-hop draw (point: use tFront; interval: draw both front/back)
     const hopDraw = (t0, fromId, hopId, color, isBack=false) => {
       const toId = otherEndOf(hopId, fromId);
       const key = `${fromId}->${toId}`;
       if(!(key in state.journeys)) return t0; // skip if missing
       const t1 = t0 + state.journeys[key];
-      // draw within corresponding channel strip
+      // channel from hopId (e.g., 'B-C')
       const order = presentRowOrder();
-      const i = Math.min(order.indexOf(fromId), order.indexOf(toId));
+      const [hA,hB] = hopId.split('-');
+      const i = Math.min(order.indexOf(hA), order.indexOf(hB));
       const ch = channelBox(i);
-      // Diagonal: if from is above to, go top→bottom; if from is below to, go bottom→top.
+      // Diagonal across channel: top->bottom if from is above to; else bottom->top
       const fromAbove = order.indexOf(fromId) < order.indexOf(toId);
       const offset = (typeof (ov.laneOffset||0) === 'number') ? (ov.laneOffset||0) : 0;
       const yStart = fromAbove ? (ch.y0 + offset) : (ch.y1 + offset);
@@ -366,18 +368,18 @@ function render(){
       // Highlight arrival window on destination row
       const rowIndex = presentRowOrder().indexOf(dest.id);
       const yTop = rowY(rowIndex)+10;
+      const x0Abs = Math.max(0, Math.min(tf,tb));
+      const x1Abs = Math.min(horizon, Math.max(tf,tb));
       const rect = elNS('rect');
-      const x0 = Math.max(0, Math.min(tf,tb));
-      const x1 = Math.min(horizon, Math.max(tf,tb));
-      setAttrs(rect,{x:xScale(x0),y:yTop,width:Math.max(0,xScale(x1)-xScale(x0)),height:BAND_HEIGHT,class:'arrivalHighlight'});
-      rect.style.fill = ov.color; rect.style.opacity = 0.2; // tint to overlay color
+      setAttrs(rect,{x:xScale(x0Abs),y:yTop,width:Math.max(0,xScale(x1Abs)-xScale(x0Abs)),height:BAND_HEIGHT,class:'arrivalHighlight'});
+      rect.style.fill = ov.color; rect.style.opacity = 0.2;
       s.appendChild(rect);
     }
   });
 
   readoutEl().innerHTML = state.overlays.length
     ? `<div>${state.overlays.length} overlay(s) rendered. Add more or remove from the legend.</div>`
-    : `<div>Tip: add overlays to draw journey lines in the channels. Non‑adjacent pairs will route across multiple channels.</div>`;
+    : `<div>Tip: add overlays to draw journey lines in the channels. Non‑adjacent pairs route via multiple channels.</div>`;
 }
 
 // Buttons
@@ -422,9 +424,8 @@ $('importInput').addEventListener('change', (e)=>{
 });
 $('showMainGrid').addEventListener('change', render);
 
-// Seed initial A,B; journeys and demo overlay
+// Seed A & B with valid sums; set journeys and a demo overlay
 addJunction('A'); addJunction('B');
-
 // Make Junction B total 88s (25+45+10 + 4+2+2)
 const JB = getJ('B');
 JB.startTimeSec = 12;
@@ -433,7 +434,6 @@ JB.stages = [{label:'B1',durationSec:25},{label:'B2',durationSec:45},{label:'B3'
 JB.intergreens = [{durationSec:4},{durationSec:2},{durationSec:2}];
 
 state.journeys['A->B'] = 22; state.journeys['B->A'] = 24;
-
 // Demo overlay: A:S1 interval → B
 state.overlays.push({ id:'demo1', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', showFrontBack:true, showArrivalWindow:true });
 renderLegend(); refreshOverlayPickers(); render();
