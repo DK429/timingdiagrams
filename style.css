@@ -26,7 +26,6 @@ input, select, textarea{padding:8px;border:1px solid #ccc;border-radius:6px}
 
 .dataLayout{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .diagramHeader{display:flex;flex-direction:column;gap:10px;align-items:flex-start;margin-bottom:8px}
-.printSettings{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
 svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 .readout{margin-top:8px;padding:8px;border:1px dashed #ddd;border-radius:6px;background:#fcfcfc;font-family:ui-monospace,Consolas,Monaco,monospace}
 
@@ -49,14 +48,8 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 .legend .swatch{width:12px;height:12px;border-radius:3px;border:1px solid #999}
 .overlayForm{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
 
-#printSheet{max-width:100%; margin:0 auto; padding:0 6mm}
-#plotHolder{display:flex; align-items:center; justify-content:center}
-.printOnly{display:none}
-.cycleLine{stroke:#e53935;stroke-width:2}
-.cycleBottomLabel{font-size:10px;fill:#444}
-
-@media print{
-  body{-webkit-print-color-adjust:exact; print-color-adjust:exact}
-}
+.stageTimeLabel{font-size:10px; fill:#444; text-anchor:middle}
+.offsetLabel{font-size:11px; fill:#666}
+.channelTT{font-size:11px; fill:#333}
 
 html, body{overscroll-behavior: contain;}
