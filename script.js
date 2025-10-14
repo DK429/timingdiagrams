@@ -1,17 +1,18 @@
-// v3 repeat + shade: repeating overlays each occurrence + hop shading @15%, stage-end points, 5s ticks, auto horizon
+// v3 fixed: Clip/Skip + robust Print Preview
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
-const svg = () => document.getElementById('diagram');
+const svgEl = () => document.getElementById('diagram');
 const readoutEl = () => document.getElementById('readout');
 const legendEl = () => document.getElementById('legend');
 function $(id){ return document.getElementById(id); }
 function elNS(tag){ return document.createElementNS('http://www.w3.org/2000/svg', tag); }
 function setAttrs(ele, attrs){ for(const k in attrs) ele.setAttribute(k, attrs[k]); return ele; }
 const sum = (arr, f=x=>x) => arr.reduce((a,b)=>a+f(b),0);
+const clamp = (v,min,max)=> Math.max(min, Math.min(max, v));
 
 const state = {
   junctions: [], journeys: {}, horizonSec: 600, overlays: [],
-  rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'skip',
+  rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip'
 };
 
 // Tabs
@@ -256,7 +257,7 @@ function otherEndOf(channelId, current){ const [x,y] = channelId.split('-'); ret
 
 // TD save/load
 function buildTdPayload(){
-  return { version:'v3-td-1', junctions:state.junctions, journeys:state.journeys, horizonSec:state.horizonSec, rowOrder:state.rowOrder, overlays:state.overlays, showMainGrid:state.showMainGrid };
+  return { version:'v3-td-clip-preview', junctions:state.junctions, journeys:state.journeys, horizonSec:state.horizonSec, rowOrder:state.rowOrder, overlays:state.overlays, showMainGrid:state.showMainGrid, overrunMode: state.overrunMode };
 }
 function loadTdPayload(obj){
   if(!obj || typeof obj!=='object') throw new Error('Invalid TD file.');
@@ -266,6 +267,7 @@ function loadTdPayload(obj){
   state.rowOrder = obj.rowOrder ?? state.rowOrder;
   state.overlays = obj.overlays ?? state.overlays;
   state.showMainGrid = obj.showMainGrid ?? state.showMainGrid;
+  state.overrunMode = obj.overrunMode ?? state.overrunMode;
   renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); renderLegend(); render();
 }
 document.getElementById('saveTdBtn').addEventListener('click', ()=>{
@@ -284,8 +286,8 @@ document.getElementById('loadTdInput').addEventListener('change', (e)=>{
 
 // Draw
 function render(){
-  const s = svg(); s.innerHTML='';
-  setDefaultHorizon();
+  const s = svgEl(); s.innerHTML='';
+  $('overrunMode').value = state.overrunMode;
   const horizon = state.horizonSec = Number($('horizon').value) || Math.max(60, 3*maxCycle());
   const showMainGrid = state.showMainGrid = $('showMainGrid').checked;
   const width = s.clientWidth || s.parentElement.clientWidth || 960;
@@ -342,14 +344,18 @@ function render(){
     }
   }
 
-  // Overlays — repeat for all occurrences; shade interval area per hop (15%)
+  // Overlays — repeat for all occurrences; robust Skip/Clip
   state.overlays.forEach(ov=>{
     const origin = getJ(ov.origin.junc), dest = getJ(ov.dest.junc);
     if(!origin || !dest) return;
     const path = channelPath(origin.id, dest.id); if(path.length===0) return;
-    const tiles = (state.overrunMode==='skip')
-      ? tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label && b.startAbs>=0 && b.endAbs<=horizon)
-      : tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label && b.endAbs>0 && b.startAbs<horizon);
+
+    let tiles = tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label);
+    if(state.overrunMode==='skip'){
+      tiles = tiles.filter(b=>b.startAbs>=0 && b.endAbs<=horizon);
+    }else{ // clip
+      tiles = tiles.filter(b=>b.endAbs>0 && b.startAbs<horizon);
+    }
     const mode = ov.origin.mode;
 
     const hopDraw = (t0, fromId, hopId, color, isBack=false) => {
@@ -362,19 +368,22 @@ function render(){
       const i = Math.min(order.indexOf(hA), order.indexOf(hB));
       const ch = channelBox(i);
       const fromAbove = order.indexOf(fromId) < order.indexOf(toId);
-      const offset = (typeof (ov.laneOffset||0) === 'number') ? (ov.laneOffset||0) : 0;
-      const yStart = fromAbove ? (ch.y0 + offset) : (ch.y1 + offset);
-      const yEnd   = fromAbove ? (ch.y1 + offset) : (ch.y0 + offset);
+      const yStart = fromAbove ? ch.y0 : ch.y1;
+      const yEnd   = fromAbove ? ch.y1 : ch.y0;
+      const x1 = xScale(state.overrunMode==='clip' ? clamp(t0,0,horizon) : t0);
+      const x2 = xScale(state.overrunMode==='clip' ? clamp(t1,0,horizon) : t1);
       const line = elNS('line');
-      setAttrs(line,{x1:xScale(t0),y1:yStart,x2:xScale(t1),y2:yEnd,class:`coordLine ${isBack?'back':''}`});
+      setAttrs(line,{x1:x1,y1:yStart,x2:x2,y2:yEnd,class:`coordLine ${isBack?'back':''}`});
       line.style.stroke = ov.color; line.style.opacity = (typeof ov.opacity==='number'? ov.opacity : 0.8);
       s.appendChild(line);
       return {t1, yStart, yEnd};
     };
 
     tiles.forEach(match => {
-      const tFront = Math.max(0, match.startAbs);
-      const tBack  = Math.min(horizon, match.endAbs);
+      const rawStart = match.startAbs, rawEnd = match.endAbs;
+      const tFront = (state.overrunMode==='clip') ? clamp(rawStart, 0, horizon) : rawStart;
+      const tBack  = (state.overrunMode==='clip') ? clamp(rawEnd,   0, horizon) : rawEnd;
+
       if(mode==='point' || mode==='pointEnd'){
         const tStartOrEnd = (mode==='point') ? tFront : tBack;
         let t = tStartOrEnd, from = origin.id;
@@ -382,15 +391,17 @@ function render(){
           const res = hopDraw(t, from, hop, ov.color, false);
           t = res.t1; from = otherEndOf(hop, from);
         }
-      }else{ // interval with shading per hop
+      }else{ // interval shading per hop
         let tf = tFront, tb = tBack, fromF = origin.id, fromB = origin.id;
         const quads = [];
         for(const hop of path){
           const resF = hopDraw(tf, fromF, hop, ov.color, false);
           const resB = hopDraw(tb, fromB, hop, ov.color, true);
           if(resF.yStart!==null && resB.yStart!==null){
-            quads.push({ x1:xScale(tf), y1:resF.yStart, x2:xScale(resF.t1), y2:resF.yEnd,
-                         x3:xScale(resB.t1), y3:resB.yEnd, x4:xScale(tb), y4:resB.yStart });
+            quads.push({ x1:xScale(state.overrunMode==='clip'? clamp(tf,0,horizon):tf), y1:resF.yStart,
+                         x2:xScale(state.overrunMode==='clip'? clamp(resF.t1,0,horizon):resF.t1), y2:resF.yEnd,
+                         x3:xScale(state.overrunMode==='clip'? clamp(resB.t1,0,horizon):resB.t1), y3:resB.yEnd,
+                         x4:xScale(state.overrunMode==='clip'? clamp(tb,0,horizon):tb), y4:resB.yStart });
           }
           tf = resF.t1; tb = resB.t1;
           fromF = otherEndOf(hop, fromF); fromB = otherEndOf(hop, fromB);
@@ -400,11 +411,11 @@ function render(){
           const pts = `${q.x1},${q.y1} ${q.x2},${q.y2} ${q.x3},${q.y3} ${q.x4},${q.y4}`;
           setAttrs(poly,{points:pts}); poly.setAttribute('fill', ov.color); poly.setAttribute('opacity','0.15'); s.appendChild(poly);
         });
-        // Destination arrival window (kept)
+        // Destination arrival window (clipped if needed)
         const rowIndex = presentRowOrder().indexOf(dest.id);
         const yTop = rowY(rowIndex)+10;
-        const x0Abs = Math.max(0, Math.min(tf,tb));
-        const x1Abs = Math.min(horizon, Math.max(tf,tb));
+        const x0Abs = (state.overrunMode==='clip') ? clamp(Math.min(tf,tb),0,horizon) : Math.min(tf,tb);
+        const x1Abs = (state.overrunMode==='clip') ? clamp(Math.max(tf,tb),0,horizon) : Math.max(tf,tb);
         const rect = elNS('rect');
         setAttrs(rect,{x:xScale(x0Abs),y:yTop,width:Math.max(0,xScale(x1Abs)-xScale(x0Abs)),height:BAND_HEIGHT,class:'arrivalHighlight'});
         rect.style.fill = ov.color; rect.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
@@ -414,8 +425,8 @@ function render(){
   });
 
   readoutEl().innerHTML = state.overlays.length
-    ? `<div>${state.overlays.length} overlay(s) rendered across all occurrences.</div>`
-    : `<div>Tip: add overlays to draw journey lines in the channels. Horizon defaults to 3×max(cycle).</div>`;
+    ? `<div>${state.overlays.length} overlay(s) rendered. Overruns: <b>${state.overrunMode}</b></div>`
+    : `<div>Tip: add overlays to draw journey lines. Horizon defaults to 3×max(cycle).</div>`;
 }
 
 // Buttons
@@ -450,6 +461,7 @@ $('importInput').addEventListener('change', (e)=>{
       state.journeys = obj.journeys ?? state.journeys;
       state.horizonSec = obj.horizonSec ?? state.horizonSec;
       state.overlays = obj.overlays ?? state.overlays;
+      state.overrunMode = obj.overrunMode ?? state.overrunMode;
       renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); renderLegend(); render();
       readoutEl().innerHTML = `<div>Imported config.</div>`;
     }catch(err){
@@ -461,113 +473,109 @@ $('importInput').addEventListener('change', (e)=>{
 $('showMainGrid').addEventListener('change', render);
 $('overrunMode').addEventListener('change', ()=>{ state.overrunMode = $('overrunMode').value; render(); });
 
-// Seed A..D and adjacent journeys
+// Print preview window: exact paper size + orientation
+function paperSizeMm(paper){
+  switch(paper){
+    case 'A3': return {w: 297, h: 420};
+    case 'A4': return {w: 210, h: 297};
+    case 'Legal': return {w: 215.9, h: 355.6};
+    case 'Letter': default: return {w: 215.9, h: 279.4};
+  }
+}
+function openPreview(){
+  const paper = $('printPaper').value;
+  const orient = $('printOrientation').value; // portrait | landscape
+  const margins = $('printMargins').value;
+  const legendOn = $('printLegend').checked;
+  const readoutOn = $('printReadout').checked;
+  const scalePct = Number($('printScale').value||'100');
+  const title = ($('printTitle').value||'').trim();
+  const notes = ($('printNotes').value||'').trim();
+
+  const mm = paperSizeMm(paper);
+  const pageWmm = orient==='landscape' ? mm.h : mm.w;
+  const pageHmm = orient==='landscape' ? mm.w : mm.h;
+  const marginMap = { default: 10, none: 0, narrow: 6, wide: 20 };
+  const marginMm = marginMap[margins] ?? 10;
+
+  const sheet = document.getElementById('printSheet').cloneNode(true);
+  sheet.querySelector('#printHeader')?.classList.remove('printOnly');
+  sheet.querySelector('#printFooter')?.classList.remove('printOnly');
+  const order = presentRowOrder().join(' → ');
+  const dateStr = new Date().toLocaleString();
+  sheet.querySelector('#printHeader').innerHTML =
+    `<div class='title'>${title || 'Signals timing diagram'}</div>`+
+    `<div class='meta'>Rows: ${order} &nbsp;&nbsp; Date: ${dateStr}</div>`+
+    (notes? `<div class='notes'>${notes}</div>` : '');
+  sheet.querySelector('#printFooter').innerHTML =
+    `<div>Horizon: ${$('horizon').value || ''} s &nbsp;&nbsp; Overlays: ${state.overlays.length}</div>`;
+
+  if(legendOn) sheet.appendChild(legendEl().cloneNode(true));
+  if(readoutOn) sheet.appendChild(readoutEl().cloneNode(true));
+
+  const svg = svgEl().cloneNode(true);
+  sheet.querySelector('#plotHolder').innerHTML = '';
+  sheet.querySelector('#plotHolder').appendChild(svg);
+
+  const w = window.open('', '_blank');
+  const css = `
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    #page{width:${pageWmm}mm;height:${pageHmm}mm;margin:0 auto;display:flex;align-items:stretch;justify-content:center;padding:${marginMm}mm}
+    #sheet{width:100%;height:100%;display:flex;flex-direction:column}
+    #sheet .title{font-weight:600;font-size:14px}
+    #sheet .meta{opacity:.8;font-size:12px;margin-bottom:4px}
+    #sheet #plotHolder{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    #sheet svg{max-width:100%;max-height:100%}
+    @page { size: ${paper} ${orient}; margin: 0; }
+    @media print{ body{-webkit-print-color-adjust:exact; print-color-adjust:exact} }
+  `;
+  const manualScale = Math.max(0.5, Math.min(2.0, scalePct/100));
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Print Preview</title><style>${css}</style></head><body>
+    <div id="page"><div id="sheet">${sheet.innerHTML}</div></div>
+    <script>
+      (function(){
+        const svg = document.querySelector('#sheet svg');
+        const holder = document.querySelector('#sheet #plotHolder');
+        function fit(){
+          const bw = holder.clientWidth, bh = holder.clientHeight;
+          if(!bw||!bh) return;
+          const bb = svg.getBBox ? svg.getBBox() : null;
+          const sw = (bb && bb.width) ? bb.width : svg.getBoundingClientRect().width || bw;
+          const sh = (bb && bb.height)? bb.height: svg.getBoundingClientRect().height || bh;
+          const s = Math.min(bw/sw, bh/sh) * ${manualScale};
+          svg.style.transformOrigin = 'center center';
+          svg.style.transform = 'scale('+s+')';
+        }
+        window.addEventListener('load', fit);
+        window.addEventListener('resize', fit);
+        setTimeout(fit, 60);
+        window.fit = fit;
+        // trigger print automatically after sizing
+        setTimeout(()=>window.print(), 120);
+      })();
+    </script>
+  </body></html>`;
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+$('previewBtn').addEventListener('click', openPreview);
+
+// Seed A..D and sample journeys
 function seed(){
   ['A','B','C','D'].forEach(id=> addJunction(id));
-  // Adjust B to 88s
   const JB = getJ('B'); JB.startTimeSec = 12; JB.cycleTimeSec = 88;
   JB.stages = [{label:'B1',durationSec:25},{label:'B2',durationSec:45},{label:'B3',durationSec:10}];
   JB.intergreens = [{durationSec:4},{durationSec:2},{durationSec:2}];
-  // D timings (92)
   const JD = getJ('D'); JD.startTimeSec = 6; JD.cycleTimeSec = 92;
   JD.stages = [{label:'D1',durationSec:30},{label:'D2',durationSec:44},{label:'D3',durationSec:10}];
   JD.intergreens = [{durationSec:3},{durationSec:3},{durationSec:2}];
-  // Journeys
   state.journeys['A->B']=22; state.journeys['B->A']=24;
   state.journeys['B->C']=26; state.journeys['C->B']=23;
   state.journeys['C->D']=28; state.journeys['D->C']=29;
-  // Demo overlays (include interval to show shading)
-  state.overlays.push({ id:'demo1', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', opacity:0.8, showFrontBack:true, showArrivalWindow:true });
-  state.overlays.push({ id:'demo2', origin:{junc:'B',stageIndex:1,mode:'point'}, dest:{junc:'A'}, color:'#1e88e5', opacity:0.9, showFrontBack:true, showArrivalWindow:true });
-  state.overlays.push({ id:'demo3', origin:{junc:'C',stageIndex:0,mode:'pointEnd'}, dest:{junc:'B'}, color:'#43a047', opacity:0.85, showFrontBack:true, showArrivalWindow:true });
+  state.overlays.push({ id:'demo1', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', opacity:0.8 });
+  state.overlays.push({ id:'demo2', origin:{junc:'B',stageIndex:1,mode:'point'}, dest:{junc:'A'}, color:'#1e88e5', opacity:0.9 });
+  state.overlays.push({ id:'demo3', origin:{junc:'C',stageIndex:0,mode:'pointEnd'}, dest:{junc:'B'}, color:'#43a047', opacity:0.85 });
   setDefaultHorizon(); renderLegend(); render();
 }
-
-// --- Print: dynamic @page CSS + toggles ---
-function ensurePrintStyleEl(){
-  let el = document.getElementById('printDynamic');
-  if(!el){ el = document.createElement('style'); el.id='printDynamic'; document.head.appendChild(el); }
-  return el;
-}
-function mm(val){ return val + 'mm'; }
-function computeAutoScaleForPrint(container, rotate){
-  // Use viewport as proxy for printable page size
-  const pageW = window.innerWidth || 800;
-  const pageH = window.innerHeight || 600;
-  const cw = container.offsetWidth || container.clientWidth || 800;
-  const ch = container.offsetHeight || container.clientHeight || 600;
-  // If we rotate content, swap target page dims for fit calculation
-  const targetW = rotate ? pageH : pageW;
-  const targetH = rotate ? pageW : pageH;
-  // Leave a small padding margin inside page
-  const pad = 0.96;
-  const scale = Math.max(0.2, Math.min(2.0, pad * Math.min(targetW / cw, targetH / ch)));
-  return scale;
-}
-function applyScaleForPrint(svgEl, pct){
-  // Temporarily scale SVG dimensions for printing
-  const orig = { width: svgEl.getAttribute('width'), height: svgEl.getAttribute('height'), styleW: svgEl.style.width, styleH: svgEl.style.height };
-  const cw = svgEl.clientWidth || svgEl.parentElement.clientWidth || 960;
-  const ch = svgEl.clientHeight || parseFloat(svgEl.getAttribute('height')) || 900;
-  const scale = Math.max(0.5, Math.min(2.0, pct/100));
-  svgEl.style.width = (cw*scale) + 'px';
-  svgEl.style.height = (ch*scale) + 'px';
-  return ()=>{ svgEl.style.width = orig.styleW || ''; svgEl.style.height = orig.styleH || ''; if(orig.width) svgEl.setAttribute('width', orig.width); if(orig.height) svgEl.setAttribute('height', orig.height); };
-}
-function fillPrintHeaderFooter(){
-  const header = document.getElementById('printHeader');
-  const footer = document.getElementById('printFooter');
-  if(!header || !footer) return;
-  const title = (document.getElementById('printTitle')?.value || '').trim();
-  const notes = (document.getElementById('printNotes')?.value || '').trim();
-  const order = presentRowOrder().join(' → ');
-  const now = new Date();
-  const dateStr = now.toLocaleString();
-  header.innerHTML = `<div class='title'>${title || 'Signals timing diagram'}</div>`+
-                     `<div class='meta'>Rows: ${order} &nbsp;&nbsp; Date: ${dateStr}</div>`+
-                     (notes? `<div class='notes'>${notes}</div>` : '');
-  footer.innerHTML = `<div>Horizon: ${document.getElementById('horizon').value || ''} s &nbsp;&nbsp; Overlays: ${state.overlays.length}</div>`;
-}
-function applyPrintSettings(){
-  const paper = (document.getElementById('printPaper')?.value)||'A4';
-  const orient = (document.getElementById('printOrientation')?.value)||'portrait';
-  const margins = (document.getElementById('printMargins')?.value)||'default';
-  const legendOn = !!document.getElementById('printLegend')?.checked;
-  const readoutOn = !!document.getElementById('printReadout')?.checked;
-
-  const marginMap = { default: '12mm', none: '0', narrow: '6mm', wide: '20mm' };
-  const margin = marginMap[margins] || '12mm';
-
-  const el = ensurePrintStyleEl();
-  el.textContent = `@page { size: ${paper} ${orient}; margin: ${margin}; }`;
-
-  document.body.classList.toggle('print-legend-off', !legendOn);
-  document.body.classList.toggle('print-readout-off', !readoutOn);
-
-  // Suggest filename via title (browser may use it)
-  const oldTitle = document.title;
-  const order = presentRowOrder().join('');
-  document.title = `signals-plot_${order}_${paper}_${orient}`;
-  // Restore title after printing
-  const restore = () => { document.title = oldTitle; window.removeEventListener('afterprint', restore); }
-  window.addEventListener('afterprint', restore);
-}
-document.getElementById('printBtn')?.addEventListener('click', ()=>{ 
-  applyPrintSettings(); fillPrintHeaderFooter();
-  const sheet = document.getElementById('printSheet');
-  const svgEl = document.getElementById('diagram');
-  const pct = Number(document.getElementById('printScale')?.value || 100);
-  const orient = (document.getElementById('printOrientation')?.value)||'portrait';
-  const rotate = (orient==='landscape');
-  document.body.classList.toggle('rotateLandscape', rotate);
-  // Let layout settle before measuring
-  requestAnimationFrame(()=>{
-    const autoScale = computeAutoScaleForPrint(sheet, rotate);
-    const manual = Math.max(0.5, Math.min(2.0, pct/100));
-    const finalScale = autoScale * manual;
-    sheet.style.transform = (rotate? 'translate(-50%,-50%) rotate(-90deg) scale('+finalScale+')' : 'translate(-50%,-50%) scale('+finalScale+')');
-    window.addEventListener('afterprint', ()=>{ sheet.style.transform=''; document.body.classList.remove('rotateLandscape'); });
-    setTimeout(()=>window.print(), 80);
-  });
-});
 seed();

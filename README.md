@@ -1,7 +1,14 @@
-# Signals Explorer v3 — repeat + shaded intervals
+# Signals Explorer v3 — Clip/Skip + Print Preview (fixed)
 
-- Overlays now **repeat for every occurrence** of the chosen stage across the horizon.
-- For **Interval (whole stage)** overlays, the area between the front/back lines is **shaded per hop** (≈15% opacity).
-- Still includes: channels (shared A–B, B–C, C–D), diagonal lines, 5‑s ticks around junction bands, per‑overlay opacity, and TD save/load.
+## Fixes
+- **Clip/Skip overlays** now behave correctly:
+  - **Skip**: only renders occurrences fully inside the horizon.
+  - **Clip**: includes partial occurrences and clamps lines, shaded quads, and arrival windows to the horizon.
 
-Open `index.html` (no server). Adjust journeys, cycles, stages in the Data tab; add overlays in Plot tab.
+## Printing (accurate PDF)
+- **Print Preview** opens a clean window with ONLY the plot sheet (header + diagram + footer).
+- Exact **paper sizes** (A4/A3/Letter/Legal) and **true** portrait/landscape layout.
+- **Auto-fit** the SVG to the printable area with an optional **Scale** multiplier (80–140%).
+- Optional **Legend** and **Readout** can be included on the sheet.
+
+Open `index.html` locally in a browser.
