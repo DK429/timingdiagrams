@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Signal Plan Checker v1.0.18</title>
+<title>Signal Plan Checker v1.0.19</title>
 <style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#1b1b1b}
 header{padding:16px 20px;border-bottom:1px solid #eee;background:#fafafa}
@@ -59,7 +59,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 <body>
 <header>
   <h1>Signal Plan Checker</h1>
-  <p>v1.0.18 — single-file build for iPad; timing diagrams with overlays, per-row cycle markers, and debug log.</p>
+  <p>v1.0.19 — single-file build for iPad; timing diagrams with overlays, per-row cycle markers, and debug log.</p>
 </header>
 
 <main>
@@ -88,9 +88,9 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
       </div>
     </div>
     <div class="buttons">
-      <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button> <button type="button" id="forceInitBtn" class="small">Force init</button>
+      <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button> <button type="button" id="forceInitBtn" class="small" onclick="window.__forceInit && window.__forceInit()">Force init</button>
       <button type="button" id="validateBtn">Validate</button>
-      <span class="version">v1.0.18</span>
+      <span class="version">v1.0.19</span>
     </div>
     <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -187,7 +187,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 </main>
 
 <footer>
-  <small>© 2025 — Signal Plan Checker v1.0.18</small>
+  <small>© 2025 — Signal Plan Checker v1.0.19</small>
 </footer>
 
 <script>
@@ -647,7 +647,66 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
   });
 
 })();
+  
+  // ==== Earliest possible logger (shows even if debug UI hasn't rendered) ====
+  (function(){
+    function injectBanner(msg){
+      try{
+        var el = document.getElementById('debugLog');
+        if(el){
+          var div=document.createElement('div'); div.className='warn'; div.textContent='[early] '+msg; el.appendChild(div);
+        }else{
+          var b = document.getElementById('__early_banner');
+          if(!b){
+            b = document.createElement('div');
+            b.id='__early_banner';
+            b.style.position='fixed'; b.style.bottom='8px'; b.style.left='8px'; b.style.zIndex='99999';
+            b.style.background='#0d1117'; b.style.color='#ffd27f'; b.style.padding='6px 8px'; b.style.borderRadius='6px';
+            b.style.fontFamily='ui-monospace,Consolas,Monaco,monospace'; b.style.fontSize='12px';
+            document.body.appendChild(b);
+          }
+          b.textContent=msg;
+          setTimeout(function(){ if(b && b.parentNode) b.parentNode.removeChild(b); }, 4000);
+        }
+      }catch(e){/* ignore */}
+    }
+    injectBanner('script loaded; scheduling init');
+    window.__earlyLog = injectBanner;
+  })();
+
   // ==== Robust boot sequence (guaranteed) ====
+  function __safeInit(){
+    try{
+      if(window.__earlyLog) window.__earlyLog('init start');
+      log('Booting…', 'info');
+      if(!state || !state.junctions){ log('State missing', 'err'); return; }
+      if(!state.junctions.length){ buildDefaults(); }
+      renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); renderLegend(); setDefaultHorizon(); render(); updateDataValidation();
+      log('Ready.', 'info');
+      if(window.__earlyLog) window.__earlyLog('init done');
+    }catch(e){
+      var box=document.getElementById('debugLog');
+      if(box){ var div=document.createElement('div'); div.className='err'; div.textContent='Init error: '+e.message; box.appendChild(div); }
+      if(window.__earlyLog) window.__earlyLog('init error: '+e.message);
+    }
+  }
+  window.__forceInit = __safeInit;
+
+  document.addEventListener('DOMContentLoaded', function(){
+    try{
+      if(window.__earlyLog) window.__earlyLog('DOMContentLoaded');
+      __safeInit();
+      // Retry attempts in case something wasn't ready
+      setTimeout(__safeInit, 100);
+      setTimeout(__safeInit, 500);
+      setTimeout(__safeInit, 1500);
+    }catch(e){
+      var box=document.getElementById('debugLog');
+      if(box){ var div=document.createElement('div'); div.className='err'; div.textContent='DOMContentLoaded error: '+e.message; box.appendChild(div); }
+      if(window.__earlyLog) window.__earlyLog('DOMContentLoaded error: '+e.message);
+    }
+  });
+
   function __safeInit(){
     try{
       log('Booting…', 'info');
