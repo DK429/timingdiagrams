@@ -1,6 +1,6 @@
-// Signal Plan Checker v1.0.4
+// Signal Plan Checker v1.0.5
 const APP_NAME = 'Signal Plan Checker';
-const APP_VERSION = '1.0.4';
+const APP_VERSION = '1.0.5';
 
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
@@ -339,6 +339,26 @@ function channelPath(aId, bId){
 }
 function otherEndOf(channelId, current){ const [x,y] = channelId.split('-'); return current===x ? y : x; }
 
+
+// ---- Wrap helpers (split at horizon boundary) ----
+function splitLineAtHorizon(t0,y0,t1,y1,h){
+  // returns [{t0,y0,t1,y1}] 1 or 2 pieces in [0,h] (with wrap handled)
+  if(t0===t1){ return [{t0,y0,t1,y1}]; }
+  if(t1>=t0){ // no wrap
+    return [{t0,y0,t1,y1}];
+  } else {
+    // wrapped over horizon; split at h
+    const alphaF = (h - t0) / ((t1 + h) - t0); // proportion to boundary along extended segment
+    const yAtH = y0 + (y1 - y0) * alphaF;
+    // pieces: [t0..h] and [0..t1]
+    return [
+      {t0:t0, y0:y0, t1:h, y1:yAtH},
+      {t0:0,  y0:yAtH, t1:t1, y1:y1}
+    ];
+  }
+}
+function moduloTime(t,h){ let m = t % h; if(m<0) m += h; return m; }
+
 // Draw
 function ensureArrowDefs(s){
   if(s.querySelector('defs#arrowDefs')) return;
@@ -522,11 +542,13 @@ function render(){
 
     const xScaleLocal = (t)=> 60 + (t/horizon)*(svgEl().clientWidth - 60 - 10);
 
-    const hopDraw = (t0, fromId, hopId, color, opacity, isBack=false) => {
+    const hopDraw = (t0Raw, fromId, hopId, color, opacity, isBack=false) => {
       const toId = otherEndOf(hopId, fromId);
       const key = `${fromId}->${toId}`;
-      if(!(key in state.journeys)) return {t1:t0, yStart:null, yEnd:null};
-      const t1 = t0 + state.journeys[key];
+      if(!(key in state.journeys)) return {t1:t0Raw, pieces:[], yStart:null, yEnd:null};
+      const dt = state.journeys[key];
+      const t0 = moduloTime(t0Raw, horizon);
+      const t1 = moduloTime(t0Raw + dt, horizon);
       const orderList = presentRowOrder();
       const [hA,hB] = hopId.split('-');
       const i = Math.min(orderList.indexOf(hA), orderList.indexOf(hB));
@@ -534,47 +556,63 @@ function render(){
       const fromAbove = orderList.indexOf(fromId) < orderList.indexOf(toId);
       const yStart = fromAbove ? ch.y0 : ch.y1;
       const yEnd   = fromAbove ? ch.y1 : ch.y0;
-      const x1 = xScaleLocal(clamp(t0,0,horizon));
-      const x2 = xScaleLocal(clamp(t1,0,horizon));
-      const line = elNS('line');
-      setAttrs(line,{x1:x1,y1:yStart,x2:x2,y2:yEnd,class:`coordLine ${isBack?'back':''}`});
-      line.style.stroke = color; line.style.opacity = (typeof opacity==='number'? opacity : 0.8);
-      line.setAttribute('marker-end','url(#arrow)');
-      s.appendChild(line);
-      return {t1, yStart, yEnd};
+      // Split across boundary if needed
+      const pieces = splitLineAtHorizon(t0, yStart, t1, yEnd, horizon);
+      pieces.forEach(seg=>{
+        const line = elNS('line');
+        setAttrs(line,{x1:xScaleLocal(seg.t0),y1:seg.y0,x2:xScaleLocal(seg.t1),y2:seg.y1,class:`coordLine ${isBack?'back':''}`});
+        line.style.stroke = color; line.style.opacity = (typeof opacity==='number'? opacity : 0.8);
+        line.setAttribute('marker-end','url(#arrow)');
+        s.appendChild(line);
+      });
+      return {t1: t0Raw + dt, pieces, yStart, yEnd};
     };
 
     tiles.forEach(seg => {
-      const tFront = clamp(seg.startAbs, 0, horizon);
-      const tBack  = clamp(seg.endAbs,   0, horizon);
+      const H = horizon;
+      const tf0 = moduloTime(seg.startAbs, H);
+      const tb0 = moduloTime(seg.endAbs, H);
 
-      // interval shading + back/front lines
-      let tf = tFront, tb = tBack, fromF = origin.id, fromB = origin.id;
-      const quads = [];
+      let tf = seg.startAbs, tb = seg.endAbs, fromF = origin.id, fromB = origin.id;
+      const quadsPieces = [];
       for(const hop of path){
         const resF = hopDraw(tf, fromF, hop, ov.color, ov.opacity, false);
         const resB = hopDraw(tb, fromB, hop, ov.color, ov.opacity, true);
-        if(resF.yStart!==null && resB.yStart!==null){
-          quads.push({ x1:xScaleLocal(tf), y1:resF.yStart, x2:xScaleLocal(resF.t1), y2:resF.yEnd,
-                       x3:xScaleLocal(resB.t1), y3:resB.yEnd, x4:xScaleLocal(tb), y4:resB.yStart });
+        // Build quads per piece index (0..n)
+        const maxPieces = Math.max(resF.pieces.length, resB.pieces.length);
+        for(let k=0;k<maxPieces;k++){
+          const pf = resF.pieces[k] || null;
+          const pb = resB.pieces[k] || null;
+          if(pf && pb){
+            const poly = elNS('polygon');
+            const pts = `${xScaleLocal(pf.t0)},${pf.y0} ${xScaleLocal(pf.t1)},${pf.y1} ${xScaleLocal(pb.t1)},${pb.y1} ${xScaleLocal(pb.t0)},${pb.y0}`;
+            setAttrs(poly,{points:pts}); poly.setAttribute('fill', ov.color); poly.setAttribute('opacity','0.18'); svgEl().appendChild(poly);
+          }
         }
         tf = resF.t1; tb = resB.t1;
         fromF = otherEndOf(hop, fromF); fromB = otherEndOf(hop, fromB);
       }
-      quads.forEach(q=>{
-        const poly = elNS('polygon');
-        const pts = `${q.x1},${q.y1} ${q.x2},${q.y2} ${q.x3},${q.y3} ${q.x4},${q.y4}`;
-        setAttrs(poly,{points:pts}); poly.setAttribute('fill', ov.color); poly.setAttribute('opacity','0.18'); svgEl().appendChild(poly);
-      });
 
-      // Arrival window band on destination
+      // Arrival window band on destination (wrap-aware)
       const destRowIdx = presentRowOrder().indexOf(dest.id);
       const yTop = rowY(destRowIdx)+10;
-      const x0Abs = Math.min(tf,tb), x1Abs = Math.max(tf,tb);
-      const rect = elNS('rect');
-      setAttrs(rect,{x:xScaleLocal(x0Abs),y:yTop,width:Math.max(0,xScaleLocal(x1Abs)-xScaleLocal(x0Abs)),height:BAND_HEIGHT,class:'arrivalHighlight'});
-      rect.style.fill = ov.color; rect.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
-      svgEl().appendChild(rect);
+      const a0 = moduloTime(seg.startAbs, H);
+      const a1 = moduloTime(seg.endAbs, H);
+      if(a1 >= a0){
+        const rect = elNS('rect');
+        setAttrs(rect,{x:xScaleLocal(a0),y:yTop,width:Math.max(0,xScaleLocal(a1)-xScaleLocal(a0)),height:BAND_HEIGHT,class:'arrivalHighlight'});
+        rect.style.fill = ov.color; rect.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
+        svgEl().appendChild(rect);
+      }else{
+        const r1 = elNS('rect');
+        setAttrs(r1,{x:xScaleLocal(a0),y:yTop,width:Math.max(0,xScaleLocal(H)-xScaleLocal(a0)),height:BAND_HEIGHT,class:'arrivalHighlight'});
+        r1.style.fill = ov.color; r1.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
+        svgEl().appendChild(r1);
+        const r2 = elNS('rect');
+        setAttrs(r2,{x:xScaleLocal(0),y:yTop,width:Math.max(0,xScaleLocal(a1)-xScaleLocal(0)),height:BAND_HEIGHT,class:'arrivalHighlight'});
+        r2.style.fill = ov.color; r2.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
+        svgEl().appendChild(r2);
+      }
     });
   });
 
