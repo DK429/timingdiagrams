@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Signal Plan Checker v1.0.15</title>
+<title>Signal Plan Checker v1.0.17</title>
 <style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#1b1b1b}
 header{padding:16px 20px;border-bottom:1px solid #eee;background:#fafafa}
@@ -59,7 +59,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 <body>
 <header>
   <h1>Signal Plan Checker</h1>
-  <p>v1.0.15 — single-file build for iPad; timing diagrams with overlays, per-row cycle markers, and debug log.</p>
+  <p>v1.0.17 — single-file build for iPad; timing diagrams with overlays, per-row cycle markers, and debug log.</p>
 </header>
 
 <main>
@@ -90,7 +90,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
     <div class="buttons">
       <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
       <button type="button" id="validateBtn">Validate</button>
-      <span class="version">v1.0.15</span>
+      <span class="version">v1.0.17</span>
     </div>
     <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -187,7 +187,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 </main>
 
 <footer>
-  <small>© 2025 — Signal Plan Checker v1.0.15</small>
+  <small>© 2025 — Signal Plan Checker v1.0.17</small>
 </footer>
 
 <script>
@@ -399,7 +399,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
   function presentRowOrder(){ var out=[]; for(var i=0;i<state.rowOrder.length;i++){ if(getJ(state.rowOrder[i])) out.push(state.rowOrder[i]); } return out; }
   function stageFill(idx){ var shades=['#1b5e20','#2e7d32','#388e3c','#43a047','#4caf50','#66bb6a','#7cb342','#8bc34a']; return shades[idx%shades.length]; }
   function bandsOneCycle(j){ var out=[],t=0; for(var i=0;i<j.stages.length;i++){ var s=j.stages[i]; out.push({type:'stage',label:s.label,start:t,end:t+s.durationSec,index:i}); t+=s.durationSec; var ig=j.intergreens[i].durationSec||0; out.push({type:'intergreen',start:t,end:t+ig,index:i}); t+=ig; } return out; }
-  function tileBands(j,h){ var tiles=[],cycleStart=j.startTimeSec, C=j.cycleTimeSec, start=0,end=h; while(cycleStart>start) cycleStart-=C; while(cycleStart+C<start) cycleStart+=C; while(cycleStart<end){ var bands=bandsOneCycle(j); for(var b=0;b<bands.length;b++){ var bb=bands[b]; tiles.push({type:bb.type,label:bb.label,index:bb.index,startAbs:cycleStart+bb.start,endAbs:cycleStart+bb.end}); } cycleStart+=C; } return tiles.filter(function(b){return b.endAbs>=start && b.startAbs<=end;}); }
+  function tileBands(j,h,start,end){ start = (typeof start==='number')? start : 0; end = (typeof end==='number')? end : h; var tiles=[],cycleStart=j.startTimeSec, C=j.cycleTimeSec; while(cycleStart>start) cycleStart-=C; while(cycleStart+C<start) cycleStart+=C; while(cycleStart<end){ var bands=bandsOneCycle(j); for(var b=0;b<bands.length;b++){ var bb=bands[b]; tiles.push({type:bb.type,label:bb.label,index:bb.index,startAbs:cycleStart+bb.start,endAbs:cycleStart+bb.end}); } cycleStart+=C; } return tiles.filter(function(b){return b.endAbs>=start && b.startAbs<=end;}); }
   function channelBox(i){ var yTop = 20 + i*(30+120); var yBandTop = yTop+10, yBandBot=yBandTop+30; var nextTop = 20 + (i+1)*(30+120); return {y0:yBandTop+30+10, y1:nextTop-10, mid: (yBandTop+30+10 + nextTop-10)/2}; }
 
   function ensureArrowDefs(s){ if(s.querySelector('defs#arrowDefs')) return; var defs=elNS('defs'); defs.id='arrowDefs'; var m=elNS('marker'); m.setAttribute('id','arrow'); m.setAttribute('viewBox','0 0 10 10'); m.setAttribute('refX','8'); m.setAttribute('refY','5'); m.setAttribute('markerWidth','6'); m.setAttribute('markerHeight','6'); m.setAttribute('orient','auto'); var p=elNS('path'); p.setAttribute('d','M 0 0 L 10 5 L 0 10 z'); p.setAttribute('fill','context-stroke'); m.appendChild(p); defs.appendChild(m); s.appendChild(defs); }
@@ -412,7 +412,10 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
     if(!$('horizon').value) $('horizon').value=String(H);
     var showMainGrid = state.showMainGrid = $('showMainGrid').checked;
     var width = paperWidth(); var MARGIN=60; var HEIGHT = 20 + (presentRowOrder().length-1)*(30+120) + 30 + 80; s.setAttribute('height', String(HEIGHT));
-    var xScale = function(t){ return MARGIN + (t/H)*(width - MARGIN - 10); };
+    var usableW = (width - MARGIN - 10);
+    var PAD = H; // triple-buffer: draw t in [-H, H+H]
+    var xScale = function(t){ return MARGIN + (t/H)*usableW; }; // visible window scaler for [0..H]
+    var xScaleAbs = function(tAbs){ return MARGIN + ((tAbs + PAD)/H)*usableW; }; // absolute time scaler for [-PAD..H+PAD]
 
     ensureArrowDefs(s);
 
@@ -434,17 +437,17 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
       for(var t5=0;t5<=H;t5+=5){ var x5=xScale(t5); var L1=elNS('line'); setAttrs(L1,{x1:x5,y1:yBandTop-6,x2:x5,y2:yBandTop,class:'tick5'}); s.appendChild(L1); var L2=elNS('line'); setAttrs(L2,{x1:x5,y1:yBandBot,x2:x5,y2:yBandBot+6,class:'tick5'}); s.appendChild(L2); }
 
       // tiles
-      var tiles=tileBands(j,H);
+      var tiles=tileBands(j,H,-PAD,H+PAD);
       for(var b=0;b<tiles.length;b++){
-        var m=tiles[b]; var x=xScale(Math.max(0,m.startAbs)); var x2=xScale(Math.min(H,m.endAbs)); var w=Math.max(0,x2-x);
+        var m=tiles[b]; var x=xScaleAbs(m.startAbs), x2=xScaleAbs(m.endAbs); var w=Math.max(0,x2-x);
         var rect=elNS('rect'); setAttrs(rect,{x:x,y:yBandTop,width:w,height:30,class:(m.type==='stage'?'stageRect':'intergreenRect')}); if(m.type==='stage') rect.setAttribute('fill', stageFill(m.index)); s.appendChild(rect);
         if(m.label && m.type==='stage' && w>24){ var t=elNS('text'); setAttrs(t,{x:x+w/2,y:yBandTop+15,class:'stageLabel'}); t.textContent=m.label; s.appendChild(t); }
       }
 
       // stage local labels
-      var C=j.cycleTimeSec, t0=j.startTimeSec||0; var tTiles = tileBands(j,H).filter(function(b){return b.type==='stage';});
+      var C=j.cycleTimeSec, t0=j.startTimeSec||0; var tTiles = tileBands(j,H,-PAD,H+PAD).filter(function(b){return b.type==='stage';});
       for(var b2=0;b2<tTiles.length;b2++){
-        var bb=tTiles[b2]; var xs=xScale(Math.max(0,bb.startAbs)), xe=xScale(Math.min(H,bb.endAbs));
+        var bb=tTiles[b2]; var xs=xScaleAbs(bb.startAbs), xe=xScaleAbs(bb.endAbs);
         var startLocal=posMod(bb.startAbs - t0, C), endLocal=posMod(bb.endAbs - t0, C);
         var ty=yBandTop-8;
         var tS=elNS('text'); setAttrs(tS,{x:xs,y:ty,class:'stageTimeLabel'}); tS.textContent=startLocal+'s'; s.appendChild(tS);
@@ -491,34 +494,17 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
       return (m + phi) % H;
     }
 
-    function hopDraw(t0Raw, fromId, hopId, color, opacity, isBack, origin, dest){
+    function hopDraw(t0Abs, fromId, hopId, color, opacity, isBack, origin, dest){
       var toId = otherEndOf(hopId, fromId);
-      var key = fromId+'->'+toId; if(!(key in state.journeys)) return {t1:t0Raw, pieces:[], yStart:null, yEnd:null};
+      var key = fromId+'->'+toId; if(!(key in state.journeys)) return {t1:t0Abs, pieces:[], yStart:null, yEnd:null};
       var dt = state.journeys[key];
-      var ref = (state.phaseWrapMode==='destination'? dest : origin);
-      var t0m = mapTimePhase(t0Raw, ref, H);
-      var t1m = mapTimePhase(t0Raw+dt, ref, H);
       var orderList = presentRowOrder(); var parts=hopId.split('-'); var i = Math.min(orderList.indexOf(parts[0]), orderList.indexOf(parts[1]));
       var ch = channelBox(i); var fromAbove = orderList.indexOf(fromId) < orderList.indexOf(toId);
       var yStart = fromAbove ? ch.y0 : ch.y1; var yEnd = fromAbove ? ch.y1 : ch.y0;
-      var pieces;
-      if(t1m >= t0m){ pieces = [{t0:t0m,y0:yStart,t1:t1m,y1:yEnd}]; }
-      else {
-        var ratio = (H - t0m)/((t1m + H) - t0m);
-        var yH = yStart + (yEnd - yStart)*ratio;
-        pieces = [ {t0:t0m,y0:yStart,t1:H,y1:yH}, {t0:0,y0:yH,t1:t1m,y1:yEnd} ];
-      }
-      for(var p=0;p<pieces.length;p++){
-        var seg=pieces[p]; var line=elNS('line');
-        setAttrs(line,{x1:xScale(seg.t0),y1:seg.y0,x2:xScale(seg.t1),y2:seg.y1,class:'coordLine '+(isBack?'back':'' )});
-        line.style.stroke=color; line.style.opacity = opacity; line.setAttribute('marker-end','url(#arrow)'); s.appendChild(line);
-        // debug endpoints
-        if(document.getElementById('debugDetails') && document.getElementById('debugDetails').open){
-          var c1=elNS('circle'); setAttrs(c1,{cx:xScale(seg.t0), cy:seg.y0, r:3}); c1.setAttribute('fill','#222'); s.appendChild(c1);
-          var c2=elNS('circle'); setAttrs(c2,{cx:xScale(seg.t1), cy:seg.y1, r:3}); c2.setAttribute('fill','#555'); s.appendChild(c2);
-        }
-      }
-      return {t1:t0Raw+dt, pieces:pieces, yStart:yStart, yEnd:yEnd};
+      var line = elNS('line'); setAttrs(line,{x1:xScaleAbs(t0Abs), y1:yStart, x2:xScaleAbs(t0Abs+dt), y2:yEnd, class:'coordLine '+(isBack?'back':'')});
+      line.style.stroke=color; line.style.opacity=opacity; line.setAttribute('marker-end','url(#arrow)'); s.appendChild(line);
+      return {t1:t0Abs+dt, pieces:[{t0:t0Abs,t1:t0Abs+dt,y0:yStart,y1:yEnd}], yStart:yStart, yEnd:yEnd};
+    }
     }
 
     function refreshLegend(){
@@ -543,16 +529,16 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
       var tiles;
       if(ov.type==='custom'){
         tiles=[];
-        if(ov.repeatCycle){ var C=origin.cycleTimeSec||0; if(C>0){ var cStart=origin.startTimeSec||0; while(cStart>0) cStart-=C; while(cStart+C<0) cStart+=C; while(cStart<H){ tiles.push({startAbs:cStart+ov.origin.tStart,endAbs:cStart+ov.origin.tEnd}); cStart+=C; } } else { tiles=[{startAbs:ov.origin.tStart,endAbs:ov.origin.tEnd}]; } }
+        if(ov.repeatCycle){ var C=origin.cycleTimeSec||0; if(C>0){ var cStart=origin.startTimeSec||0; while(cStart>-PAD) cStart-=C; while(cStart+C<-PAD) cStart+=C; while(cStart<H+PAD){ tiles.push({startAbs:cStart+ov.origin.tStart,endAbs:cStart+ov.origin.tEnd}); cStart+=C; } } else { tiles=[{startAbs:ov.origin.tStart,endAbs:ov.origin.tEnd}]; } }
         else tiles=[{startAbs:ov.origin.tStart,endAbs:ov.origin.tEnd}];
       }else{
-        var tb=tileBands(origin,H).filter(function(b){return b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex].label;});
+        var tb=tileBands(origin,H,-PAD,H+PAD).filter(function(b){return b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex].label;});
         if(ov.repeatStage){ tiles = tb.map(function(b){return {startAbs:b.startAbs,endAbs:b.endAbs};}); }
         else { if(tb.length){ var first = tb[0]; tiles=[{startAbs:first.startAbs,endAbs:first.endAbs}]; } else { tiles=[]; } }
       }
 
-      if(state.overrunMode==='skip'){ tiles = tiles.filter(function(b){return b.startAbs>=0 && b.endAbs<=H;}); }
-      else tiles = tiles.filter(function(b){return b.endAbs>0 && b.startAbs<H;});
+      if(state.overrunMode==='skip'){ tiles = tiles.filter(function(b){return b.startAbs>=-PAD && b.endAbs<=H+PAD;}); }
+      else tiles = tiles.filter(function(b){return b.endAbs>-PAD && b.startAbs<H+PAD;});
 
       for(var ti=0;ti<tiles.length;ti++){
         var seg=tiles[ti];
@@ -562,9 +548,18 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
           var hop=path[hpi];
           var resF=hopDraw(tf, fromF, hop, ov.color, ov.opacity||0.8, false, origin, dest);
           var resB=hopDraw(tb, fromB, hop, ov.color, ov.opacity||0.8, true, origin, dest);
-          var maxPieces=Math.max(resF.pieces.length,resB.pieces.length);
+          // Align polygon splits: if either side wraps, split the other at the same fraction along its segment
+          var segsF = resF.pieces, segsB = resB.pieces;
+          if(resF.wrap && !resB.wrap){
+            var yH_B = resB.yStart + (resB.yEnd - resB.yStart)*resF.frac;
+            segsB = [ {t0:resB.t0m, y0:resB.yStart, t1:H, y1:yH_B}, {t0:0, y0:yH_B, t1:resB.t1m, y1:resB.yEnd} ];
+          } else if(!resF.wrap && resB.wrap){
+            var yH_F = resF.yStart + (resF.yEnd - resF.yStart)*resB.frac;
+            segsF = [ {t0:resF.t0m, y0:resF.yStart, t1:H, y1:yH_F}, {t0:0, y0:yH_F, t1:resF.t1m, y1:resF.yEnd} ];
+          }
+          var maxPieces = Math.max(segsF.length, segsB.length);
           for(var k=0;k<maxPieces;k++){
-            var pf=resF.pieces[k]||null, pb=resB.pieces[k]||null;
+            var pf=segsF[k]||null, pb=segsB[k]||null;
             if(pf && pb){
               var poly=elNS('polygon');
               var pts= xScale(pf.t0)+','+pf.y0+' '+xScale(pf.t1)+','+pf.y1+' '+xScale(pb.t1)+','+pb.y1+' '+xScale(pb.t0)+','+pb.y0;
@@ -575,17 +570,10 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
         }
 
         // arrival band on destination using phase-aware times
-        var refJ = (state.phaseWrapMode==='destination'? dest : origin);
-        var aS = mapTimePhase(tf, refJ, H);
-        var aE = mapTimePhase(tb, refJ, H);
-        var parts = (aE >= aS) ? [{t0:aS,t1:aE}] : [{t0:aS,t1:H},{t0:0,t1:aE}];
         var destRowIdx = presentRowOrder().indexOf(dest.id);
         var yTopDest = 20 + destRowIdx*(30+120) + 10;
-        for(var pp=0;pp<parts.length;pp++){
-          var pseg=parts[pp]; var rect=elNS('rect');
-          setAttrs(rect,{x:xScale(pseg.t0),y:yTopDest,width:Math.max(0,xScale(pseg.t1)-xScale(pseg.t0)),height:30,class:'arrivalHighlight'});
-          rect.style.fill=ov.color; rect.style.opacity=Math.max(0.05, 0.35*(ov.opacity||0.8)); s.appendChild(rect);
-        }
+        var rect=elNS('rect'); setAttrs(rect,{x:xScaleAbs(tf), y:yTopDest, width:Math.max(0, xScaleAbs(tb)-xScaleAbs(tf)), height:30, class:'arrivalHighlight'});
+        rect.style.fill=ov.color; rect.style.opacity=Math.max(0.05, 0.35*(ov.opacity||0.8)); s.appendChild(rect);
       }
     }
 
