@@ -22,6 +22,26 @@ document.querySelectorAll('.tab').forEach(btn=>{
     document.querySelectorAll('.tabPanel').forEach(p=>p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById(btn.dataset.tab).classList.add('active');
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
 });
 
@@ -79,7 +99,47 @@ function renderJunctionList(){
                       <td><input type="number" min="0" data-st="ig" data-id="${j.id}" data-idx="${i}" value="${ig}"/></td>
                       <td><button class="small" data-del-stage="${j.id}" data-idx="${i}">✕</button></td>`;
       tbody.appendChild(tr);
-    });
+  
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
+  });
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
   container.querySelectorAll('input[data-bind]').forEach(inp=>{
     inp.addEventListener('input', ()=>{
@@ -88,7 +148,47 @@ function renderJunctionList(){
       if(inp.dataset.bind==='start') j.startTimeSec = Number(inp.value);
       if(inp.dataset.bind==='cycle') j.cycleTimeSec = Number(inp.value);
       rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render();
-    });
+  
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
+  });
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
   container.querySelectorAll('input[data-st]').forEach(inp=>{
     inp.addEventListener('input', ()=>{
@@ -97,7 +197,47 @@ function renderJunctionList(){
       if(inp.dataset.st==='dur') j.stages[idx].durationSec = Number(inp.value);
       if(inp.dataset.st==='ig') j.intergreens[idx].durationSec = Number(inp.value);
       refreshOverlayPickers(); render();
-    });
+  
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
+  });
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
   container.querySelectorAll('[data-add-stage]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -106,17 +246,117 @@ function renderJunctionList(){
       j.stages.push({label:`${j.id}${n}`, durationSec:10});
       j.intergreens.push({durationSec:2});
       renderJunctionList();
-    });
+  
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
+  });
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
   container.querySelectorAll('[data-del-stage]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const j = getJ(btn.dataset.delStage); const idx = Number(btn.dataset.idx);
       j.stages.splice(idx,1); j.intergreens.splice(idx,1);
       renderJunctionList(); refreshOverlayPickers(); render();
-    });
+  
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
+  });
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
   container.querySelectorAll('[data-remove-j]').forEach(btn=>{
     btn.addEventListener('click', ()=> removeJunction(btn.dataset.removeJ));
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
 }
 $('addJunctionBtn').addEventListener('click', ()=>{
@@ -140,12 +380,72 @@ function rebuildJourneyMatrix(){
         const key = `${fromJ.id}->${toJ.id}`; const val = state.journeys[key] ?? 20;
         row += `<td><input data-journey="${key}" type="number" min="0" value="${val}" /></td>`;
       }
-    });
+  
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
+  });
     tr.innerHTML = row; tbody.appendChild(tr);
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
   table.appendChild(tbody); cont.appendChild(table);
   cont.querySelectorAll('input[data-journey]').forEach(inp=>{
     inp.addEventListener('input', ()=>{ state.journeys[inp.dataset.journey] = Number(inp.value); render(); });
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
 }
 
@@ -159,6 +459,26 @@ function validate(){
     if(j.cycleTimeSec<=0) errors.push(`${j.name}: cycle time must be > 0.`);
     const total = sum(j.stages, s=>s.durationSec) + sum(j.intergreens, ig=>ig.durationSec);
     if(total !== j.cycleTimeSec) errors.push(`${j.name}: stages + intergreens (${total}s) must equal cycle (${j.cycleTimeSec}s).`);
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
   return errors;
 }
@@ -206,10 +526,50 @@ function refreshOverlayPickers(){
     if(d){ const d1=document.createElement('option'); d1.value=id; d1.textContent=j.name; d.appendChild(d1); }
     if(coO){ const o2=document.createElement('option'); o2.value=id; o2.textContent=j.name; coO.appendChild(o2); }
     if(coD){ const d2=document.createElement('option'); d2.value=id; d2.textContent=j.name; coD.appendChild(d2); }
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
   const j0 = getJ(presentRowOrder()[0]);
   j0?.stages.forEach((st,i)=>{
     const opt=document.createElement('option'); opt.value=String(i); opt.textContent=st.label; s.appendChild(opt);
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
 }
 $('ovOrigin').addEventListener('change', ()=>{
@@ -264,9 +624,49 @@ function renderLegend(){
     op.addEventListener('input', ()=>{ ov.opacity = Number(op.value); opVal.textContent = ` ${Math.round(ov.opacity*100)}%`; render(); });
     const del=document.createElement('button'); del.className='small'; del.textContent='Remove'; del.addEventListener('click', ()=>{
       state.overlays = state.overlays.filter(x=>x.id!==ov.id); renderLegend(); render();
-    });
+  
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
+  });
     item.appendChild(sw); item.appendChild(lbl); item.appendChild(op); item.appendChild(opVal); item.appendChild(del);
     el.appendChild(item);
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
 }
 
@@ -488,31 +888,29 @@ function render(){
         const t=elNS('text'); setAttrs(t,{x:x+w/2,y:yBandTop+BAND_HEIGHT/2,class:'stageLabel'}); t.textContent=b.label; s.appendChild(t);
       }
     }
-  });
 
-  // Cycle markers
-  const refId = state.cycleRefId || presentRowOrder()[0];
-  const refJ = getJ(refId);
-  if(refJ && refJ.cycleTimeSec>0){
-    const C = refJ.cycleTimeSec;
-    // vertical red lines at k*C (k>=1)
-    for(let t=C; t<=horizon; t+=C){
-      const ln = elNS('line'); setAttrs(ln,{x1:xScale(t),y1:MARGIN_TOP/2,x2:xScale(t),y2:rowY(presentRowOrder().length - 1)+BAND_HEIGHT+40,class:'cycleLine'});
-      s.appendChild(ln);
-    }
-    // bottom labels under lowest row at 5s increments, resetting each cycle
-    const lastIdx = presentRowOrder().length - 1;
-    if(lastIdx>=0){
-      const yBottom = rowY(lastIdx)+10+BAND_HEIGHT+8; // just below lower ticks
-      for(let t=0; t<=horizon; t+=5){
-        const tx = elNS('text'); setAttrs(tx,{x:xScale(t)+2,y:yBottom,class:'cycleBottomLabel'});
-        tx.textContent = String(t % C) + 's';
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
         s.appendChild(tx);
       }
     }
-  }
+  });
 
-// Channel 10s grids
+  // Channel 10s grids
   for(let i=0;i<order.length-1;i++){
     const ch = channelBox(i);
     for(let t=0;t<=horizon;t+=10){
@@ -609,7 +1007,27 @@ function render(){
           const poly = elNS('polygon');
           const pts = `${q.x1},${q.y1} ${q.x2},${q.y2} ${q.x3},${q.y3} ${q.x4},${q.y4}`;
           setAttrs(poly,{points:pts}); poly.setAttribute('fill', ov.color); poly.setAttribute('opacity','0.15'); s.appendChild(poly);
-        });
+      
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
+  });
         // Destination arrival window (clipped if needed)
         const rowIndex = presentRowOrder().indexOf(dest.id);
         const yTop = rowY(rowIndex)+10;
@@ -620,7 +1038,47 @@ function render(){
         rect.style.fill = ov.color; rect.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
         s.appendChild(rect);
       }
-    });
+  
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
+  });
+
+    // Per-junction cycle markers & bottom labels
+    if(j.cycleTimeSec && j.cycleTimeSec > 0){
+      const Cj = j.cycleTimeSec;
+      // vertical red lines within this row (between upper & lower tick lanes)
+      for(let tt=Cj; tt<=horizon; tt+=Cj){
+        const xl = xScale(tt);
+        const ln = elNS('line');
+        setAttrs(ln,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'cycleLine'});
+        s.appendChild(ln);
+      }
+      // bottom labels under this row's lower ticks at 5s increments (restart each cycle)
+      const yBottomLbl = yBandBot + 16;
+      for(let tt=0; tt<=horizon; tt+=5){
+        const tx = elNS('text');
+        setAttrs(tx,{x:xScale(tt)+2,y:yBottomLbl,class:'cycleBottomLabel'});
+        tx.textContent = String(tt % Cj) + 's';
+        s.appendChild(tx);
+      }
+    }
   });
 
   readoutEl().innerHTML = state.overlays.length
