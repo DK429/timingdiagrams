@@ -1,14 +1,13 @@
-# Signals Explorer v3p (channels + TD)
+# Signals Explorer v3p (channels + TD) — v2
 
-- All junctions (A–D) plotted together; thin green stages, grey intergreens.
-- **Channels** between adjacent rows hold **both directions** for that pair. Lines drawn **diagonally**; 10‑s grid inside channels.
-- **Multiple overlays** (point or interval), with per‑overlay **opacity** and arrival window highlight on destination row.
-- **TD Save/Load**: one file holding junctions, journeys, row order, horizon and overlays.
-- Standard JSON export/import still available.
+**New**
+- Overlay mode **Point (stage end)**.
+- **5‑second black tick markers** above and below each junction band.
+- **Auto horizon** defaults to **3 × (max cycle)** and updates when cycles change or when you add/remove junctions.
 
-## Demo seed
-- A..D added by default.
-- Journeys: A↔B, B↔C, C↔D seeded (edit in matrix).
-- Four sample overlays show A→B, B→A, C→B, D→C.
+**Still here**
+- Channels between adjacent rows with 10‑s grids and diagonal journey lines (both directions in the same channel).
+- Multi‑overlays with opacity slider (and live adjustments in the legend).
+- Single‑file **TD save/load** (junctions, journeys, row order, horizon, overlays). Also keeps JSON export/import.
 
-Open `index.html` directly.
+Open `index.html` directly—no server needed.

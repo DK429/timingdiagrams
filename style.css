@@ -34,6 +34,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 .intergreenRect{fill:#c7c7c7;opacity:.5}
 .gridLine{stroke:#e9e9e9;stroke-width:1}
 .channelGrid{stroke:#e9e9e9;stroke-width:1}
+.tick5{stroke:#000;stroke-width:1}
 .axisLabel{font-size:10px;fill:#777}
 .rowLabel{font-size:12px;fill:#333}
 .coordLine{stroke:#111;stroke-width:2}

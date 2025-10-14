@@ -1,4 +1,4 @@
-// v3p TD build: channels, diagonal lines, opacity, TD save/load, seeded A..D
+// v3p TD v2: stage-end point mode, 5s ticks around rows, auto horizon = 3x max cycle
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
 const svg = () => document.getElementById('diagram');
@@ -7,16 +7,11 @@ const legendEl = () => document.getElementById('legend');
 function $(id){ return document.getElementById(id); }
 function elNS(tag){ return document.createElementNS('http://www.w3.org/2000/svg', tag); }
 function setAttrs(ele, attrs){ for(const k in attrs) ele.setAttribute(k, attrs[k]); return ele; }
-function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 const sum = (arr, f=x=>x) => arr.reduce((a,b)=>a+f(b),0);
 
 const state = {
-  junctions: [],
-  journeys: {},
-  horizonSec: 600,
-  overlays: [],
-  rowOrder: ['A','B','C','D'],
-  showMainGrid: true,
+  junctions: [], journeys: {}, horizonSec: 600, overlays: [],
+  rowOrder: ['A','B','C','D'], showMainGrid: true,
 };
 
 // Tabs
@@ -29,25 +24,28 @@ document.querySelectorAll('.tab').forEach(btn=>{
   });
 });
 
-// Junction helpers
+// Helpers
+function getJ(id){ return state.junctions.find(j=>j.id===id); }
+function presentRowOrder(){ return state.rowOrder.filter(id => !!getJ(id)); }
+function maxCycle(){ return Math.max(...state.junctions.map(j=>j.cycleTimeSec||0), 0); }
+function setDefaultHorizon(){ const def = Math.max(60, 3 * maxCycle()); const inp=$('horizon'); if(inp && !inp.value) inp.value = String(def); }
+
+// Data tab
 function addJunction(id){
   if(state.junctions.length >= MAX_JUNCTIONS) return;
   const j = { id, name:`Junction ${id}`, cycleTimeSec:90, startTimeSec:0,
     stages:[{label:`${id}1`,durationSec:30},{label:`${id}2`,durationSec:40},{label:`${id}3`,durationSec:10}],
     intergreens:[{durationSec:5},{durationSec:3},{durationSec:2}] };
   state.junctions.push(j);
-  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); render();
+  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render();
 }
 function removeJunction(id){
   state.junctions = state.junctions.filter(j=>j.id!==id);
   Object.keys(state.journeys).forEach(k=>{ if(k.startsWith(id+'->')||k.endsWith('->'+id)) delete state.journeys[k]; });
   state.overlays = state.overlays.filter(ov => ov.origin.junc!==id && ov.dest.junc!==id);
-  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); render();
+  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render();
 }
-function getJ(id){ return state.junctions.find(j=>j.id===id); }
-function presentRowOrder(){ return state.rowOrder.filter(id => !!getJ(id)); }
 
-// Data tab UI
 function renderJunctionList(){
   const container = $('junctionList'); container.innerHTML='';
   state.junctions.forEach((j)=>{
@@ -88,7 +86,7 @@ function renderJunctionList(){
       if(inp.dataset.bind==='name') j.name = inp.value;
       if(inp.dataset.bind==='start') j.startTimeSec = Number(inp.value);
       if(inp.dataset.bind==='cycle') j.cycleTimeSec = Number(inp.value);
-      rebuildJourneyMatrix(); refreshOverlayPickers(); render();
+      rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render();
     });
   });
   container.querySelectorAll('input[data-st]').forEach(inp=>{
@@ -172,12 +170,6 @@ function bandsOneCycle(j){
     const ig=j.intergreens[i]?.durationSec ?? 0; out.push({type:'intergreen',start:t,end:t+ig,index:i}); t+=ig;
   } return out;
 }
-function phaseAt(j, tAbs){
-  const tCycle = ((tAbs - j.startTimeSec) % j.cycleTimeSec + j.cycleTimeSec) % j.cycleTimeSec;
-  const bands = bandsOneCycle(j);
-  for(const b of bands){ if(tCycle>=b.start && tCycle<b.end) return {which:b.type,index:b.index,label:b.label??null,tInto:tCycle-b.start,tRemaining:b.end-tCycle}; }
-  const b0=bands[0]; return {which:b0.type,index:b0.index,label:b0.label??null,tInto:0,tRemaining:b0.end-b0.start};
-}
 function tileBands(j, horizon){
   const tiles=[]; let cycleStart=j.startTimeSec; const cycle=j.cycleTimeSec; const start=0,end=horizon;
   while(cycleStart>start) cycleStart-=cycle; while(cycleStart+cycle<start) cycleStart+=cycle;
@@ -188,13 +180,13 @@ function tileBands(j, horizon){
 // Plot geometry
 const MARGIN_LEFT=60, MARGIN_TOP=20, BAND_HEIGHT=30, ROW_GAP=120, ROW_LABEL_YOFF=18;
 function rowY(index){ return MARGIN_TOP + index*(BAND_HEIGHT + ROW_GAP); }
-function channelBox(i){ // channel between row i and i+1
+function channelBox(i){
   const yTop = rowY(i) + 10 + BAND_HEIGHT + 10;
   const yBot = rowY(i+1) - 10;
   return {y0:yTop, y1:yBot, mid:(yTop+yBot)/2};
 }
 
-// Overlays UI
+// Overlays
 function refreshOverlayPickers(){
   const o = $('ovOrigin'), d = $('ovDest'), s = $('ovStage');
   if(!o || !d || !s) return;
@@ -224,14 +216,8 @@ $('addOverlayBtn').addEventListener('click', ()=>{
   const opacity = Number(document.getElementById('ovOpacity').value || 0.8);
   if(origin===dest){ readoutEl().innerHTML = '<div class="bad">Origin and destination must differ.</div>'; return; }
   const id = `ov${Date.now()}${Math.floor(Math.random()*1000)}`;
-  state.overlays.push({
-    id,
-    origin:{ junc: origin, stageIndex, mode },
-    dest:{ junc: dest },
-    color, opacity, showFrontBack:true, showArrivalWindow:true, laneOffset:0
-  });
-  renderLegend();
-  render();
+  state.overlays.push({ id, origin:{ junc: origin, stageIndex, mode }, dest:{ junc: dest }, color, opacity, showFrontBack:true, showArrivalWindow:true, laneOffset:0 });
+  renderLegend(); render();
 });
 
 function renderLegend(){
@@ -239,7 +225,7 @@ function renderLegend(){
   state.overlays.forEach(ov=>{
     const item=document.createElement('div'); item.className='item';
     const sw=document.createElement('span'); sw.className='swatch'; sw.style.background=ov.color;
-    const order = presentRowOrder(); const path = channelPath(ov.origin.junc, ov.dest.junc); const pathTag = path.length? ` (${path.join(', ')})` : '';
+    const path = channelPath(ov.origin.junc, ov.dest.junc); const pathTag = path.length? ` (${path.join(', ')})` : '';
     const lbl=document.createElement('span'); lbl.textContent = `${getJ(ov.origin.junc)?.name}:${getJ(ov.origin.junc)?.stages[ov.origin.stageIndex]?.label} → ${getJ(ov.dest.junc)?.name}${pathTag}`;
     const op=document.createElement('input'); op.type='range'; op.min='0.1'; op.max='1'; op.step='0.05'; op.value=String(typeof ov.opacity==='number'? ov.opacity : 0.8);
     const opVal=document.createElement('span'); opVal.textContent = ` ${Math.round((typeof ov.opacity==='number'? ov.opacity : 0.8)*100)}%`;
@@ -252,13 +238,12 @@ function renderLegend(){
   });
 }
 
-// Core: channels between junctions
+// Channels
 function channelPath(aId, bId){
   const order = presentRowOrder();
   const ai = order.indexOf(aId), bi = order.indexOf(bId);
   if(ai===-1 || bi===-1) return [];
-  const path = [];
-  const step = ai < bi ? 1 : -1;
+  const path = []; const step = ai < bi ? 1 : -1;
   for(let i=ai; i!==bi; i+=step){
     const id1 = order[i], id2 = order[i+step];
     const top = order.indexOf(id1) < order.indexOf(id2) ? id1 : id2;
@@ -267,22 +252,11 @@ function channelPath(aId, bId){
   }
   return path;
 }
-function otherEndOf(channelId, current){
-  const [x,y] = channelId.split('-');
-  return current===x ? y : x;
-}
+function otherEndOf(channelId, current){ const [x,y] = channelId.split('-'); return current===x ? y : x; }
 
 // TD save/load
 function buildTdPayload(){
-  return {
-    version: 'v3p-td-1',
-    junctions: state.junctions,
-    journeys: state.journeys,
-    horizonSec: state.horizonSec,
-    rowOrder: state.rowOrder,
-    overlays: state.overlays,
-    showMainGrid: state.showMainGrid
-  };
+  return { version:'v3p-td-2', junctions:state.junctions, journeys:state.journeys, horizonSec:state.horizonSec, rowOrder:state.rowOrder, overlays:state.overlays, showMainGrid:state.showMainGrid };
 }
 function loadTdPayload(obj){
   if(!obj || typeof obj!=='object') throw new Error('Invalid TD file.');
@@ -292,34 +266,34 @@ function loadTdPayload(obj){
   state.rowOrder = obj.rowOrder ?? state.rowOrder;
   state.overlays = obj.overlays ?? state.overlays;
   state.showMainGrid = obj.showMainGrid ?? state.showMainGrid;
-  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); renderLegend(); render();
+  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); renderLegend(); render();
 }
-$('saveTdBtn').addEventListener('click', ()=>{
+document.getElementById('saveTdBtn').addEventListener('click', ()=>{
   const payload = JSON.stringify(buildTdPayload(), null, 2);
   const blob = new Blob([payload], {type:'application/json'});
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'timing-diagram.td'; a.click();
+  const a = document.createElement('a'); a.href = url; a.download = 'timing-diagram.td'; a.click();
   setTimeout(()=> URL.revokeObjectURL(url), 1000);
 });
-$('loadTdInput').addEventListener('change', (e)=>{
+document.getElementById('loadTdInput').addEventListener('change', (e)=>{
   const f = e.target.files[0]; if(!f) return;
   const r = new FileReader();
   r.onload = ()=>{ try{ const obj = JSON.parse(r.result); loadTdPayload(obj); } catch(err){ readoutEl().innerHTML = `<div class="bad">TD load failed: ${err.message}</div>`; } };
   r.readAsText(f);
 });
 
-// Drawing
+// Draw
 function render(){
   const s = svg(); s.innerHTML='';
-  const horizon = state.horizonSec = Number($('horizon').value) || 600;
+  setDefaultHorizon();
+  const horizon = state.horizonSec = Number($('horizon').value) || Math.max(60, 3*maxCycle());
   const showMainGrid = state.showMainGrid = $('showMainGrid').checked;
   const width = s.clientWidth || s.parentElement.clientWidth || 960;
   const HEIGHT = rowY(presentRowOrder().length - 1) + BAND_HEIGHT + 80;
   s.setAttribute('height', String(HEIGHT));
   const xScale = t => MARGIN_LEFT + (t/horizon)*(width - MARGIN_LEFT - 10);
 
-  // Main grid (optional)
+  // Main grid
   if(showMainGrid){
     for(let t=0;t<=horizon;t+=10){
       const ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:MARGIN_TOP/2,x2:xScale(t),y2:HEIGHT-MARGIN_TOP/2,class:'gridLine'}); s.appendChild(ln);
@@ -331,26 +305,36 @@ function render(){
     }
   }
 
-  // Draw rows
   const order = presentRowOrder();
+  // Rows
   order.forEach((id, rowIndex)=>{
     const j = getJ(id);
     const yTop = rowY(rowIndex);
+    const yBandTop = yTop+10, yBandBot = yBandTop+BAND_HEIGHT;
     const lbl = elNS('text'); setAttrs(lbl,{x:10,y:yTop+ROW_LABEL_YOFF,class:'rowLabel'}); lbl.textContent=j.name; s.appendChild(lbl);
+
+    // 5s ticks above and below the band (black)
+    for(let t=0;t<=horizon;t+=5){
+      const x = xScale(t);
+      const t1=elNS('line'); setAttrs(t1,{x1:x,y1:yBandTop-6,x2:x,y2:yBandTop,class:'tick5'}); s.appendChild(t1);
+      const t2=elNS('line'); setAttrs(t2,{x1:x,y1:yBandBot,x2:x,y2:yBandBot+6,class:'tick5'}); s.appendChild(t2);
+    }
+
+    // Stage tiles
     const tiles = tileBands(j, horizon);
     for(const b of tiles){
       const rect = elNS('rect');
       const x = xScale(Math.max(0,b.startAbs));
       const x2 = xScale(Math.min(horizon,b.endAbs));
       const w = Math.max(0,x2-x);
-      setAttrs(rect,{x:x,y:yTop+10,width:w,height:BAND_HEIGHT,class:b.type==='stage'?'stageRect':'intergreenRect'}); s.appendChild(rect);
+      setAttrs(rect,{x:x,y:yBandTop,width:w,height:BAND_HEIGHT,class:b.type==='stage'?'stageRect':'intergreenRect'}); s.appendChild(rect);
       if(b.label && b.type==='stage' && w>24){
-        const t=elNS('text'); setAttrs(t,{x:x+w/2,y:yTop+10+BAND_HEIGHT/2,class:'stageLabel'}); t.textContent=b.label; s.appendChild(t);
+        const t=elNS('text'); setAttrs(t,{x:x+w/2,y:yBandTop+BAND_HEIGHT/2,class:'stageLabel'}); t.textContent=b.label; s.appendChild(t);
       }
     }
   });
 
-  // Draw channel grids (10 s lines only inside channels)
+  // Channel 10s grids
   for(let i=0;i<order.length-1;i++){
     const ch = channelBox(i);
     for(let t=0;t<=horizon;t+=10){
@@ -358,10 +342,10 @@ function render(){
     }
   }
 
-  // Draw overlays in channels
+  // Overlays
   state.overlays.forEach(ov=>{
     const origin = getJ(ov.origin.junc), dest = getJ(ov.dest.junc);
-    if(!origin || !dest){ return; }
+    if(!origin || !dest) return;
     const tiles = tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label);
     const match = tiles.find(b => b.endAbs>0); if(!match) return;
     const tFront = Math.max(0, match.startAbs);
@@ -371,42 +355,38 @@ function render(){
     const hopDraw = (t0, fromId, hopId, color, isBack=false) => {
       const toId = otherEndOf(hopId, fromId);
       const key = `${fromId}->${toId}`;
-      if(!(key in state.journeys)) return t0; // skip if missing
+      if(!(key in state.journeys)) return t0;
       const t1 = t0 + state.journeys[key];
-      // channel from hopId (e.g., 'B-C')
       const order = presentRowOrder();
       const [hA,hB] = hopId.split('-');
       const i = Math.min(order.indexOf(hA), order.indexOf(hB));
       const ch = channelBox(i);
-      // Diagonal across channel: top->bottom if from is above to; else bottom->top
       const fromAbove = order.indexOf(fromId) < order.indexOf(toId);
       const offset = (typeof (ov.laneOffset||0) === 'number') ? (ov.laneOffset||0) : 0;
       const yStart = fromAbove ? (ch.y0 + offset) : (ch.y1 + offset);
       const yEnd   = fromAbove ? (ch.y1 + offset) : (ch.y0 + offset);
-
       const line = elNS('line');
       setAttrs(line,{x1:xScale(t0),y1:yStart,x2:xScale(t1),y2:yEnd,class:`coordLine ${isBack?'back':''}`});
-      line.style.stroke = ov.color;
-      line.style.opacity = (typeof ov.opacity==='number'? ov.opacity : 0.8);
+      line.style.stroke = ov.color; line.style.opacity = (typeof ov.opacity==='number'? ov.opacity : 0.8);
       s.appendChild(line);
       return t1;
     };
 
-    if(ov.origin.mode==='point'){
-      let t = tFront;
-      let from = origin.id;
+    const mode = ov.origin.mode;
+    if(mode==='point' || mode==='pointEnd'){
+      const tStartOrEnd = (mode==='point') ? tFront : tBack;
+      let t = tStartOrEnd, from = origin.id;
       for(const hop of path){
         t = hopDraw(t, from, hop, ov.color, false);
         from = otherEndOf(hop, from);
       }
-    }else{
+    }else{ // interval
       let tf = tFront, tb = tBack, fromF = origin.id, fromB = origin.id;
       for(const hop of path){
         tf = hopDraw(tf, fromF, hop, ov.color, false);
         tb = hopDraw(tb, fromB, hop, ov.color, true);
         fromF = otherEndOf(hop, fromF); fromB = otherEndOf(hop, fromB);
       }
-      // Highlight arrival window on destination row
       const rowIndex = presentRowOrder().indexOf(dest.id);
       const yTop = rowY(rowIndex)+10;
       const x0Abs = Math.max(0, Math.min(tf,tb));
@@ -419,8 +399,8 @@ function render(){
   });
 
   readoutEl().innerHTML = state.overlays.length
-    ? `<div>${state.overlays.length} overlay(s) rendered. Add more or remove from the legend.</div>`
-    : `<div>Tip: add overlays to draw journey lines in the channels. Non‑adjacent pairs route via multiple channels.</div>`;
+    ? `<div>${state.overlays.length} overlay(s) rendered. Tip: try Point (stage end) mode.</div>`
+    : `<div>Tip: add overlays to draw journey lines in the channels. Horizon defaults to 3×max(cycle).</div>`;
 }
 
 // Buttons
@@ -455,7 +435,7 @@ $('importInput').addEventListener('change', (e)=>{
       state.journeys = obj.journeys ?? state.journeys;
       state.horizonSec = obj.horizonSec ?? state.horizonSec;
       state.overlays = obj.overlays ?? state.overlays;
-      renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); renderLegend(); render();
+      renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); renderLegend(); render();
       readoutEl().innerHTML = `<div>Imported config.</div>`;
     }catch(err){
       readoutEl().innerHTML = `<div class="bad">Import failed: ${err.message}</div>`;
@@ -466,30 +446,24 @@ $('importInput').addEventListener('change', (e)=>{
 $('showMainGrid').addEventListener('change', render);
 
 // Seed A..D and adjacent journeys
-addJunction('A'); addJunction('B'); addJunction('C'); addJunction('D');
-
-// Adjust B to 88s as before
-const JB = getJ('B');
-JB.startTimeSec = 12;
-JB.cycleTimeSec = 88;
-JB.stages = [{label:'B1',durationSec:25},{label:'B2',durationSec:45},{label:'B3',durationSec:10}];
-JB.intergreens = [{durationSec:4},{durationSec:2},{durationSec:2}];
-
-// D timings (sum 92)
-const JD = getJ('D');
-JD.startTimeSec = 6; JD.cycleTimeSec = 92;
-JD.stages = [{label:'D1',durationSec:30},{label:'D2',durationSec:44},{label:'D3',durationSec:10}];
-JD.intergreens = [{durationSec:3},{durationSec:3},{durationSec:2}];
-
-// Journeys (editable in matrix)
-state.journeys['A->B'] = 22; state.journeys['B->A'] = 24;
-state.journeys['B->C'] = 26; state.journeys['C->B'] = 23;
-state.journeys['C->D'] = 28; state.journeys['D->C'] = 29;
-
-// Demo overlays
-state.overlays.push({ id:'demo1', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', opacity:0.8, showFrontBack:true, showArrivalWindow:true });
-state.overlays.push({ id:'demo2', origin:{junc:'B',stageIndex:1,mode:'interval'}, dest:{junc:'A'}, color:'#1e88e5', opacity:0.8, showFrontBack:true, showArrivalWindow:true });
-state.overlays.push({ id:'demo3', origin:{junc:'C',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#43a047', opacity:0.8, showFrontBack:true, showArrivalWindow:true });
-state.overlays.push({ id:'demo4', origin:{junc:'D',stageIndex:1,mode:'interval'}, dest:{junc:'C'}, color:'#8e24aa', opacity:0.8, showFrontBack:true, showArrivalWindow:true });
-
-renderLegend(); refreshOverlayPickers(); render();
+function seed(){
+  ['A','B','C','D'].forEach(id=> addJunction(id));
+  // Adjust B to 88s
+  const JB = getJ('B'); JB.startTimeSec = 12; JB.cycleTimeSec = 88;
+  JB.stages = [{label:'B1',durationSec:25},{label:'B2',durationSec:45},{label:'B3',durationSec:10}];
+  JB.intergreens = [{durationSec:4},{durationSec:2},{durationSec:2}];
+  // D timings (92)
+  const JD = getJ('D'); JD.startTimeSec = 6; JD.cycleTimeSec = 92;
+  JD.stages = [{label:'D1',durationSec:30},{label:'D2',durationSec:44},{label:'D3',durationSec:10}];
+  JD.intergreens = [{durationSec:3},{durationSec:3},{durationSec:2}];
+  // Journeys
+  state.journeys['A->B']=22; state.journeys['B->A']=24;
+  state.journeys['B->C']=26; state.journeys['C->B']=23;
+  state.journeys['C->D']=28; state.journeys['D->C']=29;
+  // Demo overlays
+  state.overlays.push({ id:'demo1', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', opacity:0.8, showFrontBack:true, showArrivalWindow:true });
+  state.overlays.push({ id:'demo2', origin:{junc:'B',stageIndex:1,mode:'point'}, dest:{junc:'A'}, color:'#1e88e5', opacity:0.9, showFrontBack:true, showArrivalWindow:true });
+  state.overlays.push({ id:'demo3', origin:{junc:'C',stageIndex:0,mode:'pointEnd'}, dest:{junc:'B'}, color:'#43a047', opacity:0.85, showFrontBack:true, showArrivalWindow:true });
+  setDefaultHorizon(); renderLegend(); render();
+}
+seed();

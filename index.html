@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Signals Explorer v3p (channels + TD)</title>
+  <title>Signals Explorer v3p (channels + TD v2)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
     <h1>Signals Explorer v3p</h1>
-    <p>Multi‑row plot, shared channels with 10s grid, multi‑overlays, per‑overlay opacity. TD save/load included.</p>
+    <p>Channels + 10s grid, multi‑overlays with opacity, TD save/load. Now with stage‑end points, 5s ticks, and auto horizon.</p>
   </header>
 
   <main>
@@ -54,7 +54,7 @@
       <div class="diagramHeader">
         <div class="pairPickers">
           <label>Diagram horizon (s)
-            <input id="horizon" type="number" min="60" value="600"/>
+            <input id="horizon" type="number" min="60" value=""/>
           </label>
           <button id="plotBtn">Plot diagram</button>
           <label><input type="checkbox" id="showMainGrid" checked/> Show main grid</label>
@@ -72,6 +72,7 @@
               <select id="ovMode">
                 <option value="interval" selected>Interval (whole stage)</option>
                 <option value="point">Point (stage start)</option>
+                <option value="pointEnd">Point (stage end)</option>
               </select>
             </label>
             <label>Destination
