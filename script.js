@@ -174,12 +174,17 @@ function bandsOneCycle(j){
 function tileBands(j, horizon){
   const tiles=[]; let cycleStart=j.startTimeSec; const cycle=j.cycleTimeSec; const start=0,end=horizon;
   while(cycleStart>start) cycleStart-=cycle; while(cycleStart+cycle<start) cycleStart+=cycle;
-  while(cycleStart<end){ const bands=bandsOneCycle(j); for(const b of bands){ tiles.push({type:b.type,label:b.label,startAbs:cycleStart+b.start,endAbs:cycleStart+b.end}); } cycleStart+=cycle; }
+  while(cycleStart<end){ const bands=bandsOneCycle(j); for(const b of bands){ tiles.push({type:b.type,label:b.label,index:b.index,startAbs:cycleStart+b.start,endAbs:cycleStart+b.end}); } cycleStart+=cycle; }
   return tiles.filter(b=>b.endAbs>=start && b.startAbs<=end);
 }
 
 // Plot geometry
-const MARGIN_LEFT=60, MARGIN_TOP=20, BAND_HEIGHT=30, ROW_GAP=120, ROW_LABEL_YOFF=18;
+function stageFill(idx){
+  const shades=['#2e7d32','#388e3c','#43a047','#4caf50','#66bb6a','#81c784'];
+  return shades[idx % shades.length];
+}
+
+const MARGIN_LEFT=60, MARGIN_TOP=20, BAND_HEIGHT=30, ROW_GAP=120, ROW_LABEL_YOFF=4;
 function rowY(index){ return MARGIN_TOP + index*(BAND_HEIGHT + ROW_GAP); }
 function channelBox(i){
   const yTop = rowY(i) + 10 + BAND_HEIGHT + 10;
@@ -447,6 +452,13 @@ function render(){
     const yBandTop = yTop+10, yBandBot = yBandTop+BAND_HEIGHT;
     const lbl = elNS('text'); setAttrs(lbl,{x:10,y:yTop+ROW_LABEL_YOFF,class:'rowLabel'}); lbl.textContent=j.name; s.appendChild(lbl);
 
+    // 1s ticks above and below the band (shorter)
+    for(let t=0;t<=horizon;t+=1){
+      const x = xScale(t);
+      const s1 = elNS('line'); setAttrs(s1,{x1:x,y1:yBandTop-3,x2:x,y2:yBandTop,class:'tick1'}); s.appendChild(s1);
+      const s2 = elNS('line'); setAttrs(s2,{x1:x,y1:yBandBot,x2:x,y2:yBandBot+3,class:'tick1'}); s.appendChild(s2);
+    }
+
     // 5s ticks above and below the band (black)
     for(let t=0;t<=horizon;t+=5){
       const x = xScale(t);
@@ -461,7 +473,13 @@ function render(){
       const x = xScale(Math.max(0,b.startAbs));
       const x2 = xScale(Math.min(horizon,b.endAbs));
       const w = Math.max(0,x2-x);
-      setAttrs(rect,{x:x,y:yBandTop,width:w,height:BAND_HEIGHT,class:b.type==='stage'?'stageRect':'intergreenRect'}); s.appendChild(rect);
+      if(b.type==='stage'){
+        setAttrs(rect,{x:x,y:yBandTop,width:w,height:BAND_HEIGHT,class:'stageRect'});
+        rect.setAttribute('fill', stageFill(b.index||0));
+      } else {
+        setAttrs(rect,{x:x,y:yBandTop,width:w,height:BAND_HEIGHT,class:'intergreenRect'});
+      }
+      s.appendChild(rect);
       if(b.label && b.type==='stage' && w>24){
         const t=elNS('text'); setAttrs(t,{x:x+w/2,y:yBandTop+BAND_HEIGHT/2,class:'stageLabel'}); t.textContent=b.label; s.appendChild(t);
       }
