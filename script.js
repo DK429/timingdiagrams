@@ -16,6 +16,43 @@ const state = {
   rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip'
 };
 
+
+window.addEventListener('keydown', (e)=>{
+  const t = e.target;
+  if(e.key === 'Enter' && (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT'))){
+    e.preventDefault();
+  }
+});
+
+
+document.addEventListener('wheel', (e)=>{
+  const t = e.target;
+  if(t && t.tagName === 'INPUT' && t.type === 'number' && document.activeElement === t){
+    e.preventDefault();
+  }
+}, {passive:false});
+
+
+const AUTOSAVE_KEY = 'signals_v3_autosave';
+function autosave(){ try{ localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(buildTdPayload())); }catch(_){} }
+function autorestore(){
+  try{
+    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    if(raw){ const obj = JSON.parse(raw); loadTdPayload(obj); }
+  }catch(_){}
+}
+// Hook autosave to common mutations
+['input','change'].forEach(evt=>{
+  document.addEventListener(evt, (e)=>{
+    const t = e.target;
+    if(t && (t.tagName==='INPUT' || t.tagName==='SELECT' || t.tagName==='TEXTAREA')){
+      // Slight debounce
+      clearTimeout(window.__as_t);
+      window.__as_t = setTimeout(autosave, 120);
+    }
+  }, true);
+});
+
 // Tabs
 document.querySelectorAll('.tab').forEach(btn=>{
   btn.addEventListener('click', ()=>{
@@ -717,4 +754,5 @@ function seed(){
   state.overlays.push({ id:'demo3', type:'custom', origin:{junc:'C',tStart:15,tEnd:35}, dest:{junc:'B'}, color:'#9c27b0', opacity:0.85, repeatCycle:true });
   setDefaultHorizon(); renderLegend(); render();
 }
+try{ autorestore(); }catch(_){}
 seed();
