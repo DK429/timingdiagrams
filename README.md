@@ -1,13 +1,14 @@
-# Signals Explorer v3p (channels) — fix 2
+# Signals Explorer v3p (channels + TD)
 
-What’s new in this build:
-- **Double vertical space** for the plot (bigger canvas, larger inter-row channels).
-- Correct routing of hop segments to their **proper channels** using the hop id (e.g., **C→B** draws in **B–C**, not A–B).
-- Journey lines stay **diagonal** across channels; both directions share the same channel.
-- 10‑second vertical grid drawn **inside channels** only.
-- Multi‑overlays (point or interval), with arrival window highlight on destination row.
+- All junctions (A–D) plotted together; thin green stages, grey intergreens.
+- **Channels** between adjacent rows hold **both directions** for that pair. Lines drawn **diagonally**; 10‑s grid inside channels.
+- **Multiple overlays** (point or interval), with per‑overlay **opacity** and arrival window highlight on destination row.
+- **TD Save/Load**: one file holding junctions, journeys, row order, horizon and overlays.
+- Standard JSON export/import still available.
 
-## Use
-1. Open `index.html` (no server needed).
-2. Data tab: set junctions (stages + intergreens must sum to cycle) and journey times matrix.
-3. Plot tab: pick horizon, then add overlays (Origin, Stage, Mode, Destination, Color). Lines for each hop render in the correct inter-row channel.
+## Demo seed
+- A..D added by default.
+- Journeys: A↔B, B↔C, C↔D seeded (edit in matrix).
+- Four sample overlays show A→B, B→A, C→B, D→C.
+
+Open `index.html` directly.

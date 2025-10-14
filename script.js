@@ -1,4 +1,4 @@
-// v3p (fix2): doubled height + correct hop channel + diagonal lines
+// v3p TD build: channels, diagonal lines, opacity, TD save/load, seeded A..D
 const MAX_JUNCTIONS = 4;
 const DEFAULT_IDS = ['A','B','C','D'];
 const svg = () => document.getElementById('diagram');
@@ -185,7 +185,7 @@ function tileBands(j, horizon){
   return tiles.filter(b=>b.endAbs>=start && b.startAbs<=end);
 }
 
-// Plot geometry (doubled vertical spacing)
+// Plot geometry
 const MARGIN_LEFT=60, MARGIN_TOP=20, BAND_HEIGHT=30, ROW_GAP=120, ROW_LABEL_YOFF=18;
 function rowY(index){ return MARGIN_TOP + index*(BAND_HEIGHT + ROW_GAP); }
 function channelBox(i){ // channel between row i and i+1
@@ -221,9 +221,9 @@ $('addOverlayBtn').addEventListener('click', ()=>{
   const stageIndex = Number($('ovStage').value);
   const mode = $('ovMode').value;
   const color = $('ovColor').value;
+  const opacity = Number(document.getElementById('ovOpacity').value || 0.8);
   if(origin===dest){ readoutEl().innerHTML = '<div class="bad">Origin and destination must differ.</div>'; return; }
   const id = `ov${Date.now()}${Math.floor(Math.random()*1000)}`;
-  const opacity = Number(document.getElementById('ovOpacity').value || 0.8);
   state.overlays.push({
     id,
     origin:{ junc: origin, stageIndex, mode },
@@ -234,15 +234,12 @@ $('addOverlayBtn').addEventListener('click', ()=>{
   render();
 });
 
-
 function renderLegend(){
   const el = legendEl(); el.innerHTML='';
   state.overlays.forEach(ov=>{
     const item=document.createElement('div'); item.className='item';
     const sw=document.createElement('span'); sw.className='swatch'; sw.style.background=ov.color;
-    const order = presentRowOrder();
-    const path = channelPath(ov.origin.junc, ov.dest.junc);
-    const pathTag = path.length? ` (${path.join(', ')})` : '';
+    const order = presentRowOrder(); const path = channelPath(ov.origin.junc, ov.dest.junc); const pathTag = path.length? ` (${path.join(', ')})` : '';
     const lbl=document.createElement('span'); lbl.textContent = `${getJ(ov.origin.junc)?.name}:${getJ(ov.origin.junc)?.stages[ov.origin.stageIndex]?.label} → ${getJ(ov.dest.junc)?.name}${pathTag}`;
     const op=document.createElement('input'); op.type='range'; op.min='0.1'; op.max='1'; op.step='0.05'; op.value=String(typeof ov.opacity==='number'? ov.opacity : 0.8);
     const opVal=document.createElement('span'); opVal.textContent = ` ${Math.round((typeof ov.opacity==='number'? ov.opacity : 0.8)*100)}%`;
@@ -255,7 +252,6 @@ function renderLegend(){
   });
 }
 
-
 // Core: channels between junctions
 function channelPath(aId, bId){
   const order = presentRowOrder();
@@ -265,31 +261,53 @@ function channelPath(aId, bId){
   const step = ai < bi ? 1 : -1;
   for(let i=ai; i!==bi; i+=step){
     const id1 = order[i], id2 = order[i+step];
-    // normalized id like 'B-C' (top-down order)
     const top = order.indexOf(id1) < order.indexOf(id2) ? id1 : id2;
     const bottom = (top===id1) ? id2 : id1;
     path.push(`${top}-${bottom}`);
   }
   return path;
 }
-
-function validateHopJourneys(originId, destId){
-  const path = channelPath(originId, destId);
-  let missing = [];
-  let from = originId;
-  for(const hop of path){
-    const to = otherEndOf(hop, from);
-    const key = `${from}->${to}`;
-    if(!(key in state.journeys)) missing.push(key);
-    from = to;
-  }
-  return missing;
-}
-
 function otherEndOf(channelId, current){
   const [x,y] = channelId.split('-');
   return current===x ? y : x;
 }
+
+// TD save/load
+function buildTdPayload(){
+  return {
+    version: 'v3p-td-1',
+    junctions: state.junctions,
+    journeys: state.journeys,
+    horizonSec: state.horizonSec,
+    rowOrder: state.rowOrder,
+    overlays: state.overlays,
+    showMainGrid: state.showMainGrid
+  };
+}
+function loadTdPayload(obj){
+  if(!obj || typeof obj!=='object') throw new Error('Invalid TD file.');
+  state.junctions = obj.junctions ?? state.junctions;
+  state.journeys = obj.journeys ?? state.journeys;
+  state.horizonSec = obj.horizonSec ?? state.horizonSec;
+  state.rowOrder = obj.rowOrder ?? state.rowOrder;
+  state.overlays = obj.overlays ?? state.overlays;
+  state.showMainGrid = obj.showMainGrid ?? state.showMainGrid;
+  renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); renderLegend(); render();
+}
+$('saveTdBtn').addEventListener('click', ()=>{
+  const payload = JSON.stringify(buildTdPayload(), null, 2);
+  const blob = new Blob([payload], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'timing-diagram.td'; a.click();
+  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+});
+$('loadTdInput').addEventListener('change', (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{ try{ const obj = JSON.parse(r.result); loadTdPayload(obj); } catch(err){ readoutEl().innerHTML = `<div class="bad">TD load failed: ${err.message}</div>`; } };
+  r.readAsText(f);
+});
 
 // Drawing
 function render(){
@@ -298,7 +316,7 @@ function render(){
   const showMainGrid = state.showMainGrid = $('showMainGrid').checked;
   const width = s.clientWidth || s.parentElement.clientWidth || 960;
   const HEIGHT = rowY(presentRowOrder().length - 1) + BAND_HEIGHT + 80;
-  s.setAttribute('height', String(HEIGHT)); // big canvas (height already large via ROW_GAP and +80)
+  s.setAttribute('height', String(HEIGHT));
   const xScale = t => MARGIN_LEFT + (t/horizon)*(width - MARGIN_LEFT - 10);
 
   // Main grid (optional)
@@ -344,7 +362,6 @@ function render(){
   state.overlays.forEach(ov=>{
     const origin = getJ(ov.origin.junc), dest = getJ(ov.dest.junc);
     if(!origin || !dest){ return; }
-    // find first visible occurrence of origin stage within [0,horizon]
     const tiles = tileBands(origin, horizon).filter(b=>b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex]?.label);
     const match = tiles.find(b => b.endAbs>0); if(!match) return;
     const tFront = Math.max(0, match.startAbs);
@@ -448,29 +465,31 @@ $('importInput').addEventListener('change', (e)=>{
 });
 $('showMainGrid').addEventListener('change', render);
 
-// Seed A & B with valid sums; set journeys and a demo overlay
-addJunction('A'); addJunction('B');
-// Make Junction B total 88s (25+45+10 + 4+2+2)
+// Seed A..D and adjacent journeys
+addJunction('A'); addJunction('B'); addJunction('C'); addJunction('D');
+
+// Adjust B to 88s as before
 const JB = getJ('B');
 JB.startTimeSec = 12;
 JB.cycleTimeSec = 88;
 JB.stages = [{label:'B1',durationSec:25},{label:'B2',durationSec:45},{label:'B3',durationSec:10}];
 JB.intergreens = [{durationSec:4},{durationSec:2},{durationSec:2}];
 
+// D timings (sum 92)
+const JD = getJ('D');
+JD.startTimeSec = 6; JD.cycleTimeSec = 92;
+JD.stages = [{label:'D1',durationSec:30},{label:'D2',durationSec:44},{label:'D3',durationSec:10}];
+JD.intergreens = [{durationSec:3},{durationSec:3},{durationSec:2}];
+
+// Journeys (editable in matrix)
 state.journeys['A->B'] = 22; state.journeys['B->A'] = 24;
-// Demo overlay: A:S1 interval → B
-state.overlays.push({ id:'demo1', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', showFrontBack:true, showArrivalWindow:true });
+state.journeys['B->C'] = 26; state.journeys['C->B'] = 23;
+state.journeys['C->D'] = 28; state.journeys['D->C'] = 29;
 
-// Also add Junction C for adjacent-pair demos
-addJunction('C');
-const JC = getJ('C');
-JC.startTimeSec = 0; JC.cycleTimeSec = 90;
-JC.stages = [{label:'C1',durationSec:30},{label:'C2',durationSec:40},{label:'C3',durationSec:10}];
-JC.intergreens = [{durationSec:5},{durationSec:3},{durationSec:2}];
-
-// Add B<->C journeys for testing C→B overlays
-state.journeys['B->C'] = state.journeys['B->C'] ?? 26;
-state.journeys['C->B'] = state.journeys['C->B'] ?? 23;
+// Demo overlays
+state.overlays.push({ id:'demo1', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', opacity:0.8, showFrontBack:true, showArrivalWindow:true });
+state.overlays.push({ id:'demo2', origin:{junc:'B',stageIndex:1,mode:'interval'}, dest:{junc:'A'}, color:'#1e88e5', opacity:0.8, showFrontBack:true, showArrivalWindow:true });
+state.overlays.push({ id:'demo3', origin:{junc:'C',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#43a047', opacity:0.8, showFrontBack:true, showArrivalWindow:true });
+state.overlays.push({ id:'demo4', origin:{junc:'D',stageIndex:1,mode:'interval'}, dest:{junc:'C'}, color:'#8e24aa', opacity:0.8, showFrontBack:true, showArrivalWindow:true });
 
 renderLegend(); refreshOverlayPickers(); render();
-

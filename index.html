@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Signals Explorer v3p (channels)</title>
+  <title>Signals Explorer v3p (channels + TD)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
     <h1>Signals Explorer v3p</h1>
-    <p>Multi‑row plot, shared channels with 10s grid, multi‑overlays (point or interval).</p>
+    <p>Multi‑row plot, shared channels with 10s grid, multi‑overlays, per‑overlay opacity. TD save/load included.</p>
   </header>
 
   <main>
@@ -44,6 +44,8 @@
         <button id="validateBtn">Validate</button>
         <button id="exportBtn">Export JSON</button>
         <label class="importLabel">Import JSON <input id="importInput" type="file" accept="application/json"/></label>
+        <button id="saveTdBtn">Save TD</button>
+        <label class="importLabel">Load TD <input id="loadTdInput" type="file" accept=".td,application/json"/></label>
       </div>
     </section>
 
