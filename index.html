@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Signal Plan Checker v1.0.14</title>
+<title>Signal Plan Checker v1.0.15</title>
 <style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#1b1b1b}
 header{padding:16px 20px;border-bottom:1px solid #eee;background:#fafafa}
@@ -59,7 +59,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 <body>
 <header>
   <h1>Signal Plan Checker</h1>
-  <p>v1.0.14 — single-file build for iPad; timing diagrams with overlays, per-row cycle markers, and debug log.</p>
+  <p>v1.0.15 — single-file build for iPad; timing diagrams with overlays, per-row cycle markers, and debug log.</p>
 </header>
 
 <main>
@@ -90,7 +90,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
     <div class="buttons">
       <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
       <button type="button" id="validateBtn">Validate</button>
-      <span class="version">v1.0.14</span>
+      <span class="version">v1.0.15</span>
     </div>
     <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -149,6 +149,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
           <label>Destination <select id="ovDest"></select></label>
           <label>Opacity <input id="ovOpacity" type="range" min="0.1" max="1" step="0.05" value="0.8"/></label>
           <label>Color <input id="ovColor" type="color" value="#ff5722"/></label>
+          <label><input id="ovRepeat" type="checkbox" checked> Repeat each cycle (stage)</label>
           <button type="button" id="addOverlayBtn">Add overlay</button>
         </div>
         <div class="overlayForm" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:6px;border-top:1px dashed #ddd;padding-top:6px">
@@ -186,7 +187,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 </main>
 
 <footer>
-  <small>© 2025 — Signal Plan Checker v1.0.14</small>
+  <small>© 2025 — Signal Plan Checker v1.0.15</small>
 </footer>
 
 <script>
@@ -526,7 +527,8 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
         var ov=state.overlays[oi]; var item=document.createElement('div'); item.className='item';
         var sw=document.createElement('span'); sw.className='swatch'; sw.style.background=ov.color;
         var lbl=document.createElement('span');
-        lbl.textContent = (ov.type==='custom' ? (getJ(ov.origin.junc).name+' ['+ov.origin.tStart+'–'+ov.origin.tEnd+'s'+(ov.repeatCycle?' ×':'')+'] → '+getJ(ov.dest.junc).name) : (getJ(ov.origin.junc).name+':'+getJ(ov.origin.junc).stages[ov.origin.stageIndex].label+' → '+getJ(ov.dest.junc).name));
+        lbl.textContent = (ov.type==='custom' ? (getJ(ov.origin.junc).name+' ['+ov.origin.tStart+'–'+ov.origin.tEnd+'s'+(ov.repeatCycle?' ×':'')+'] → '+getJ(ov.dest.junc).name)
+         : (getJ(ov.origin.junc).name+':'+getJ(ov.origin.junc).stages[ov.origin.stageIndex].label+(ov.repeatStage?' ×':'')+' → '+getJ(ov.dest.junc).name));
         var del=document.createElement('button'); del.className='small'; del.textContent='Remove'; del.addEventListener('click', (function(id){ return function(){ state.overlays = state.overlays.filter(function(x){return x.id!==id;}); refreshLegend(); render(); }; })(ov.id));
         item.appendChild(sw); item.appendChild(lbl); item.appendChild(del); el.appendChild(item);
       }
@@ -545,7 +547,8 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
         else tiles=[{startAbs:ov.origin.tStart,endAbs:ov.origin.tEnd}];
       }else{
         var tb=tileBands(origin,H).filter(function(b){return b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex].label;});
-        tiles = tb.map(function(b){return {startAbs:b.startAbs,endAbs:b.endAbs};});
+        if(ov.repeatStage){ tiles = tb.map(function(b){return {startAbs:b.startAbs,endAbs:b.endAbs};}); }
+        else { if(tb.length){ var first = tb[0]; tiles=[{startAbs:first.startAbs,endAbs:first.endAbs}]; } else { tiles=[]; } }
       }
 
       if(state.overrunMode==='skip'){ tiles = tiles.filter(function(b){return b.startAbs>=0 && b.endAbs<=H;}); }
@@ -622,7 +625,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
       var origin=$('ovOrigin').value, dest=$('ovDest').value, stageIndex=Number($('ovStage').value), mode=$('ovMode').value, color=$('ovColor').value, op=Number($('ovOpacity').value||0.8);
       if(origin===dest){ $('readout').innerHTML='<div class="bad">Origin and destination must differ.</div>'; return; }
       var id='ov'+Date.now()+Math.floor(Math.random()*1000);
-      state.overlays.push({ id:id, type:'stage', origin:{ junc:origin, stageIndex:stageIndex, mode:mode }, dest:{ junc:dest }, color:color, opacity:op });
+      state.overlays.push({ id:id, type:'stage', origin:{ junc:origin, stageIndex:stageIndex, mode:mode, repeat:true }, dest:{ junc:dest }, color:color, opacity:op, repeatStage: $('ovRepeat').checked });
       renderLegend(); render();
     });
     $('addCustomOverlayBtn').addEventListener('click', function(){
