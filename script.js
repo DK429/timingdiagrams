@@ -482,4 +482,69 @@ function seed(){
   state.overlays.push({ id:'demo3', origin:{junc:'C',stageIndex:0,mode:'pointEnd'}, dest:{junc:'B'}, color:'#43a047', opacity:0.85, showFrontBack:true, showArrivalWindow:true });
   setDefaultHorizon(); renderLegend(); render();
 }
+
+// --- Print: dynamic @page CSS + toggles ---
+function ensurePrintStyleEl(){
+  let el = document.getElementById('printDynamic');
+  if(!el){ el = document.createElement('style'); el.id='printDynamic'; document.head.appendChild(el); }
+  return el;
+}
+function mm(val){ return val + 'mm'; }
+function applyScaleForPrint(svgEl, pct){
+  // Temporarily scale SVG dimensions for printing
+  const orig = { width: svgEl.getAttribute('width'), height: svgEl.getAttribute('height'), styleW: svgEl.style.width, styleH: svgEl.style.height };
+  const cw = svgEl.clientWidth || svgEl.parentElement.clientWidth || 960;
+  const ch = svgEl.clientHeight || parseFloat(svgEl.getAttribute('height')) || 900;
+  const scale = Math.max(0.5, Math.min(2.0, pct/100));
+  svgEl.style.width = (cw*scale) + 'px';
+  svgEl.style.height = (ch*scale) + 'px';
+  return ()=>{ svgEl.style.width = orig.styleW || ''; svgEl.style.height = orig.styleH || ''; if(orig.width) svgEl.setAttribute('width', orig.width); if(orig.height) svgEl.setAttribute('height', orig.height); };
+}
+function fillPrintHeaderFooter(){
+  const header = document.getElementById('printHeader');
+  const footer = document.getElementById('printFooter');
+  if(!header || !footer) return;
+  const title = (document.getElementById('printTitle')?.value || '').trim();
+  const notes = (document.getElementById('printNotes')?.value || '').trim();
+  const order = presentRowOrder().join(' → ');
+  const now = new Date();
+  const dateStr = now.toLocaleString();
+  header.innerHTML = `<div class='title'>${title || 'Signals timing diagram'}</div>`+
+                     `<div class='meta'>Rows: ${order} &nbsp;&nbsp; Date: ${dateStr}</div>`+
+                     (notes? `<div class='notes'>${notes}</div>` : '');
+  footer.innerHTML = `<div>Horizon: ${document.getElementById('horizon').value || ''} s &nbsp;&nbsp; Overlays: ${state.overlays.length}</div>`;
+}
+function applyPrintSettings(){
+  const paper = (document.getElementById('printPaper')?.value)||'A4';
+  const orient = (document.getElementById('printOrientation')?.value)||'portrait';
+  const margins = (document.getElementById('printMargins')?.value)||'default';
+  const legendOn = !!document.getElementById('printLegend')?.checked;
+  const readoutOn = !!document.getElementById('printReadout')?.checked;
+
+  const marginMap = { default: '12mm', none: '0', narrow: '6mm', wide: '20mm' };
+  const margin = marginMap[margins] || '12mm';
+
+  const el = ensurePrintStyleEl();
+  el.textContent = `@page { size: ${paper} ${orient}; margin: ${margin}; }`;
+
+  document.body.classList.toggle('print-legend-off', !legendOn);
+  document.body.classList.toggle('print-readout-off', !readoutOn);
+
+  // Suggest filename via title (browser may use it)
+  const oldTitle = document.title;
+  const order = presentRowOrder().join('');
+  document.title = `signals-plot_${order}_${paper}_${orient}`;
+  // Restore title after printing
+  const restore = () => { document.title = oldTitle; window.removeEventListener('afterprint', restore); }
+  window.addEventListener('afterprint', restore);
+}
+document.getElementById('printBtn')?.addEventListener('click', ()=>{ 
+  applyPrintSettings(); fillPrintHeaderFooter();
+  const svgEl = document.getElementById('diagram');
+  const pct = Number(document.getElementById('printScale')?.value || 100);
+  const restore = applyScaleForPrint(svgEl, pct);
+  const restoreTitle = ()=>{ document.title = oldTitle; window.removeEventListener('afterprint', restoreTitle); };
+  window.addEventListener('afterprint', ()=>{ restore(); });
+  setTimeout(()=>window.print(), 60);
+});
 seed();

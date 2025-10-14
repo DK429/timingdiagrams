@@ -53,6 +53,42 @@
     <section id="plotTab" class="tabPanel panel">
       <div class="diagramHeader">
         <div class="pairPickers">
+          <button id="printBtn" class="secondary">Print / PDF</button>
+          <div class="printSettings">
+            <label>Paper
+              <select id="printPaper">
+                <option value="A4" selected>A4</option>
+                <option value="A3">A3</option>
+                <option value="Letter">Letter</option>
+                <option value="Legal">Legal</option>
+              </select>
+            </label>
+            <label>Orientation
+              <select id="printOrientation">
+                <option value="portrait" selected>Portrait</option>
+                <option value="landscape">Landscape</option>
+              </select>
+            </label>
+            <label>Margins
+              <select id="printMargins">
+                <option value="default" selected>Default</option>
+                <option value="none">None</option>
+                <option value="narrow">Narrow</option>
+                <option value="wide">Wide</option>
+              </select>
+            </label>
+            <label><input id="printLegend" type="checkbox" checked/> Legend</label>
+            <label><input id="printReadout" type="checkbox"/> Readout</label>
+            <label>Scale
+              <input id="printScale" type="range" min="80" max="140" step="5" value="100"/>
+            </label>
+            <label>Project title
+              <input id="printTitle" type="text" placeholder="e.g., Corridor X timing study"/>
+            </label>
+            <label style="min-width:260px">Notes
+              <textarea id="printNotes" rows="2" placeholder="Optional notes for this export"></textarea>
+            </label>
+          </div>
           <label>Diagram horizon (s)
             <input id="horizon" type="number" min="60" value=""/>
           </label>
@@ -95,7 +131,9 @@
         </div>
       </div>
 
-      <svg id="diagram" width="100%" height="900" role="img" aria-label="Time–stage diagram"></svg>
+      <div id="printHeader" class="printOnly"></div>
+<svg id="diagram" width="100%" height="900" role="img" aria-label="Time–stage diagram"></svg>
+<div id="printFooter" class="printOnly"></div>
       <div id="legend" class="legend"></div>
       <div id="readout" class="readout"></div>
     </section>

@@ -46,3 +46,27 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 .legend .item{display:flex;align-items:center;gap:6px}
 .legend .swatch{width:12px;height:12px;border-radius:3px;border:1px solid #999}
 .overlayForm{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+
+.printSettings{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+button.secondary{background:#fff;border-color:#bbb}
+@media print{
+  body{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .tabs, .dataLayout, .buttons, .overlayForm, .pairPickers .printSettings { display:none !important; }
+  .tabPanel{border:none}
+  .legend{margin-top:6px}
+  .no-print{display:none!important}
+}
+body.print-legend-off .legend{display:none!important}
+body.print-readout-off .readout{display:none!important}
+
+.printSettings{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.printOnly{display:none}
+@media print{
+  .printOnly{display:block}
+  .tabs, .dataLayout, .buttons, .overlayForm, .pairPickers .printSettings { display:none !important; }
+}
+#printHeader, #printFooter{padding:6px 2px; font-size:12px; color:#222}
+#printHeader{border-bottom:1px solid #ddd; margin-bottom:6px}
+#printFooter{border-top:1px solid #ddd; margin-top:6px}
+#printHeader .title{font-weight:600; font-size:14px}
+#printHeader .meta{opacity:.8}
