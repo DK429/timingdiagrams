@@ -223,29 +223,38 @@ $('addOverlayBtn').addEventListener('click', ()=>{
   const color = $('ovColor').value;
   if(origin===dest){ readoutEl().innerHTML = '<div class="bad">Origin and destination must differ.</div>'; return; }
   const id = `ov${Date.now()}${Math.floor(Math.random()*1000)}`;
+  const opacity = Number(document.getElementById('ovOpacity').value || 0.8);
   state.overlays.push({
     id,
     origin:{ junc: origin, stageIndex, mode },
     dest:{ junc: dest },
-    color, showFrontBack:true, showArrivalWindow:true, laneOffset:0
+    color, opacity, showFrontBack:true, showArrivalWindow:true, laneOffset:0
   });
   renderLegend();
   render();
 });
+
 
 function renderLegend(){
   const el = legendEl(); el.innerHTML='';
   state.overlays.forEach(ov=>{
     const item=document.createElement('div'); item.className='item';
     const sw=document.createElement('span'); sw.className='swatch'; sw.style.background=ov.color;
-    const lbl=document.createElement('span'); lbl.textContent = `${getJ(ov.origin.junc)?.name}:${getJ(ov.origin.junc)?.stages[ov.origin.stageIndex]?.label} → ${getJ(ov.dest.junc)?.name}`;
+    const order = presentRowOrder();
+    const path = channelPath(ov.origin.junc, ov.dest.junc);
+    const pathTag = path.length? ` (${path.join(', ')})` : '';
+    const lbl=document.createElement('span'); lbl.textContent = `${getJ(ov.origin.junc)?.name}:${getJ(ov.origin.junc)?.stages[ov.origin.stageIndex]?.label} → ${getJ(ov.dest.junc)?.name}${pathTag}`;
+    const op=document.createElement('input'); op.type='range'; op.min='0.1'; op.max='1'; op.step='0.05'; op.value=String(typeof ov.opacity==='number'? ov.opacity : 0.8);
+    const opVal=document.createElement('span'); opVal.textContent = ` ${Math.round((typeof ov.opacity==='number'? ov.opacity : 0.8)*100)}%`;
+    op.addEventListener('input', ()=>{ ov.opacity = Number(op.value); opVal.textContent = ` ${Math.round(ov.opacity*100)}%`; render(); });
     const del=document.createElement('button'); del.className='small'; del.textContent='Remove'; del.addEventListener('click', ()=>{
       state.overlays = state.overlays.filter(x=>x.id!==ov.id); renderLegend(); render();
     });
-    item.appendChild(sw); item.appendChild(lbl); item.appendChild(del);
+    item.appendChild(sw); item.appendChild(lbl); item.appendChild(op); item.appendChild(opVal); item.appendChild(del);
     el.appendChild(item);
   });
 }
+
 
 // Core: channels between junctions
 function channelPath(aId, bId){
@@ -263,6 +272,20 @@ function channelPath(aId, bId){
   }
   return path;
 }
+
+function validateHopJourneys(originId, destId){
+  const path = channelPath(originId, destId);
+  let missing = [];
+  let from = originId;
+  for(const hop of path){
+    const to = otherEndOf(hop, from);
+    const key = `${from}->${to}`;
+    if(!(key in state.journeys)) missing.push(key);
+    from = to;
+  }
+  return missing;
+}
+
 function otherEndOf(channelId, current){
   const [x,y] = channelId.split('-');
   return current===x ? y : x;
@@ -347,6 +370,7 @@ function render(){
       const line = elNS('line');
       setAttrs(line,{x1:xScale(t0),y1:yStart,x2:xScale(t1),y2:yEnd,class:`coordLine ${isBack?'back':''}`});
       line.style.stroke = ov.color;
+      line.style.opacity = (typeof ov.opacity==='number'? ov.opacity : 0.8);
       s.appendChild(line);
       return t1;
     };
@@ -372,7 +396,7 @@ function render(){
       const x1Abs = Math.min(horizon, Math.max(tf,tb));
       const rect = elNS('rect');
       setAttrs(rect,{x:xScale(x0Abs),y:yTop,width:Math.max(0,xScale(x1Abs)-xScale(x0Abs)),height:BAND_HEIGHT,class:'arrivalHighlight'});
-      rect.style.fill = ov.color; rect.style.opacity = 0.2;
+      rect.style.fill = ov.color; rect.style.opacity = Math.max(0.05, 0.35 * (typeof ov.opacity==='number'? ov.opacity : 0.8));
       s.appendChild(rect);
     }
   });
@@ -436,4 +460,17 @@ JB.intergreens = [{durationSec:4},{durationSec:2},{durationSec:2}];
 state.journeys['A->B'] = 22; state.journeys['B->A'] = 24;
 // Demo overlay: A:S1 interval → B
 state.overlays.push({ id:'demo1', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', showFrontBack:true, showArrivalWindow:true });
+
+// Also add Junction C for adjacent-pair demos
+addJunction('C');
+const JC = getJ('C');
+JC.startTimeSec = 0; JC.cycleTimeSec = 90;
+JC.stages = [{label:'C1',durationSec:30},{label:'C2',durationSec:40},{label:'C3',durationSec:10}];
+JC.intergreens = [{durationSec:5},{durationSec:3},{durationSec:2}];
+
+// Add B<->C journeys for testing C→B overlays
+state.journeys['B->C'] = state.journeys['B->C'] ?? 26;
+state.journeys['C->B'] = state.journeys['C->B'] ?? 23;
+
 renderLegend(); refreshOverlayPickers(); render();
+
