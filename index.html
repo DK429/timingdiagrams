@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Signal Plan Checker v1.0.17</title>
+<title>Signal Plan Checker v1.0.18</title>
 <style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#1b1b1b}
 header{padding:16px 20px;border-bottom:1px solid #eee;background:#fafafa}
@@ -59,7 +59,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 <body>
 <header>
   <h1>Signal Plan Checker</h1>
-  <p>v1.0.17 — single-file build for iPad; timing diagrams with overlays, per-row cycle markers, and debug log.</p>
+  <p>v1.0.18 — single-file build for iPad; timing diagrams with overlays, per-row cycle markers, and debug log.</p>
 </header>
 
 <main>
@@ -88,9 +88,9 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
       </div>
     </div>
     <div class="buttons">
-      <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
+      <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button> <button type="button" id="forceInitBtn" class="small">Force init</button>
       <button type="button" id="validateBtn">Validate</button>
-      <span class="version">v1.0.17</span>
+      <span class="version">v1.0.18</span>
     </div>
     <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -187,7 +187,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 </main>
 
 <footer>
-  <small>© 2025 — Signal Plan Checker v1.0.17</small>
+  <small>© 2025 — Signal Plan Checker v1.0.18</small>
 </footer>
 
 <script>
@@ -646,6 +646,39 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
     requestAnimationFrame(render);
   });
 
-})();</script>
+})();
+  // ==== Robust boot sequence (guaranteed) ====
+  function __safeInit(){
+    try{
+      log('Booting…', 'info');
+      if(!state || !state.junctions){ log('State missing', 'err'); return; }
+      if(!state.junctions.length){
+        buildDefaults();
+      }
+      renderJunctionList();
+      rebuildJourneyMatrix();
+      refreshOverlayPickers();
+      renderLegend();
+      setDefaultHorizon();
+      render();
+      updateDataValidation();
+      log('Ready.', 'info');
+    }catch(e){
+      var box=document.getElementById('debugLog');
+      if(box){ var div=document.createElement('div'); div.className='err'; div.textContent='Init error: '+e.message; box.appendChild(div); }
+    }
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    try{
+      __safeInit();
+      var f=document.getElementById('forceInitBtn');
+      if(f){ f.addEventListener('click', function(){ __safeInit(); }); }
+    }catch(e){
+      var box=document.getElementById('debugLog');
+      if(box){ var div=document.createElement('div'); div.className='err'; div.textContent='DOMContentLoaded error: '+e.message; box.appendChild(div); }
+    }
+  });
+
+</script>
 </body>
 </html>
