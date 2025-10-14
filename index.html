@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Signal Plan Checker v1.0.12</title>
+<title>Signal Plan Checker v1.0.14</title>
 <style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#1b1b1b}
 header{padding:16px 20px;border-bottom:1px solid #eee;background:#fafafa}
@@ -59,7 +59,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 <body>
 <header>
   <h1>Signal Plan Checker</h1>
-  <p>v1.0.12 — single-file build for iPad; timing diagrams with overlays, per-row cycle markers, and debug log.</p>
+  <p>v1.0.14 — single-file build for iPad; timing diagrams with overlays, per-row cycle markers, and debug log.</p>
 </header>
 
 <main>
@@ -90,7 +90,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
     <div class="buttons">
       <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
       <button type="button" id="validateBtn">Validate</button>
-      <span class="version">v1.0.12</span>
+      <span class="version">v1.0.14</span>
     </div>
     <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -119,6 +119,13 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
       </div>
 
       <div class="pairPickers">
+        <label>Wrap mode
+          <select id="wrapMode">
+            <option value="phase">Phase-aligned</option>
+            <option value="mod" selected>Modulo</option>
+            <option value="none">None (no wrap)</option>
+          </select>
+        </label>
         <label>Phase wrap by
           <select id="phaseWrapBy">
             <option value="origin" selected>Origin cycle</option>
@@ -179,7 +186,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 </main>
 
 <footer>
-  <small>© 2025 — Signal Plan Checker v1.0.12</small>
+  <small>© 2025 — Signal Plan Checker v1.0.14</small>
 </footer>
 
 <script>
@@ -201,7 +208,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
   // State
   var state = {
     junctions: [], journeys: {}, horizonSec: 0, horizonIsDefault: true, overlays: [],
-    rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip', phaseWrapMode: 'origin'
+    rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip', phaseWrapMode: 'origin', wrapMode: 'mod'
   };
 
   // Tabs
@@ -469,11 +476,18 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
     }
     function phaseShiftForHorizon(j,H){ var C=j&&j.cycleTimeSec||0; if(!C||!H) return 0; return H % C; }
     function mapTimePhase(tAbs, refJunc, H){
-      var C = (refJunc && refJunc.cycleTimeSec) || 0; if(!H) return 0;
+      if(!H) return 0;
+      var mode = state.wrapMode || 'phase';
+      if(mode==='none'){
+        // No wrap: clamp to [0,H] for visibility
+        var t = Math.max(0, Math.min(H, tAbs));
+        return t;
+      }
+      var m = tAbs % H; if(m<0) m += H; // base modulo
+      if(mode==='mod') return m;
+      var C = (refJunc && refJunc.cycleTimeSec) || 0;
       var phi = (C>0) ? (H % C) : 0; // phase advance across the horizon
-      var m = tAbs % H; if(m<0) m += H; // base wrap
-      var w = (m + phi) % H; // shift to maintain phase continuity visually
-      return w;
+      return (m + phi) % H;
     }
 
     function hopDraw(t0Raw, fromId, hopId, color, opacity, isBack, origin, dest){
@@ -488,12 +502,20 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
       var yStart = fromAbove ? ch.y0 : ch.y1; var yEnd = fromAbove ? ch.y1 : ch.y0;
       var pieces;
       if(t1m >= t0m){ pieces = [{t0:t0m,y0:yStart,t1:t1m,y1:yEnd}]; }
-      else { pieces = [ {t0:t0m,y0:yStart,t1:H,y1: yStart + (yEnd - yStart)*((H - t0m)/((t1m + H) - t0m))},
-                        {t0:0,  y0: yStart + (yEnd - yStart)*((H - t0m)/((t1m + H) - t0m)), t1:t1m, y1:yEnd} ]; }
+      else {
+        var ratio = (H - t0m)/((t1m + H) - t0m);
+        var yH = yStart + (yEnd - yStart)*ratio;
+        pieces = [ {t0:t0m,y0:yStart,t1:H,y1:yH}, {t0:0,y0:yH,t1:t1m,y1:yEnd} ];
+      }
       for(var p=0;p<pieces.length;p++){
         var seg=pieces[p]; var line=elNS('line');
         setAttrs(line,{x1:xScale(seg.t0),y1:seg.y0,x2:xScale(seg.t1),y2:seg.y1,class:'coordLine '+(isBack?'back':'' )});
         line.style.stroke=color; line.style.opacity = opacity; line.setAttribute('marker-end','url(#arrow)'); s.appendChild(line);
+        // debug endpoints
+        if(document.getElementById('debugDetails') && document.getElementById('debugDetails').open){
+          var c1=elNS('circle'); setAttrs(c1,{cx:xScale(seg.t0), cy:seg.y0, r:3}); c1.setAttribute('fill','#222'); s.appendChild(c1);
+          var c2=elNS('circle'); setAttrs(c2,{cx:xScale(seg.t1), cy:seg.y1, r:3}); c2.setAttribute('fill','#555'); s.appendChild(c2);
+        }
       }
       return {t1:t0Raw+dt, pieces:pieces, yStart:yStart, yEnd:yEnd};
     }
@@ -594,6 +616,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
     var h=$('horizon'); if(h){ var to=null; h.addEventListener('input', function(){ if(to) clearTimeout(to); to=setTimeout(function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); }, 120); }); h.addEventListener('blur', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); }); h.addEventListener('change', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); }); }
     $('showMainGrid').addEventListener('change', function(){ render(); });
     $('phaseWrapBy').addEventListener('change', function(e){ state.phaseWrapMode = e.target.value==='destination'?'destination':'origin'; render(); });
+    $('wrapMode').addEventListener('change', function(e){ state.wrapMode = e.target.value; render(); });
 
     $('addOverlayBtn').addEventListener('click', function(){
       var origin=$('ovOrigin').value, dest=$('ovDest').value, stageIndex=Number($('ovStage').value), mode=$('ovMode').value, color=$('ovColor').value, op=Number($('ovOpacity').value||0.8);
