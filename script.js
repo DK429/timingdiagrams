@@ -336,9 +336,14 @@ function render(){
       const order = presentRowOrder();
       const i = Math.min(order.indexOf(fromId), order.indexOf(toId));
       const ch = channelBox(i);
-      const y = ch.mid + (ov.laneOffset||0);
+      // Diagonal: if from is above to, go top→bottom; if from is below to, go bottom→top.
+      const fromAbove = order.indexOf(fromId) < order.indexOf(toId);
+      const offset = (typeof (ov.laneOffset||0) === 'number') ? (ov.laneOffset||0) : 0;
+      const yStart = fromAbove ? (ch.y0 + offset) : (ch.y1 + offset);
+      const yEnd   = fromAbove ? (ch.y1 + offset) : (ch.y0 + offset);
+
       const line = elNS('line');
-      setAttrs(line,{x1:xScale(t0),y1:y,x2:xScale(t1),y2:y,class:`coordLine ${isBack?'back':''}`});
+      setAttrs(line,{x1:xScale(t0),y1:yStart,x2:xScale(t1),y2:yEnd,class:`coordLine ${isBack?'back':''}`});
       line.style.stroke = ov.color;
       s.appendChild(line);
       return t1;
@@ -419,8 +424,16 @@ $('showMainGrid').addEventListener('change', render);
 
 // Seed initial A,B; journeys and demo overlay
 addJunction('A'); addJunction('B');
-getJ('B').startTimeSec = 12; getJ('B').cycleTimeSec = 88;
+
+// Make Junction B total 88s (25+45+10 + 4+2+2)
+const JB = getJ('B');
+JB.startTimeSec = 12;
+JB.cycleTimeSec = 88;
+JB.stages = [{label:'B1',durationSec:25},{label:'B2',durationSec:45},{label:'B3',durationSec:10}];
+JB.intergreens = [{durationSec:4},{durationSec:2},{durationSec:2}];
+
 state.journeys['A->B'] = 22; state.journeys['B->A'] = 24;
+
 // Demo overlay: A:S1 interval → B
 state.overlays.push({ id:'demo1', origin:{junc:'A',stageIndex:0,mode:'interval'}, dest:{junc:'B'}, color:'#ff5722', showFrontBack:true, showArrivalWindow:true });
 renderLegend(); refreshOverlayPickers(); render();
