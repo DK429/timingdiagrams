@@ -355,6 +355,47 @@ function drawHidden(){
   const info = document.getElementById('info');
   if(info) info.textContent = `Hidden T=${T}s · scale=${pps}px/s · canvas ${C.width}×${C.height}`;
   log('Hidden canvas redrawn (min-green enforced)','info');
+
+  // --- TESTING: Bottom Clock A timeline (labels in seconds) ---
+  (function(){
+    try{
+      const left = App.initCfg.plot.leftMargin || 120;
+      const top  = App.initCfg.plot.topMargin || 24;
+      const rowH = App.initCfg.plot.rowHeight || 48;
+      const gap  = App.initCfg.plot.rowGap || 8;
+      const pps  = App.state.pxPerSec || 4;
+      const mult = (App.initCfg.plot && App.initCfg.plot.hiddenWindowMultiplier) || 5;
+      const T    = App.state.mainCycle * mult; // full widened horizon
+      const height = top + App.state.junctions.length*(rowH+gap) + 20;
+      const stripH = 18;
+      const yStrip = height - 6; // just above bottom padding
+
+      // draw a white strip to stand out under the plot
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(left, yStrip - stripH + 2, (T*pps), stripH);
+
+      ctx.fillStyle = '#444';
+      ctx.font = '11px ui-monospace, Consolas, monospace';
+      ctx.textBaseline = 'alphabetic';
+
+      // Label every 10s along Clock A (0..T)
+      for(let t=0;t<=T;t+=10){
+        const x = left + t*pps;
+        // tick
+        ctx.beginPath();
+        ctx.moveTo(x, yStrip - stripH + 2);
+        ctx.lineTo(x, yStrip + 1);
+        ctx.strokeStyle = '#bbb';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // text
+        ctx.fillText(String(t)+'s', x+2, yStrip - 3);
+      }
+      ctx.restore();
+    }catch(e){ console.warn('Clock A bottom timeline failed', e); }
+  })();
+
 }
 
 // ---- transfer to visible (no extra logic; just blit a window) ----
