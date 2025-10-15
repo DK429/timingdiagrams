@@ -13,3 +13,6 @@
 - Plot: stage labels drawn inside green bars in white, adaptively shortened (full → S# → #) based on available width.
 - Plot: missed-change validation now shown as a red on-canvas badge for the affected junction row.
 - Behaviour unchanged; this is purely visual.
+
+## v1.1.9-alpha.1 — 2025-10-15T21:03:19Z UTC
+- Hotfix: removed stray replacement token causing a syntax error near end-of-file.
