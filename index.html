@@ -98,7 +98,7 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
           <strong>Visible</strong><span class="badge">window: cycles 1..(1+N)</span>
         </div>
         <div id="visibleWrap">
-          <canvas id="visibleCanvas"></canvas>
+          <canvas id="visibleCanvas" style="display:block;"></canvas>
         </div>
       </div>
     </div>
@@ -361,13 +361,14 @@ function drawHidden(){
 }
 
 // ---- transfer to visible (no extra logic; just blit a window) ----
+
 function transferToVisible(){
   if(!(App.state.validOk && App.state.readyToPlot)){
     alert('Please Validate and Plot first.'); return;
   }
   const hidden = document.getElementById('hiddenCanvas');
   const visible = document.getElementById('visibleCanvas');
-  const wrap = document.getElementById('visibleWrap');
+  const wrap = document.getElementById('tab-visible') || document.getElementById('visibleWrap') || visible.parentElement;
   const pps = App.state.pxPerSec || 4;
   const M = App.state.mainCycle;
   const N = App.state.viewCycles || 2;
@@ -378,14 +379,43 @@ function transferToVisible(){
   const sw = N*Cj*pps; // width of N cycles
   const sy = 0;
   const sh = hidden.height;
-  // size visible to match the slice
+
+  // Size visible to match the slice, then blit
   visible.width = sw;
   visible.height = sh;
   const vctx = visible.getContext('2d');
   vctx.clearRect(0,0,visible.width,visible.height);
   vctx.drawImage(hidden, sx, sy, sw, sh, 0, 0, sw, sh);
-  log(`Transferred window: x=${sx}px w=${sw}px from hidden→visible (cycles 1..${1+N})`,'info');
+
+  // Overlay cycle-time counter: display (actual - main) = (N-1)*M
+  var delta = (Math.max(0, (N-1)) * M); // seconds
+  vctx.save();
+  vctx.fillStyle = "rgba(0,0,0,0.75)";
+  vctx.fillRect(8, 6, 180, 22);
+  vctx.fillStyle = "#fff";
+  vctx.font = "12px ui-monospace, Consolas, monospace";
+  vctx.textBaseline = "middle";
+  vctx.fillText(`Δ Cycle: ${delta}s (N-1)`, 16, 17);
+  vctx.restore();
+
+  // Full-screen scale to fit
+  const panel = document.getElementById('tab-visible') || document.body;
+  const availW = panel.clientWidth || window.innerWidth;
+  const availH = panel.clientHeight || window.innerHeight;
+  const scale = Math.max(0.1, Math.min(availW / sw, availH / sh));
+  visible.style.transformOrigin = 'top left';
+  visible.style.transform = `scale(${scale})`;
+  const wrapper = visible.parentElement;
+  if(wrapper){
+    wrapper.style.position = 'relative';
+    wrapper.style.overflow = 'auto';
+    wrapper.style.height = (availH) + 'px';
+    wrapper.style.width = (availW) + 'px';
+  }
+
+  log(`Transferred window: x=${sx}px w=${sw}px from hidden→visible (cycles 1..${1+N}); ΔCycle=${delta}s`,'info');
 }
+
 
 function drawHiddenGate(){
   if(!App.state.validOk){ alert('Please Validate first.'); return; }
@@ -618,7 +648,7 @@ boot();
     });
     // On entering a canvas tab, auto-fit width if possible
     if(tab==='hidden'){ try{ const fit=document.getElementById('fitBtn'); if(fit) fit.click(); }catch(e){} }
-    if(tab==='visible'){ /* no-op; visible canvas is a copy; size matches selection */ }
+    if(tab==='visible'){ try{ transferToVisible(); }catch(e){} }
   }
   document.querySelectorAll('.tabbtn').forEach(btn=>{
     btn.addEventListener('click', ()=> activate(btn.getAttribute('data-tab')));
