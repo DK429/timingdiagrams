@@ -59,7 +59,17 @@
     "requireAtLeastOneChange": true,
     "markRequestsBlue": true,
     "warnOnDelay": true,
-    "alertOnMissedChange": true
+    "alertOnMissedChange": true,
+    "defaults": [
+      {
+        "to": "S1",
+        "at": 0
+      },
+      {
+        "to": "S2",
+        "at": 30
+      }
+    ]
   },
   "plot": {
     "hiddenWindowMultiplier": 5,
@@ -73,7 +83,12 @@
     },
     "grid10s": true,
     "ticks1s": true,
-    "ticks5s": true
+    "ticks5s": true,
+    "rowHeight": 48,
+    "rowGap": 18,
+    "leftMargin": 120,
+    "topMargin": 24,
+    "pxPerSec": 4
   },
   "overlays": {
     "adjacentOnly": true,

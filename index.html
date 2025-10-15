@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Signal Plan Checker v1.1.0-alpha</title>
+<title>Signal Plan Checker v1.1.1-alpha</title>
 <style>
 :root{--bg:#ffffff;--card:#f8f9fb;--line:#e8e8e8;--ink:#222;--muted:#666;--brand:#0a66ff}
 *{box-sizing:border-box}
@@ -12,7 +12,7 @@ header{padding:14px 16px;border-bottom:1px solid var(--line);background:#fafafa}
 h1{font-size:18px;margin:0}
 small.muted{color:var(--muted)}
 main{padding:12px}
-.row{display:flex;gap:12px;flex-wrap:wrap}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}
 #controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 label{display:flex;flex-direction:column;font-size:12px;gap:4px}
@@ -27,25 +27,26 @@ input[type=number], select{padding:6px 8px;border:1px solid #d6d6d6;border-radiu
 .grid th{background:#f7f7f7}
 .sr{font-size:12px;color:var(--muted)}
 button{padding:8px 10px;border:1px solid #d0d0d0;border-radius:8px;background:#f7f7f7;cursor:pointer}
-#plot{border:1px solid var(--line);border-radius:8px;height:480px;background:#fff;display:flex;align-items:center;justify-content:center;color:#999}
+#hiddenWrap{border:1px dashed #bbb;border-radius:8px;padding:8px;background:#fff}
+#hiddenCanvas{display:block;max-width:100%;border:1px solid var(--line)}
+#plot{border:1px solid var(--line);border-radius:8px;height:120px;background:#fff;display:flex;align-items:center;justify-content:center;color:#999}
 #debugDock{position:fixed;left:10px;right:10px;bottom:10px;max-height:38vh;overflow:auto;background:#0d1117;color:#c9d1d9;
 border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace,Consolas,Monaco,monospace;z-index:9999}
 #debugDock .row{align-items:center}
 .logline.info{color:#a5d6ff} .logline.warn{color:#ffd27f} .logline.err{color:#ffb4b4}
+.badge{padding:2px 6px;border-radius:6px;background:#eef1ff;border:1px solid #dbe1ff;font-size:12px}
 </style>
 </head>
 <body>
 <header>
-  <h1>Signal Plan Checker <small class="muted">v1.1.0-alpha</small></h1>
-  <div class="sr">Simplification: global cycle + double, per-junction tabs, intergreen matrix, adjacent travel, init-configurable</div>
+  <h1>Signal Plan Checker <small class="muted">v1.1.1-alpha</small></h1>
+  <div class="sr">Loads bundled init · Creates default junctions A–C · Two-stage UTC plan (S1@0, S2@30) · Visible hidden canvas (5×M)</div>
 </header>
 
 <main>
   <section class="card">
     <div id="controls">
-      <label>Init file
-        <input id="initFile" type="file" accept="application/json"/>
-      </label>
+      <span class="badge">Init auto-loaded (no upload UI)</span>
       <label>Main cycle (s)
         <input id="mainCycle" type="number" min="1" max="240" value="60"/>
       </label>
@@ -70,7 +71,11 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
   </section>
 
   <section class="card">
-    <div id="plot">Plot renderer coming next step (hidden-canvas window + copy-to-visible)</div>
+    <h3>Hidden extended canvas (dev view)</h3>
+    <div id="hiddenWrap">
+      <canvas id="hiddenCanvas" width="800" height="300"></canvas>
+    </div>
+    <div id="plot" class="sr">Visible window will be implemented after we validate extended rendering</div>
   </section>
 </main>
 
@@ -102,14 +107,16 @@ async function loadBundledInit(){
   }
 }
 function hardDefaults(){
-  return {"appName": "Signal Plan Checker", "ui": {"debug": {"enabled": true, "dock": {"showOnLoad": true}, "logLevel": "info", "validationOnActions": true, "perfMarkers": true}}, "mainCycleTime": {"default": 60, "min": 1, "max": 240, "mustBeEvenWhenAnyDouble": true}, "junctionCount": {"default": 3, "min": 2, "max": 5}, "doubleCycle": {"allowed": true, "requireAtLeastOneMainCycle": true}, "stageCount": {"default": 2, "min": 2}, "stage": {"minGreen": {"default": 7, "min": 1}, "duration": {"min": 1}}, "intergreen": {"diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": {"offDiagonal": 5}, "domain": {"min": 0, "max": 60}}, "journeyTime": {"default": 20, "min": 0, "max": 60}, "utcPlan": {"requireAtLeastOneChange": true, "markRequestsBlue": true, "warnOnDelay": true, "alertOnMissedChange": true}, "plot": {"hiddenWindowMultiplier": 5, "viewCycles": {"options": [1, 2, 3], "default": 2}, "grid10s": true, "ticks1s": true, "ticks5s": true}, "overlays": {"adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true}, "packaging": {"includeDocs": true}};
+  return {"appName": "Signal Plan Checker", "ui": {"debug": {"enabled": true, "dock": {"showOnLoad": true}, "logLevel": "info", "validationOnActions": true, "perfMarkers": true}}, "mainCycleTime": {"default": 60, "min": 1, "max": 240, "mustBeEvenWhenAnyDouble": true}, "junctionCount": {"default": 3, "min": 2, "max": 5}, "doubleCycle": {"allowed": true, "requireAtLeastOneMainCycle": true}, "stageCount": {"default": 2, "min": 2}, "stage": {"minGreen": {"default": 7, "min": 1}, "duration": {"min": 1}}, "intergreen": {"diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": {"offDiagonal": 5}, "domain": {"min": 0, "max": 60}}, "journeyTime": {"default": 20, "min": 0, "max": 60}, "utcPlan": {"requireAtLeastOneChange": true, "markRequestsBlue": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [{"to": "S1", "at": 0}, {"to": "S2", "at": 30}]}, "plot": {"hiddenWindowMultiplier": 5, "viewCycles": {"options": [1, 2, 3], "default": 2}, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4}, "overlays": {"adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true}, "packaging": {"includeDocs": true}};
 }
+
+function mkDefaultUTCPlan(){ return (App.initCfg.utcPlan && Array.isArray(App.initCfg.utcPlan.defaults)) ? JSON.parse(JSON.stringify(App.initCfg.utcPlan.defaults)) : [{to:'S1',at:0},{to:'S2',at:30}]; }
 
 function mkJunction(id, cfg){
   const nStages = Math.max(cfg.stageCount.min, cfg.stageCount.default);
   const stages = []; const minG = cfg.stage.minGreen.default;
   for(let i=0;i<nStages;i++){
-    stages.push({ label: id+(i+1), minGreenSec: minG, durationSec: Math.max(cfg.stage.duration.min, minG) });
+    stages.push({ label: 'S'+(i+1), minGreenSec: minG, durationSec: Math.max(cfg.stage.duration.min, minG) });
   }
   const N = nStages; const ig = [];
   for(let r=0;r<N;r++){
@@ -122,7 +129,7 @@ function mkJunction(id, cfg){
   return {
     id, name: 'Junction '+id,
     doubleCycle: false,
-    utcPlan: [],
+    utcPlan: mkDefaultUTCPlan(),
     stages, intergreen: ig,
     travelPrev: cfg.journeyTime.default, travelNext: cfg.journeyTime.default
   };
@@ -196,7 +203,7 @@ function renderJunctionPanel(j){
     </table>
     <h4>Intergreen matrix (leading intergreen; -1 = not permitted)</h4>
     ${ig}
-    <div class="sr">UTC change list UI to be added next step</div>
+    <div class="sr">UTC plan (defaults): ${j.utcPlan.map(p=>p.to+'@'+p.at+'s').join(', ')}</div>
   `;
 }
 
@@ -219,7 +226,7 @@ function onPanelChange(e){
     resizeStages(j, n);
     rebuildTabs();
   }
-  if(t==='stageLabel'){ const idx=parseInt(e.target.getAttribute('data-idx'),10); j.stages[idx].label = e.target.value|| (j.id+(idx+1)); rebuildTabs(); }
+  if(t==='stageLabel'){ const idx=parseInt(e.target.getAttribute('data-idx'),10); j.stages[idx].label = e.target.value|| ('S'+(idx+1)); rebuildTabs(); }
   if(t==='minGreen'){ const idx=parseInt(e.target.getAttribute('data-idx'),10); j.stages[idx].minGreenSec = Math.max(App.initCfg.stage.minGreen.min, parseInt(e.target.value||App.initCfg.stage.minGreen.default,10)); e.target.value=j.stages[idx].minGreenSec; }
   if(t==='duration'){ const idx=parseInt(e.target.getAttribute('data-idx'),10); j.stages[idx].durationSec = Math.max(App.initCfg.stage.duration.min, parseInt(e.target.value||App.initCfg.stage.minGreen.default,10)); e.target.value=j.stages[idx].durationSec; }
   if(t==='ig'){ const r=parseInt(e.target.getAttribute('data-r'),10), c=parseInt(e.target.getAttribute('data-c'),10);
@@ -230,7 +237,7 @@ function onPanelChange(e){
 
 function resizeStages(j, n){
   const minG = App.initCfg.stage.minGreen.default;
-  while(j.stages.length < n){ j.stages.push({label: j.id+(j.stages.length+1), minGreenSec: minG, durationSec: Math.max(App.initCfg.stage.duration.min, minG)}); }
+  while(j.stages.length < n){ j.stages.push({label: 'S'+(j.stages.length+1), minGreenSec: minG, durationSec: Math.max(App.initCfg.stage.duration.min, minG)}); }
   while(j.stages.length > n){ j.stages.pop(); }
   const N = j.stages.length;
   const igNew = [];
@@ -239,8 +246,8 @@ function resizeStages(j, n){
     for(let c=0;c<N;c++){
       if(r===c) row.push(App.initCfg.intergreen.diagonalLockedValue);
       else{
-        const v = (j.intergreen[r] and typeof j.intergreen[r][c] === 'number') ? j.intergreen[r][c] : App.initCfg.intergreen.defaults.offDiagonal;
-        row.push(v);
+        const prev = (App.state && App.state._igBackup && App.state._igBackup[j.id] && App.state._igBackup[j.id][r] && typeof App.state._igBackup[j.id][r][c]==='number') ? App.state._igBackup[j.id][r][c] : App.initCfg.intergreen.defaults.offDiagonal;
+        row.push(prev);
       }
     }
     igNew.push(row);
@@ -290,6 +297,67 @@ function runValidation(){
   return ok;
 }
 
+// --- Basic hidden-canvas renderer (dev)
+function drawHidden(){
+  const C = document.getElementById('hiddenCanvas');
+  const ctx = C.getContext('2d');
+  const M = App.state.mainCycle;
+  const mult = App.initCfg.plot.hiddenWindowMultiplier || 5;
+  const T = M*mult; // total seconds in hidden domain
+  const pps = App.initCfg.plot.pxPerSec || 4;
+  const left = App.initCfg.plot.leftMargin || 120;
+  const top = App.initCfg.plot.topMargin || 24;
+  const rowH = App.initCfg.plot.rowHeight || 48;
+  const gap = App.initCfg.plot.rowGap || 18;
+  const width = left + T*pps + 20;
+  const height = top + App.state.junctions.length*(rowH+gap) + 20;
+  C.width = width; C.height = height;
+
+  // bg
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0,0,width,height);
+  // timeline grid every 10s
+  ctx.strokeStyle = "#eeeeee"; ctx.lineWidth = 1;
+  for(let t=0;t<=T;t+=10){
+    const x = left + t*pps;
+    ctx.beginPath(); ctx.moveTo(x, top-8); ctx.lineTo(x, height-10); ctx.stroke();
+    ctx.fillStyle="#999"; ctx.font="10px system-ui"; ctx.fillText(String(t)+"s", x-8, top-12);
+  }
+  // junction rows
+  App.state.junctions.forEach((j, idx)=>{
+    const y0 = top + idx*(rowH+gap);
+    // labels
+    ctx.fillStyle="#111"; ctx.font="12px system-ui";
+    ctx.fillText(j.name, 12, y0 + rowH*0.5);
+    // row guide
+    ctx.strokeStyle="#ddd"; ctx.strokeRect(left, y0, T*pps, rowH);
+    // placeholder stage bands per their durations (just repeating by durations; real UTC realisation next step)
+    let cycle = App.state.mainCycle; if(j.doubleCycle) cycle = cycle/2;
+    // simple 2-stage default: alternate halves of cycle for this placeholder
+    const s1 = 0; const s2 = cycle/2;
+    for(let k=0;k<mult;k++){
+      const base = k*cycle;
+      // stage 1 bar
+      ctx.fillStyle = "rgba(60,180,75,0.9)";
+      ctx.fillRect(left + (base + s1)*pps, y0+6, (s2 - s1)*pps, rowH-12);
+      // stage 2 bar
+      ctx.fillStyle = "rgba(80,200,100,0.9)";
+      ctx.fillRect(left + (base + s2)*pps, y0+6, (cycle - (s2 - s1))*pps, rowH-12);
+    }
+    // mark UTC requests (S1@0, S2@30) each cycle (for M=60 default)
+    ctx.strokeStyle="#4aa1ff"; ctx.lineWidth=2;
+    const reqs = j.utcPlan||[];
+    for(let k=0;k<mult;k++){
+      const base = k*cycle;
+      reqs.forEach(r=>{
+        const x = left + (base + r.at)*pps;
+        ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0+rowH); ctx.stroke();
+      });
+    }
+  });
+
+  log(`Hidden canvas drawn (T=${T}s, pps=${pps}, size=${C.width}x${C.height})`,'info');
+}
+
 async function boot(){
   const bundled = await loadBundledInit();
   App.initCfg = bundled || hardDefaults();
@@ -303,48 +371,35 @@ async function boot(){
   document.getElementById('viewCycles').value = String(App.state.viewCycles);
 
   rebuildTabs();
-  log('Loaded init + built default state','info');
+  log('Init complete: default junctions created and tabs rendered','info');
+  drawHidden();
 
-  document.getElementById('initFile').addEventListener('change', async (e)=>{
-    const f=e.target.files && e.target.files[0]; if(!f) return;
-    try{
-      const text = await f.text(); const cfg = JSON.parse(text);
-      App.initCfg = cfg;
-      log('Custom init loaded — rebuilding','info');
-      App.state = buildState(App.initCfg);
-      document.getElementById('mainCycle').value = App.state.mainCycle;
-      document.getElementById('jCount').value = App.state.junctions.length;
-      document.getElementById('viewCycles').value = String(App.state.viewCycles);
-      rebuildTabs();
-    }catch(err){ log('Init load error: '+(err.message||err),'err'); alert('Invalid init file'); }
-  });
   document.getElementById('mainCycle').addEventListener('change', (e)=>{
     const v = parseInt(e.target.value||60,10);
     const clamped = Math.max(App.initCfg.mainCycleTime.min, Math.min(App.initCfg.mainCycleTime.max, v));
     App.state.mainCycle = clamped; e.target.value=clamped;
     if(App.initCfg.ui.debug.validationOnActions) runValidation();
+    drawHidden();
   });
   document.getElementById('jCount').addEventListener('change', (e)=>{
     const v = parseInt(e.target.value||3,10);
     const c = Math.max(App.initCfg.junctionCount.min, Math.min(App.initCfg.junctionCount.max, v));
     const cur = App.state.junctions.length;
-    if(c>cur){
-      const ids=['A','B','C','D','E'];
-      for(let i=cur;i<c;i++){ App.state.junctions.push(mkJunction(ids[i], App.initCfg)); }
-    }else if(c<cur){
-      App.state.junctions.splice(c);
-    }
+    const ids=['A','B','C','D','E'];
+    if(c>cur){ for(let i=cur;i<c;i++){ App.state.junctions.push(mkJunction(ids[i], App.initCfg)); } }
+    else if(c<cur){ App.state.junctions.splice(c); }
     e.target.value=c;
     rebuildTabs();
     if(App.initCfg.ui.debug.validationOnActions) runValidation();
+    drawHidden();
   });
-  document.getElementById('viewCycles').addEventListener('change', (e)=>{ App.state.viewCycles = parseInt(e.target.value||2,10); });
+  document.getElementById('viewCycles').addEventListener('change', (e)=>{ App.state.viewCycles = parseInt(e.target.value||2,10); drawHidden(); });
 
   document.getElementById('validateBtn').addEventListener('click', runValidation);
   document.getElementById('plotBtn').addEventListener('click', ()=>{
     if(!runValidation()) return;
-    document.getElementById('plot').textContent = 'Renderer pending (will draw '+App.state.viewCycles+' cycle(s) from t='+App.state.mainCycle+'s)';
-    log('Plot requested — renderer stub called','info');
+    drawHidden();
+    log('Plot requested — hidden canvas redrawn (dev view)','info');
   });
 }
 

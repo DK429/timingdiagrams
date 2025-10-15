@@ -1,4 +1,3 @@
-# Known Issues — v1.1.0-alpha
-- Plot renderer not implemented yet.
-- UTC plan editor not implemented yet.
-- No export/import of full TD yet.
+# Known Issues — v1.1.1-alpha
+- Realised UTC stage timing (min-green + intergreen delays) not implemented yet.
+- Visible window (1–3 cycles) and overlays not implemented yet.
