@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Signal Plan Checker v1.0.24</title>
+<title>Signal Plan Checker v1.0.24.2</title>
 <style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#1b1b1b}
 header{padding:16px 20px;border-bottom:1px solid #eee;background:#fafafa}
@@ -58,8 +58,8 @@ summary{cursor:pointer}
 </head>
 <body>
 <header>
-  <h1>Signal Plan Checker <span class="badge">v1.0.24</span></h1>
-  <div>Single-file build with robust init and triple-buffer renderer.</div>
+  <h1>Signal Plan Checker <span class="badge">v1.0.24.2</span></h1>
+  <div>Fix: Start/End point overlays now draw as single-line arrivals (no full-stage band).</div>
 </header>
 
 <main>
@@ -91,7 +91,7 @@ summary{cursor:pointer}
       <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
       <button type="button" id="forceInitBtn" class="small">Force init</button>
       <button type="button" id="validateBtn">Validate</button>
-      <span class="version">v1.0.24</span>
+      <span class="version">v1.0.24.2</span>
     </div>
     <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -174,163 +174,57 @@ summary{cursor:pointer}
 <div id="bootBanner">script: loading…</div>
 
 <script>
-// ===== Basic helpers & logger =====
 function $(id){ return document.getElementById(id); }
 function elNS(tag){ return document.createElementNS('http://www.w3.org/2000/svg', tag); }
 function setAttrs(ele, attrs){ for(var k in attrs) ele.setAttribute(k, attrs[k]); return ele; }
 function num(v){ var s=String(v||'').replace(/[^0-9]/g, ''); var n=Number(s); return isFinite(n)?n:0; }
 function log(msg, level){ var box=$('debugLog'); if(!box) return; var div=document.createElement('div'); div.className=level||'info'; var t=(new Date()).toLocaleTimeString(); div.textContent='['+t+'] '+msg; box.appendChild(div); box.scrollTop=box.scrollHeight; }
-
 (function(){ var b=$('bootBanner'); if(b){ b.textContent='script: running (pre-DOM)'; } })();
 
-// ===== App state =====
-var state = {
-  junctions: [], journeys: {}, horizonSec: 0, horizonIsDefault: true, overlays: [],
-  rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip'
-};
+var state = { junctions: [], journeys: {}, horizonSec: 0, horizonIsDefault: true, overlays: [],
+  rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip' };
 
-// ===== Tabs =====
-function initTabs(){
-  var tabs=document.querySelectorAll('.tab');
-  for(var i=0;i<tabs.length;i++){
-    (function(btn){
-      btn.addEventListener('click', function(){
-        var all=document.querySelectorAll('.tab'); for(var j=0;j<all.length;j++) all[j].classList.remove('active');
-        var panels=document.querySelectorAll('.tabPanel'); for(var j=0;j<panels.length;j++) panels[j].classList.remove('active');
-        btn.classList.add('active');
-        var id=btn.getAttribute('data-tab'); var panel=$(id); if(panel) panel.classList.add('active');
-        if(id==='plotTab') render();
-      });
-    })(tabs[i]);
-  }
-}
+function initTabs(){ var tabs=document.querySelectorAll('.tab'); for(var i=0;i<tabs.length;i++){ (function(btn){ btn.addEventListener('click', function(){ var all=document.querySelectorAll('.tab'); for(var j=0;j<all.length;j++) all[j].classList.remove('active'); var panels=document.querySelectorAll('.tabPanel'); for(var j=0;j<panels.length;j++) panels[j].classList.remove('active'); btn.classList.add('active'); var id=btn.getAttribute('data-tab'); var panel=$(id); if(panel) panel.classList.add('active'); if(id==='plotTab') render(); }); })(tabs[i]); } }
 
-// ===== Seed defaults =====
-function buildDefaults(){
-  state.junctions = [];
-  function makeJ(id){
-    return { id:id, name:'Junction '+id, cycleTimeSec:60, startTimeSec:0,
-      stages:[{label:id+'1',durationSec:15},{label:id+'2',durationSec:15},{label:id+'3',durationSec:15}],
-      intergreens:[{durationSec:5},{durationSec:5},{durationSec:5}] };
-  }
-  state.junctions.push(makeJ('A'), makeJ('B'), makeJ('C'), makeJ('D'));
-  state.journeys = {'A->B':22,'B->A':24,'B->C':26,'C->B':23,'C->D':28,'D->C':29};
-  setDefaultHorizon();
-  log('Default data created', 'info');
-}
-
-// ===== Data UI =====
+function buildDefaults(){ state.junctions=[]; function makeJ(id){ return { id:id, name:'Junction '+id, cycleTimeSec:60, startTimeSec:0, stages:[{label:id+'1',durationSec:15},{label:id+'2',durationSec:15},{label:id+'3',durationSec:15}], intergreens:[{durationSec:5},{durationSec:5},{durationSec:5}] }; } state.junctions.push(makeJ('A'),makeJ('B'),makeJ('C'),makeJ('D')); state.journeys={'A->B':22,'B->A':24,'B->C':26,'C->B':23,'C->D':28,'D->C':29}; setDefaultHorizon(); log('Default data created','info'); }
 function getJ(id){ for(var i=0;i<state.junctions.length;i++){ if(state.junctions[i].id===id) return state.junctions[i]; } return null; }
 function alignIntergreens(j){ var n=j.stages.length; while(j.intergreens.length<n) j.intergreens.push({durationSec:0}); if(j.intergreens.length>n) j.intergreens=j.intergreens.slice(0,n); }
-function updateTotalsForJunction(id){
-  var j=getJ(id); if(!j) return;
-  var st=0,ig=0; for(var i=0;i<j.stages.length;i++){ st+=num(j.stages[i].durationSec); ig+=num(j.intergreens[i].durationSec||0); }
-  var el=$('tot_'+id); if(el){ el.textContent='Total used: '+(st+ig)+'s (stages '+st+'s + intergreens '+ig+'s) / cycle '+j.cycleTimeSec+'s'; }
-}
-function renderJunctionList(){
-  var container=$('junctionList'); container.innerHTML='';
-  for(var ji=0; ji<state.junctions.length; ji++){
-    var j=state.junctions[ji]; alignIntergreens(j);
-    var card=document.createElement('div'); card.className='junctionCard';
-    card.innerHTML=''
-      +'<div class="junctionRow">'
-      +'<label>Id <input value="'+j.id+'" disabled></label>'
-      +'<label>Name <input data-bind="name" data-id="'+j.id+'" value="'+j.name+'"></label>'
-      +'<label>Start offset (s) <input data-bind="start" data-id="'+j.id+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+j.startTimeSec+'"></label>'
-      +'</div>'
-      +'<div class="junctionRow">'
-      +'<label>Cycle time (s) <input data-bind="cycle" data-id="'+j.id+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+j.cycleTimeSec+'"></label>'
-      +'</div>'
-      +'<h4>Stages</h4>'
-      +'<table class="stagesTable"><thead><tr><th>Label</th><th>Duration (s)</th><th>Intergreen after (s)</th><th></th></tr></thead>'
-      +'<tbody id="stBody_'+j.id+'"></tbody></table>'
-      +'<div class="stageBtns"><button type="button" class="small" data-add-stage="'+j.id+'">+ Add stage</button>'
-      +(state.junctions.length>2? '<button type="button" class="small" data-remove-j="'+j.id+'">Remove junction</button>':'')
-      +'</div>'
-      +'<div class="totalsRow" id="tot_'+j.id+'" style="margin-top:6px;font-size:12px;color:#555"></div>';
-    container.appendChild(card);
-    var tbody=card.querySelector('#stBody_'+j.id+''); 
-    for(var i=0;i<j.stages.length;i++){
-      var s=j.stages[i], ig=j.intergreens[i].durationSec||0;
-      var tr=document.createElement('tr');
-      tr.innerHTML='<td><input data-st="label" data-id="'+j.id+'" data-idx="'+i+'" value="'+s.label+'"></td>'
-        +'<td><input type="text" inputmode="numeric" pattern="[0-9]*" data-st="dur" data-id="'+j.id+'" data-idx="'+i+'" value="'+s.durationSec+'"></td>'
-        +'<td><input type="text" inputmode="numeric" pattern="[0-9]*" data-st="ig" data-id="'+j.id+'" data-idx="'+i+'" value="'+ig+'"></td>'
-        +'<td><button type="button" class="small" data-del-stage="'+j.id+'" data-idx="'+i+'">✕</button></td>';
-      tbody.appendChild(tr);
-    }
-  }
-  // handlers
-  var binds=container.querySelectorAll('input[data-bind]');
-  for(var b=0;b<binds.length;b++){ (function(inp){
-    function commit(){ var j=getJ(inp.getAttribute('data-id')); if(!j) return; var bind=inp.getAttribute('data-bind');
-      if(bind==='name') j.name=inp.value;
-      if(bind==='start') j.startTimeSec=num(inp.value);
-      if(bind==='cycle'){ j.cycleTimeSec=num(inp.value); if(state.horizonIsDefault){ setDefaultHorizon(); } }
-      rebuildJourneyMatrix(); refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id);
-    }
-    inp.addEventListener('blur', commit); inp.addEventListener('change', commit);
-  })(binds[b]); }
-  var stInputs=container.querySelectorAll('input[data-st]');
-  for(var si=0; si<stInputs.length; si++){ (function(inp){
-    function commit(){
-      var j=getJ(inp.getAttribute('data-id')); var idx=Number(inp.getAttribute('data-idx'));
-      if(inp.getAttribute('data-st')==='label') j.stages[idx].label = inp.value;
-      if(inp.getAttribute('data-st')==='dur') j.stages[idx].durationSec = num(inp.value);
-      if(inp.getAttribute('data-st')==='ig') j.intergreens[idx].durationSec = num(inp.value);
-      refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id);
-    }
-    inp.addEventListener('blur', commit); inp.addEventListener('change', commit);
-  })(stInputs[si]); }
-  var addBtns=container.querySelectorAll('[data-add-stage]');
-  for(var ai=0; ai<addBtns.length; ai++){ addBtns[ai].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-add-stage'); var j=getJ(id); var n=j.stages.length+1; j.stages.push({label:id+n,durationSec:10}); j.intergreens.push({durationSec:2}); renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); }); }
-  var delBtns=container.querySelectorAll('[data-del-stage]');
-  for(var di=0; di<delBtns.length; di++){ delBtns[di].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-del-stage'); var idx=Number(ev.currentTarget.getAttribute('data-idx')); var j=getJ(id); j.stages.splice(idx,1); j.intergreens.splice(idx,1); renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); }); }
-  var remBtns=container.querySelectorAll('[data-remove-j]');
-  for(var ri=0; ri<remBtns.length; ri++){ remBtns[ri].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-remove-j'); state.junctions = state.junctions.filter(function(x){return x.id!==id;}); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render(); updateDataValidation(); }); }
+function updateTotalsForJunction(id){ var j=getJ(id); if(!j) return; var st=0,ig=0; for(var i=0;i<j.stages.length;i++){ st+=num(j.stages[i].durationSec); ig+=num(j.intergreens[i].durationSec||0); } var el=$('tot_'+id); if(el){ el.textContent='Total used: '+(st+ig)+'s (stages '+st+'s + intergreens '+ig+'s) / cycle '+j.cycleTimeSec+'s'; } }
+
+function renderJunctionList(){ var container=$('junctionList'); container.innerHTML=''; for(var ji=0;ji<state.junctions.length;ji++){ var j=state.junctions[ji]; alignIntergreens(j); var card=document.createElement('div'); card.className='junctionCard'; card.innerHTML=''
++'<div class="junctionRow">'
++'<label>Id <input value="'+j.id+'" disabled></label>'
++'<label>Name <input data-bind="name" data-id="'+j.id+'" value="'+j.name+'"></label>'
++'<label>Start offset (s) <input data-bind="start" data-id="'+j.id+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+j.startTimeSec+'"></label>'
++'</div>'
++'<div class="junctionRow">'
++'<label>Cycle time (s) <input data-bind="cycle" data-id="'+j.id+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+j.cycleTimeSec+'"></label>'
++'</div>'
++'<h4>Stages</h4>'
++'<table class="stagesTable"><thead><tr><th>Label</th><th>Duration (s)</th><th>Intergreen after (s)</th><th></th></tr></thead>'
++'<tbody id="stBody_'+j.id+'"></tbody></table>'
++'<div class="stageBtns"><button type="button" class="small" data-add-stage="'+j.id+'">+ Add stage</button>'+(state.junctions.length>2? '<button type="button" class="small" data-remove-j="'+j.id+'">Remove junction</button>':'')+'</div>'
++'<div class="totalsRow" id="tot_'+j.id+'" style="margin-top:6px;font-size:12px;color:#555"></div>'; container.appendChild(card); var tbody=card.querySelector('#stBody_'+j.id+''); for(var i=0;i<j.stages.length;i++){ var s=j.stages[i], ig=j.intergreens[i].durationSec||0; var tr=document.createElement('tr'); tr.innerHTML='<td><input data-st="label" data-id="'+j.id+'" data-idx="'+i+'" value="'+s.label+'"></td>'
++'<td><input type="text" inputmode="numeric" pattern="[0-9]*" data-st="dur" data-id="'+j.id+'" data-idx="'+i+'" value="'+s.durationSec+'"></td>'
++'<td><input type="text" inputmode="numeric" pattern="[0-9]*" data-st="ig" data-id="'+j.id+'" data-idx="'+i+'" value="'+ig+'"></td>'
++'<td><button type="button" class="small" data-del-stage="'+j.id+'" data-idx="'+i+'">✕</button></td>'; tbody.appendChild(tr); } }
+  var binds=container.querySelectorAll('input[data-bind]'); for(var b=0;b<binds.length;b++){ (function(inp){ function commit(){ var j=getJ(inp.getAttribute('data-id')); if(!j) return; var bind=inp.getAttribute('data-bind'); if(bind==='name') j.name=inp.value; if(bind==='start') j.startTimeSec=num(inp.value); if(bind==='cycle'){ j.cycleTimeSec=num(inp.value); if(state.horizonIsDefault){ setDefaultHorizon(); } } rebuildJourneyMatrix(); refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id); }
+    inp.addEventListener('blur', commit); inp.addEventListener('change', commit); })(binds[b]); }
+  var stInputs=container.querySelectorAll('input[data-st]'); for(var si=0; si<stInputs.length; si++){ (function(inp){ function commit(){ var j=getJ(inp.getAttribute('data-id')); var idx=Number(inp.getAttribute('data-idx')); if(inp.getAttribute('data-st')==='label') j.stages[idx].label = inp.value; if(inp.getAttribute('data-st')==='dur') j.stages[idx].durationSec = num(inp.value); if(inp.getAttribute('data-st')==='ig') j.intergreens[idx].durationSec = num(inp.value); refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id); }
+    inp.addEventListener('blur', commit); inp.addEventListener('change', commit); })(stInputs[si]); }
+  var addBtns=container.querySelectorAll('[data-add-stage]'); for(var ai=0; ai<addBtns.length; ai++){ addBtns[ai].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-add-stage'); var j=getJ(id); var n=j.stages.length+1; j.stages.push({label:id+n,durationSec:10}); j.intergreens.push({durationSec:2}); renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); }); }
+  var delBtns=container.querySelectorAll('[data-del-stage]'); for(var di=0; di<delBtns.length; di++){ delBtns[di].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-del-stage'); var idx=Number(ev.currentTarget.getAttribute('data-idx')); var j=getJ(id); j.stages.splice(idx,1); j.intergreens.splice(idx,1); renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); }); }
+  var remBtns=container.querySelectorAll('[data-remove-j]'); for(var ri=0; ri<remBtns.length; ri++){ remBtns[ri].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-remove-j'); state.junctions = state.junctions.filter(function(x){return x.id!==id;}); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render(); updateDataValidation(); }); }
   for(var t=0;t<state.junctions.length;t++) updateTotalsForJunction(state.junctions[t].id);
-  log('Junction list rendered', 'info');
+  refreshOverlayPickers();
+  log('Junction list rendered','info');
 }
 
-function rebuildJourneyMatrix(){
-  var cont=$('journeyMatrix'); cont.innerHTML='';
-  var n=state.junctions.length; if(n<2){ cont.textContent='Add at least two junctions.'; return; }
-  var table=document.createElement('table'); table.className='stagesTable';
-  var thead=document.createElement('thead'); var hrow='<tr><th>From \\\\ To</th>'; for(var i=0;i<n;i++) hrow+='<th>'+state.junctions[i].name+'</th>'; hrow+='</tr>'; thead.innerHTML=hrow; table.appendChild(thead);
-  var tbody=document.createElement('tbody');
-  for(var r=0;r<n;r++){
-    var fromJ=state.junctions[r]; var row='<td><strong>'+fromJ.name+'</strong></td>';
-    for(var c=0;c<n;c++){
-      var toJ=state.junctions[c];
-      if(fromJ.id===toJ.id){ row+='<td style="text-align:center;color:#888">—</td>'; }
-      else{ var key=fromJ.id+'->'+toJ.id; var val= state.journeys[key]!=null? state.journeys[key] : 20;
-        row+='<td><input data-journey="'+key+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+val+'"></td>'; }
-    }
-    var tr=document.createElement('tr'); tr.innerHTML=row; tbody.appendChild(tr);
-  }
-  table.appendChild(tbody); cont.appendChild(table);
-  var inps = cont.querySelectorAll('input[data-journey]');
-  for(var i=0;i<inps.length;i++){ (function(inp){ function commit(){ state.journeys[inp.getAttribute('data-journey')] = num(inp.value); render(); } inp.addEventListener('blur', commit); inp.addEventListener('change', commit); })(inps[i]); }
-  log('Journey matrix rendered', 'info');
-}
+function rebuildJourneyMatrix(){ var cont=$('journeyMatrix'); cont.innerHTML=''; var n=state.junctions.length; if(n<2){ cont.textContent='Add at least two junctions.'; return; } var table=document.createElement('table'); table.className='stagesTable'; var thead=document.createElement('thead'); var hrow='<tr><th>From \\\\ To</th>'; for(var i=0;i<n;i++) hrow+='<th>'+state.junctions[i].name+'</th>'; hrow+='</tr>'; thead.innerHTML=hrow; table.appendChild(thead); var tbody=document.createElement('tbody'); for(var r=0;r<n;r++){ var fromJ=state.junctions[r]; var row='<td><strong>'+fromJ.name+'</strong></td>'; for(var c=0;c<n;c++){ var toJ=state.junctions[c]; if(fromJ.id===toJ.id){ row+='<td style="text-align:center;color:#888">—</td>'; } else { var key=fromJ.id+'->'+toJ.id; var val= state.journeys[key]!=null? state.journeys[key] : 20; row+='<td><input data-journey="'+key+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+val+'"></td>'; } } var tr=document.createElement('tr'); tr.innerHTML=row; tbody.appendChild(tr); } table.appendChild(tbody); cont.appendChild(table); var inps=cont.querySelectorAll('input[data-journey]'); for(var i=0;i<inps.length;i++){ (function(inp){ function commit(){ state.journeys[inp.getAttribute('data-journey')] = num(inp.value); render(); } inp.addEventListener('blur', commit); inp.addEventListener('change', commit); })(inps[i]); } log('Journey matrix rendered','info'); }
 
-// ===== Validation =====
-function validate(){
-  var errors=[];
-  if(state.junctions.length<2) errors.push('Add at least two junctions.');
-  for(var i=0;i<state.junctions.length;i++){
-    var j=state.junctions[i]; alignIntergreens(j);
-    if(j.stages.length===0) errors.push(j.name+': add at least one stage.');
-    if(j.intergreens.length!==j.stages.length) errors.push(j.name+': intergreens count must match stages count.');
-    if(j.cycleTimeSec<=0) errors.push(j.name+': cycle time must be > 0.');
-    var st=0, ig=0; for(var k=0;k<j.stages.length;k++){ st+=num(j.stages[k].durationSec); ig+=num(j.intergreens[k].durationSec||0); }
-    if((st+ig)!==j.cycleTimeSec){ errors.push(j.name+': stages + intergreens ('+(st+ig)+'s = '+st+'s + '+ig+'s) must equal cycle ('+j.cycleTimeSec+'s).'); }
-  }
-  return errors;
-}
+function validate(){ var errors=[]; if(state.junctions.length<2) errors.push('Add at least two junctions.'); for(var i=0;i<state.junctions.length;i++){ var j=state.junctions[i]; alignIntergreens(j); if(j.stages.length===0) errors.push(j.name+': add at least one stage.'); if(j.intergreens.length!==j.stages.length) errors.push(j.name+': intergreens count must match stages count.'); if(j.cycleTimeSec<=0) errors.push(j.name+': cycle time must be > 0.'); var st=0,ig=0; for(var k=0;k<j.stages.length;k++){ st+=num(j.stages[k].durationSec); ig+=num(j.intergreens[k].durationSec||0); } if((st+ig)!==j.cycleTimeSec){ errors.push(j.name+': stages + intergreens ('+(st+ig)+'s = '+st+'s + '+ig+'s) must equal cycle ('+j.cycleTimeSec+'s).'); } } return errors; }
 function updateDataValidation(){ var out=$('dataValidation'); var errs=validate(); if(errs.length){ out.innerHTML='<div class="bad"><strong>Fix these first:</strong><ul>'+errs.map(function(e){return '<li>'+e+'</li>';}).join('')+'</ul></div>'; } else out.innerHTML='<div class="good">Config looks valid ✔️</div>'; }
 
-// ===== Plot helpers & renderer (triple-buffer) =====
 function presentRowOrder(){ var out=[]; for(var i=0;i<state.rowOrder.length;i++){ if(getJ(state.rowOrder[i])) out.push(state.rowOrder[i]); } return out; }
 function maxCycle(){ var m=0; for(var i=0;i<state.junctions.length;i++) m=Math.max(m, state.junctions[i].cycleTimeSec||0); return m; }
 function setDefaultHorizon(){ var def=Math.max(60, maxCycle()+20); var h=$('horizon'); if(!h) return; if(state.horizonIsDefault || !num(h.value)){ h.value=String(def); state.horizonSec=def; state.horizonIsDefault=true; } }
@@ -340,146 +234,99 @@ function tileBands(j,h,start,end){ start = (typeof start==='number')? start : 0;
 function channelBox(i){ var yTop = 20 + i*(30+120); var yBandTop = yTop+10, yBandBot=yBandTop+30; var nextTop = 20 + (i+1)*(30+120); return {y0:yBandTop+30+10, y1:nextTop-10, mid: (yBandTop+30+10 + nextTop-10)/2}; }
 function otherEndOf(chId, cur){ var p=chId.split('-'); return cur===p[0]? p[1]:p[0]; }
 function channelPath(a,b){ var o=presentRowOrder(); var ai=o.indexOf(a), bi=o.indexOf(b); if(ai===-1||bi===-1) return []; var path=[], step=ai<bi?1:-1; for(var i=ai;i!==bi;i+=step){ var id1=o[i], id2=o[i+step]; var top=o.indexOf(id1)<o.indexOf(id2)?id1:id2; var bottom=(top===id1)?id2:id1; path.push(top+'-'+bottom); } return path; }
-
 function ensureArrowDefs(s){ if(s.querySelector('defs#arrowDefs')) return; var defs=elNS('defs'); defs.id='arrowDefs'; var m=elNS('marker'); m.setAttribute('id','arrow'); m.setAttribute('viewBox','0 0 10 10'); m.setAttribute('refX','8'); m.setAttribute('refY','5'); m.setAttribute('markerWidth','6'); m.setAttribute('markerHeight','6'); m.setAttribute('orient','auto'); var p=elNS('path'); p.setAttribute('d','M 0 0 L 10 5 L 0 10 z'); p.setAttribute('fill','context-stroke'); m.appendChild(p); defs.appendChild(m); s.appendChild(defs); }
 
-function render(){
-  var s=$('diagram'); if(!s) return; s.innerHTML='';
-  var H = state.horizonSec = num($('horizon').value) || Math.max(60, maxCycle()+20);
-  if(!$('horizon').value) $('horizon').value=String(H);
-  var showMainGrid = state.showMainGrid = $('showMainGrid').checked;
-  var width = s.clientWidth || 960; var MARGIN=60; var HEIGHT = 20 + (presentRowOrder().length-1)*(30+120) + 30 + 80; s.setAttribute('height', String(HEIGHT));
-  var usableW = (width - MARGIN - 10);
-  var PAD = H; // draw [-H, H+H]
-  var xScale = function(t){ return MARGIN + (t/H)*usableW; }; // visible window scaler
-  var xScaleAbs = function(tAbs){ return MARGIN + ((tAbs + PAD)/H)*usableW; }; // absolute scaler
-
-  ensureArrowDefs(s);
-
-  // Global grid labels
-  if(showMainGrid){
-    for(var t=0;t<=H;t+=10){ var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:8,x2:xScale(t),y2:HEIGHT-8,class:'gridLine'}); s.appendChild(ln); if(t%30===0){ var tx=elNS('text'); setAttrs(tx,{x:xScale(t)+2,y:12,class:'axisLabel'}); tx.textContent=t+'s'; s.appendChild(tx);} }
-  } else {
-    for(var t2=0;t2<=H;t2+=30){ var tx2=elNS('text'); setAttrs(tx2,{x:xScale(t2)+2,y:12,class:'axisLabel'}); tx2.textContent=t2+'s'; s.appendChild(tx2); }
-  }
-
-  var order = presentRowOrder();
-  for(var r=0;r<order.length;r++){
-    var j=getJ(order[r]); var yTop=20 + r*(30+120); var yBandTop=yTop+10, yBandBot=yBandTop+30;
-    var lbl=elNS('text'); setAttrs(lbl,{x:10,y:yTop+4,class:'rowLabel'}); lbl.textContent=j.name; s.appendChild(lbl);
-    var offlbl=elNS('text'); setAttrs(offlbl,{x:10,y:yTop+16,class:'offsetLabel'}); offlbl.textContent='Offset: '+(j.startTimeSec||0)+'s'; s.appendChild(offlbl);
-    // 1s and 5s ticks
-    for(var t=0;t<=H;t+=1){ var x=xScale(t); var l1=elNS('line'); setAttrs(l1,{x1:x,y1:yBandTop-3,x2:x,y2:yBandTop,class:'tick1'}); s.appendChild(l1); var l2=elNS('line'); setAttrs(l2,{x1:x,y1:yBandBot,x2:x,y2:yBandBot+3,class:'tick1'}); s.appendChild(l2); }
-    for(var t5=0;t5<=H;t5+=5){ var x5=xScale(t5); var L1=elNS('line'); setAttrs(L1,{x1:x5,y1:yBandTop-6,x2:x5,y2:yBandTop,class:'tick5'}); s.appendChild(L1); var L2=elNS('line'); setAttrs(L2,{x1:x5,y1:yBandBot,x2:x5,y2:yBandBot+6,class:'tick5'}); s.appendChild(L2); }
-    // Draw tiles over extended absolute range
-    var tiles=tileBands(j,H,-PAD,H+PAD);
-    for(var b=0;b<tiles.length;b++){
-      var m=tiles[b]; var x0=xScaleAbs(m.startAbs), x1=xScaleAbs(m.endAbs), w=Math.max(0,x1-x0);
-      var rect=elNS('rect'); setAttrs(rect,{x:x0,y:yBandTop,width:w,height:30,class:(m.type==='stage'?'stageRect':'intergreenRect')}); if(m.type==='stage') rect.setAttribute('fill', stageFill(m.index)); s.appendChild(rect);
-      if(m.label && m.type==='stage' && w>24){ var tt=elNS('text'); setAttrs(tt,{x:x0+w/2,y:yBandTop+15,class:'stageLabel'}); tt.textContent=m.label; s.appendChild(tt); }
-    }
-    // Stage local time labels
-    var C=j.cycleTimeSec, t0=j.startTimeSec||0; var tTiles=tiles.filter(function(b){return b.type==='stage';});
-    for(var b2=0; b2<tTiles.length; b2++){ var bb=tTiles[b2]; var xs=xScaleAbs(bb.startAbs), xe=xScaleAbs(bb.endAbs); var startLocal=((bb.startAbs - t0)%C + C)%C, endLocal=((bb.endAbs - t0)%C + C)%C; var ty=yBandTop-8; var tS=elNS('text'); setAttrs(tS,{x:xs,y:ty,class:'stageTimeLabel'}); tS.textContent=startLocal+'s'; s.appendChild(tS); var tE=elNS('text'); setAttrs(tE,{x:xe,y:ty,class:'stageTimeLabel'}); tE.textContent=endLocal+'s'; s.appendChild(tE); }
-    // Per-row cycle markers
+function render(){ var s=$('diagram'); if(!s) return; s.innerHTML=''; var H = state.horizonSec = num($('horizon').value) || Math.max(60, maxCycle()+20); if(!$('horizon').value) $('horizon').value=String(H); var showMainGrid = state.showMainGrid = $('showMainGrid').checked; var width = s.clientWidth || 960; var MARGIN=60; var HEIGHT = 20 + (presentRowOrder().length-1)*(30+120) + 30 + 80; s.setAttribute('height', String(HEIGHT)); var usableW = (width - MARGIN - 10); var PAD = H; var xScale=function(t){return MARGIN + (t/H)*usableW;}; var xScaleAbs=function(tAbs){ return MARGIN + ((tAbs + PAD)/H)*usableW; }; ensureArrowDefs(s);
+  if(showMainGrid){ for(var t=0;t<=H;t+=10){ var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:8,x2:xScale(t),y2:HEIGHT-8,class:'gridLine'}); s.appendChild(ln); if(t%30===0){ var tx=elNS('text'); setAttrs(tx,{x:xScale(t)+2,y:12,class:'axisLabel'}); tx.textContent=t+'s'; s.appendChild(tx);} } } else { for(var t2=0;t2<=H;t2+=30){ var tx2=elNS('text'); setAttrs(tx2,{x:xScale(t2)+2,y:12,class:'axisLabel'}); tx2.textContent=t2+'s'; s.appendChild(tx2); } }
+  var order=presentRowOrder(); for(var r=0;r<order.length;r++){ var j=getJ(order[r]); var yTop=20 + r*(30+120); var yBandTop=yTop+10, yBandBot=yBandTop+30; var lbl=elNS('text'); setAttrs(lbl,{x:10,y:yTop+4,class:'rowLabel'}); lbl.textContent=j.name; s.appendChild(lbl); var offlbl=elNS('text'); setAttrs(offlbl,{x:10,y:yTop+16,class:'offsetLabel'}); offlbl.textContent='Offset: '+(j.startTimeSec||0)+'s'; s.appendChild(offlbl); for(var t=0;t<=H;t+=1){ var x=xScale(t); var l1=elNS('line'); setAttrs(l1,{x1:x,y1:yBandTop-3,x2:x,y2:yBandTop,class:'tick1'}); s.appendChild(l1); var l2=elNS('line'); setAttrs(l2,{x1:x,y1:yBandBot,x2:x,y2:yBandBot+3,class:'tick1'}); s.appendChild(l2); } for(var t5=0;t5<=H;t5+=5){ var x5=xScale(t5); var L1=elNS('line'); setAttrs(L1,{x1:x5,y1:yBandTop-6,x2:x5,y2:yBandTop,class:'tick5'}); s.appendChild(L1); var L2=elNS('line'); setAttrs(L2,{x1:x5,y1:yBandBot,x2:x5,y2:yBandBot+6,class:'tick5'}); s.appendChild(L2); }
+    var tiles=tileBands(j,H,-PAD,H+PAD); for(var b=0;b<tiles.length;b++){ var m=tiles[b]; var x0=xScaleAbs(m.startAbs), x1=xScaleAbs(m.endAbs), w=Math.max(0,x1-x0); var rect=elNS('rect'); setAttrs(rect,{x:x0,y:yBandTop,width:w,height:30,class:(m.type==='stage'?'stageRect':'intergreenRect')}); if(m.type==='stage') rect.setAttribute('fill', stageFill(m.index)); s.appendChild(rect); if(m.label && m.type==='stage' && w>24){ var tt=elNS('text'); setAttrs(tt,{x:x0+w/2,y:yBandTop+15,class:'stageLabel'}); tt.textContent=m.label; s.appendChild(tt);} }
+    var C=j.cycleTimeSec, t0=j.startTimeSec||0; var tTiles=tiles.filter(function(b){return b.type==='stage';}); for(var b2=0;b2<tTiles.length;b2++){ var bb=tTiles[b2]; var xs=xScaleAbs(bb.startAbs), xe=xScaleAbs(bb.endAbs); var startLocal=((bb.startAbs - t0)%C + C)%C, endLocal=((bb.endAbs - t0)%C + C)%C; var ty=yBandTop-8; var tS=elNS('text'); setAttrs(tS,{x:xs,y:ty,class:'stageTimeLabel'}); tS.textContent=startLocal+'s'; s.appendChild(tS); var tE=elNS('text'); setAttrs(tE,{x:xe,y:ty,class:'stageTimeLabel'}); tE.textContent=endLocal+'s'; s.appendChild(tE); }
     if(C>0){ var first=t0; while(first<0) first+=C; while(first-C>=0) first-=C; for(var tt=first; tt<=H; tt+=C){ if(tt<=0) continue; var xl=xScale(tt); var ln2=elNS('line'); setAttrs(ln2,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'gridLine'}); ln2.setAttribute('stroke','#e53935'); ln2.setAttribute('stroke-width','2'); s.appendChild(ln2); } var yBottomLbl=yBandBot+16; var lab=t0; while(lab<0) lab+=5; while(lab-5>=0) lab-=5; for(var ttt=lab; ttt<=H; ttt+=5){ var tx=elNS('text'); setAttrs(tx,{x:xScale(ttt)+2,y:yBottomLbl,class:'axisLabel'}); tx.textContent=String(((ttt - t0)%C + C)%C)+'s'; s.appendChild(tx); } }
   }
-
-  // channel grids (0..H)
-  if(showMainGrid){
-    for(var i=0;i<order.length-1;i++){ var ch=channelBox(i); for(var t=0;t<=H;t+=10){ var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:ch.y0,x2:xScale(t),y2:ch.y1,class:'channelGrid'}); s.appendChild(ln);} }
-  }
+  if(showMainGrid){ for(var i=0;i<order.length-1;i++){ var ch=channelBox(i); for(var t=0;t<=H;t+=10){ var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:ch.y0,x2:xScale(t),y2:ch.y1,class:'channelGrid'}); s.appendChild(ln);} } }
+  function hopDraw(t0Abs, fromId, hopId, color, opacity, isBack){ var toId=otherEndOf(hopId,fromId); var key=fromId+'->'+toId; if(!(key in state.journeys)) return {t1:t0Abs,pieces:[],yStart:null,yEnd:null}; var dt=state.journeys[key]; var orderList=presentRowOrder(); var parts=hopId.split('-'); var i=Math.min(orderList.indexOf(parts[0]),orderList.indexOf(parts[1])); var ch=channelBox(i); var fromAbove=orderList.indexOf(fromId)<orderList.indexOf(toId); var yStart=fromAbove?ch.y0:ch.y1; var yEnd=fromAbove?ch.y1:ch.y0; var line=elNS('line'); setAttrs(line,{x1:xScaleAbs(t0Abs),y1:yStart,x2:xScaleAbs(t0Abs+dt),y2:yEnd,class:'coordLine '+(isBack?'back':'')}); line.style.stroke=color; line.style.opacity=opacity; line.setAttribute('marker-end','url(#arrow)'); s.appendChild(line); return {t1:t0Abs+dt,pieces:[{t0:t0Abs,t1:t0Abs+dt,y0:yStart,y1:yEnd}],yStart:yStart,yEnd:yEnd}; }
 
   // Overlays
-  function hopDraw(t0Abs, fromId, hopId, color, opacity, isBack, origin, dest){
-    var toId = otherEndOf(hopId, fromId);
-    var key = fromId+'->'+toId; if(!(key in state.journeys)) return {t1:t0Abs, pieces:[], yStart:null, yEnd:null};
-    var dt = state.journeys[key];
-    var orderList = presentRowOrder(); var parts=hopId.split('-'); var i = Math.min(orderList.indexOf(parts[0]), orderList.indexOf(parts[1]));
-    var ch = channelBox(i); var fromAbove = orderList.indexOf(fromId) < orderList.indexOf(toId);
-    var yStart = fromAbove ? ch.y0 : ch.y1; var yEnd = fromAbove ? ch.y1 : ch.y0;
-    var line = elNS('line'); setAttrs(line,{x1:xScaleAbs(t0Abs), y1:yStart, x2:xScaleAbs(t0Abs+dt), y2:yEnd, class:'coordLine '+(isBack?'back':'')});
-    line.style.stroke=color; line.style.opacity=opacity; line.setAttribute('marker-end','url(#arrow)'); s.appendChild(line);
-    return {t1:t0Abs+dt, pieces:[{t0:t0Abs,t1:t0Abs+dt,y0:yStart,y1:yEnd}], yStart:yStart, yEnd:yEnd};
-  }
-
-  function refreshLegend(){
-    var el=$('legend'); if(!el) return; el.innerHTML='';
-    for(var oi=0;oi<state.overlays.length;oi++){
-      var ov=state.overlays[oi]; var item=document.createElement('div'); item.className='item';
-      var sw=document.createElement('span'); sw.className='swatch'; sw.style.background=ov.color;
-      var lbl=document.createElement('span');
-      if(ov.type==='custom'){ lbl.textContent=getJ(ov.origin.junc).name+' ['+ov.origin.tStart+'–'+ov.origin.tEnd+'s'+(ov.repeatCycle?' ×':'')+'] → '+getJ(ov.dest.junc).name; }
-      else { lbl.textContent=getJ(ov.origin.junc).name+':'+getJ(ov.origin.junc).stages[ov.origin.stageIndex].label+(ov.repeatStage?' ×':'')+' → '+getJ(ov.dest.junc).name; }
-      var del=document.createElement('button'); del.className='small'; del.textContent='Remove'; (function(id){ del.addEventListener('click', function(){ state.overlays=state.overlays.filter(function(x){return x.id!==id;}); refreshLegend(); render(); }); })(ov.id);
-      item.appendChild(sw); item.appendChild(lbl); item.appendChild(del); el.appendChild(item);
-    }
-  }
-  refreshLegend();
-
   for(var oi=0;oi<state.overlays.length;oi++){
     var ov=state.overlays[oi]; var origin=getJ(ov.origin.junc), dest=getJ(ov.dest.junc); if(!origin||!dest) continue;
     var path=channelPath(origin.id, dest.id); if(path.length===0) continue;
-
     var tiles;
     if(ov.type==='custom'){
       tiles=[];
       if(ov.repeatCycle){ var C=origin.cycleTimeSec||0; if(C>0){ var cStart=origin.startTimeSec||0; while(cStart>-H) cStart-=C; while(cStart+C<-H) cStart+=C; while(cStart<H+H){ tiles.push({startAbs:cStart+ov.origin.tStart,endAbs:cStart+ov.origin.tEnd}); cStart+=C; } } else { tiles=[{startAbs:ov.origin.tStart,endAbs:ov.origin.tEnd}]; } }
       else tiles=[{startAbs:ov.origin.tStart,endAbs:ov.origin.tEnd}];
     }else{
-      var tb=tileBands(origin,H,-H,H+H).filter(function(b){return b.type==='stage' && b.label===origin.stages[ov.origin.stageIndex].label;});
-      if(ov.repeatStage){ tiles = tb.map(function(b){return {startAbs:b.startAbs,endAbs:b.endAbs};}); }
-      else { if(tb.length){ var first = tb[0]; tiles=[{startAbs:first.startAbs,endAbs:first.endAbs}]; } else { tiles=[]; } }
+      var labelWanted = origin.stages[ov.origin.stageIndex] ? origin.stages[ov.origin.stageIndex].label : null;
+      var tb=tileBands(origin,H,-H,H+H).filter(function(b){return b.type==='stage' && b.label===labelWanted;});
+      tiles=[];
+      for(var k=0;k<tb.length;k++){
+        var seg=tb[k];
+        if(ov.origin.mode==='interval'){ tiles.push({startAbs:seg.startAbs,endAbs:seg.endAbs}); }
+        else if(ov.origin.mode==='point'){ tiles.push({startAbs:seg.startAbs,endAbs:seg.startAbs}); }
+        else if(ov.origin.mode==='pointEnd'){ tiles.push({startAbs:seg.endAbs,endAbs:seg.endAbs}); }
+      }
+      if(!ov.repeatStage){
+        tiles = tiles.length ? [tiles[0]] : [];
+      }
     }
-
-    if(state.overrunMode==='skip'){ tiles = tiles.filter(function(b){return b.startAbs>=-H && b.endAbs<=H+H;}); }
-    else tiles = tiles.filter(function(b){return b.endAbs>-H && b.startAbs<H+H;});
-
+    if(state.overrunMode==='skip'){ tiles = tiles.filter(function(b){return b.startAbs>=-H && b.endAbs<=H+H;}); } else { tiles = tiles.filter(function(b){return b.endAbs>-H && b.startAbs<H+H;}); }
     for(var ti=0;ti<tiles.length;ti++){
       var seg=tiles[ti];
       var tf=seg.startAbs, tb=seg.endAbs, fromF=origin.id, fromB=origin.id;
       var resF,resB;
+      // Always draw the forward (front) path
       for(var hpi=0;hpi<path.length;hpi++){
         var hop=path[hpi];
-        resF=hopDraw(tf, fromF, hop, ov.color, ov.opacity||0.8, false, origin, dest);
-        resB=hopDraw(tb, fromB, hop, ov.color, ov.opacity||0.8, true, origin, dest);
-        var poly=elNS('polygon');
-        var pts= (xScaleAbs(resF.pieces[0].t0))+','+(resF.pieces[0].y0)+' '+(xScaleAbs(resF.pieces[0].t1))+','+(resF.pieces[0].y1)
-           +' '+(xScaleAbs(resB.pieces[0].t1))+','+(resB.pieces[0].y1)+' '+(xScaleAbs(resB.pieces[0].t0))+','+(resB.pieces[0].y0);
-        setAttrs(poly,{points:pts}); poly.setAttribute('fill', ov.color); poly.setAttribute('opacity','0.18'); $('diagram').appendChild(poly);
-        tf=resF.t1; tb=resB.t1; fromF=otherEndOf(hop,fromF); fromB=otherEndOf(hop,fromB);
+        resF=hopDraw(tf, fromF, hop, ov.color, ov.opacity||0.9, false);
+        fromF=otherEndOf(hop,fromF);
+        tf=resF.t1;
       }
-      // destination arrival band
-      var destRowIdx = presentRowOrder().indexOf(dest.id);
-      var yTopDest = 20 + destRowIdx*(30+120) + 10;
-      var rect=elNS('rect'); setAttrs(rect,{x:xScaleAbs(tf), y:yTopDest, width:Math.max(0, xScaleAbs(tb)-xScaleAbs(tf)), height:30, class:'arrivalHighlight'});
-      rect.style.fill=ov.color; rect.style.opacity=Math.max(0.05, 0.35*(ov.opacity||0.8)); $('diagram').appendChild(rect);
+      // Only draw back path + polygon + destination band if it's an INTERVAL (non-zero width)
+      var isPoint = (seg.startAbs === seg.endAbs);
+      if(!isPoint){
+        tf=seg.startAbs; fromF=origin.id; // recompute for polygon pairing
+        var tf2=seg.endAbs, fromB2=origin.id;
+        for(var hpi2=0;hpi2<path.length;hpi2++){
+          var hop2=path[hpi2];
+          var resF2=hopDraw(tf, fromF, hop2, ov.color, (ov.opacity||0.8)*0.9, false);
+          var resB2=hopDraw(tf2, fromB2, hop2, ov.color, (ov.opacity||0.8)*0.9, true);
+          var poly=elNS('polygon');
+          var pts= (xScaleAbs(resF2.pieces[0].t0))+','+(resF2.pieces[0].y0)+' '+(xScaleAbs(resF2.pieces[0].t1))+','+(resF2.pieces[0].y1)
+            +' '+(xScaleAbs(resB2.pieces[0].t1))+','+(resB2.pieces[0].y1)+' '+(xScaleAbs(resB2.pieces[0].t0))+','+(resB2.pieces[0].y0);
+          setAttrs(poly,{points:pts}); poly.setAttribute('fill', ov.color); poly.setAttribute('opacity','0.18'); $('diagram').appendChild(poly);
+          tf=resF2.t1; tf2=resB2.t1; fromF=otherEndOf(hop2,fromF); fromB2=otherEndOf(hop2,fromB2);
+        }
+        var destRowIdx = presentRowOrder().indexOf(dest.id);
+        var yTopDest = 20 + destRowIdx*(30+120) + 10;
+        var rect=elNS('rect'); setAttrs(rect,{x:xScaleAbs(tf), y:yTopDest, width:Math.max(0, xScaleAbs(tf2)-xScaleAbs(tf)), height:30, class:'arrivalHighlight'});
+        rect.style.fill=ov.color; rect.style.opacity=Math.max(0.05, 0.35*(ov.opacity||0.8)); $('diagram').appendChild(rect);
+      } else {
+        // Point arrival indicator: small vertical tick at destination time
+        var destRowIdx2 = presentRowOrder().indexOf(dest.id);
+        var yTopDest2 = 20 + destRowIdx2*(30+120) + 10;
+        var tick = elNS('line');
+        setAttrs(tick,{x1:xScaleAbs(tf),y1:yTopDest2,x2:xScaleAbs(tf),y2:yTopDest2+30});
+        tick.setAttribute('stroke', ov.color);
+        tick.setAttribute('stroke-width','2');
+        s.appendChild(tick);
+      }
     }
   }
 
-  // Travel times labels between rows
-  for(var i=0;i<order.length-1;i++){
-    var from=order[i], to=order[i+1], ch=channelBox(i), midY=ch.mid, leftX=48, rightX=(s.clientWidth||960)-16;
-    var kf=from+'->'+to, kr=to+'->'+from;
+  for(var i=0;i<order.length-1;i++){ var from=order[i], to=order[i+1], ch=channelBox(i), midY=ch.mid, leftX=48, rightX=(s.clientWidth||960)-16; var kf=from+'->'+to, kr=to+'->'+from;
     if(state.journeys[kf]!=null){ var t1=elNS('text'); setAttrs(t1,{x:leftX,y:midY,class:'channelTT'}); t1.textContent=from+'↓'+to+' '+state.journeys[kf]+'s'; s.appendChild(t1); }
-    if(state.journeys[kr]!=null){ var t2=elNS('text'); setAttrs(t2,{x:rightX,y:midY,class:'channelTT'}); t2.setAttribute('text-anchor','end'); t2.textContent=state.journeys[kr]+'s '+to+'↑'+from; s.appendChild(t2); }
-  }
-
-  updateDataValidation();
-  log('Plot rendered (H='+H+'s)', 'info');
+    if(state.journeys[kr]!=null){ var t2=elNS('text'); setAttrs(t2,{x:rightX,y:midY,class:'channelTT'}); t2.setAttribute('text-anchor','end'); t2.textContent=state.journeys[kr]+'s '+to+'↑'+from; s.appendChild(t2); } }
+  updateDataValidation(); log('Plot rendered (H='+H+'s)','info');
 }
 
-// ===== Overlay controls & IO =====
 function refreshOverlayPickers(){
   var o=$('ovOrigin'), d=$('ovDest'), s=$('ovStage'), coO=$('coOrigin'), coD=$('coDest');
-  function fillSel(sel){ if(!sel) return; sel.innerHTML=''; for(var i=0;i<state.rowOrder.length;i++){ var id=state.rowOrder[i]; var j=getJ(id); if(j){ var opt=document.createElement('option'); opt.value=id; opt.textContent=j.name; sel.appendChild(opt);} } }
-  fillSel(o); fillSel(d); fillSel(coO); fillSel(coD);
-  if(s){ s.innerHTML=''; var j0=getJ(presentRowOrder()[0]); if(j0){ for(var i=0;i<j0.stages.length;i++){ var op=document.createElement('option'); op.value=String(i); op.textContent=j0.stages[i].label; s.appendChild(op);} } }
+  function fillSelJ(sel){ if(!sel) return; var cur=sel.value; sel.innerHTML=''; for(var i=0;i<state.rowOrder.length;i++){ var id=state.rowOrder[i]; var j=getJ(id); if(j){ var opt=document.createElement('option'); opt.value=id; opt.textContent=j.name; sel.appendChild(opt);} } if(cur && getJ(cur)) sel.value=cur; }
+  fillSelJ(o); fillSelJ(d); fillSelJ(coO); fillSelJ(coD);
+  function fillStagesForOrigin(){ if(!s) return; var originId = o && o.value ? o.value : (presentRowOrder()[0] || null); s.innerHTML=''; if(originId){ var j = getJ(originId); if(j){ for(var i=0;i<j.stages.length;i++){ var op=document.createElement('option'); op.value=String(i); op.textContent=j.stages[i].label; s.appendChild(op);} } } }
+  fillStagesForOrigin();
+  if(o && !o._hasStageSync){ o.addEventListener('change', function(){ fillStagesForOrigin(); }); o._hasStageSync=true; }
 }
-
-function renderLegend(){
-  var el=$('legend'); if(!el) return; el.innerHTML='';
-  for(var oi=0;oi<state.overlays.length;oi++){ var ov=state.overlays[oi]; var item=document.createElement('div'); item.className='item'; var sw=document.createElement('span'); sw.className='swatch'; sw.style.background=ov.color; var lbl=document.createElement('span'); if(ov.type==='custom'){ lbl.textContent=getJ(ov.origin.junc).name+' ['+ov.origin.tStart+'–'+ov.origin.tEnd+(ov.repeatCycle?' ×':'')+'] → '+getJ(ov.dest.junc).name; } else { lbl.textContent=getJ(ov.origin.junc).name+':'+getJ(ov.origin.junc).stages[ov.origin.stageIndex].label+(ov.repeatStage?' ×':'')+' → '+getJ(ov.dest.junc).name; } var del=document.createElement('button'); del.className='small'; del.textContent='Remove'; (function(id){ del.addEventListener('click', function(){ state.overlays=state.overlays.filter(function(x){return x.id!==id;}); renderLegend(); render(); }); })(ov.id); item.appendChild(sw); item.appendChild(lbl); item.appendChild(del); el.appendChild(item);} }
 
 document.addEventListener('DOMContentLoaded', function(){
   $('clearDebugBtn').addEventListener('click', function(){ var box=$('debugLog'); if(box) box.innerHTML=''; });
@@ -488,12 +335,11 @@ document.addEventListener('DOMContentLoaded', function(){
   renderJunctionList();
   rebuildJourneyMatrix();
   refreshOverlayPickers();
-  renderLegend();
   setDefaultHorizon();
   $('plotBtn').addEventListener('click', function(){ render(); });
   $('validateBtn').addEventListener('click', updateDataValidation);
   $('rebuildMatrix').addEventListener('click', function(){ rebuildJourneyMatrix(); });
-  $('resetDefaultsBtn').addEventListener('click', function(){ buildDefaults(); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); renderLegend(); setDefaultHorizon(); render(); updateDataValidation(); });
+  $('resetDefaultsBtn').addEventListener('click', function(){ buildDefaults(); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render(); updateDataValidation(); });
   var h=$('horizon'); h.addEventListener('blur', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); });
   h.addEventListener('change', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); });
   $('showMainGrid').addEventListener('change', function(){ render(); });
@@ -512,17 +358,11 @@ document.addEventListener('DOMContentLoaded', function(){
     state.overlays.push({ id:id, type:'custom', origin:{ junc:origin, tStart:tStart, tEnd:tEnd }, dest:{ junc:dest }, color:color, opacity:op, repeatCycle:rep });
     renderLegend(); render();
   });
-  // Export/Import
-  $('exportBtn').addEventListener('click', function(){ var payload = JSON.stringify(state, null, 2); var blob=new Blob([payload],{type:'application/json'}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download='signals-config-v1.json'; a.click(); setTimeout(function(){URL.revokeObjectURL(url);},1000); });
-  $('importInput').addEventListener('change', function(e){ var f=e.target.files[0]; if(!f) return; var r=new FileReader(); r.onload=function(){ try{ var obj=JSON.parse(r.result); state.junctions=obj.junctions||state.junctions; state.journeys=obj.journeys||state.journeys; state.horizonSec=obj.horizonSec||state.horizonSec; state.overlays=obj.overlays||state.overlays; state.overrunMode=obj.overrunMode||state.overrunMode; renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); renderLegend(); render(); updateDataValidation(); document.querySelector('[data-tab="plotTab"]').click(); }catch(err){ var out=$('dataValidation'); if(out) out.innerHTML='<div class="bad">Import failed: '+err.message+'</div>'; } }; r.readAsText(f); });
-  $('saveTdBtn').addEventListener('click', function(){ var payload=JSON.stringify(state,null,2); var blob=new Blob([payload],{type:'application/json'}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download='signal-plan-checker.td'; a.click(); setTimeout(function(){URL.revokeObjectURL(url);},1000); });
-  $('loadTdInput').addEventListener('change', function(e){ var f=e.target.files[0]; if(!f) return; var r=new FileReader(); r.onload=function(){ try{ var obj=JSON.parse(r.result); state.junctions=obj.junctions||state.junctions; state.journeys=obj.journeys||state.journeys; state.horizonSec=obj.horizonSec||state.horizonSec; state.overlays=obj.overlays||state.overlays; state.overrunMode=obj.overrunMode||state.overrunMode; renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); renderLegend(); render(); updateDataValidation(); document.querySelector('[data-tab="plotTab"]').click(); }catch(err){ var out=$('dataValidation'); if(out) out.innerHTML='<div class="bad">TD load failed: '+err.message+'</div>'; } }; r.readAsText(f); });
-  // Force init
-  $('forceInitBtn').addEventListener('click', function(){ log('Force init clicked', 'warn'); buildDefaults(); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); renderLegend(); setDefaultHorizon(); render(); updateDataValidation(); });
-  // First render
+  function renderLegend(){ var el=$('legend'); if(!el) return; el.innerHTML=''; for(var oi=0;oi<state.overlays.length;oi++){ var ov=state.overlays[oi]; var item=document.createElement('div'); item.className='item'; var sw=document.createElement('span'); sw.className='swatch'; sw.style.background=ov.color; var lbl=document.createElement('span'); if(ov.type==='custom'){ lbl.textContent=getJ(ov.origin.junc).name+' ['+ov.origin.tStart+'–'+ov.origin.tEnd+'s'+(ov.repeatCycle?' ×':'')+'] → '+getJ(ov.dest.junc).name; } else { var oj=getJ(ov.origin.junc); var stageLbl = (oj && oj.stages[ov.origin.stageIndex]) ? oj.stages[ov.origin.stageIndex].label : ('Stage '+(ov.origin.stageIndex+1)); var modeTxt = ov.origin.mode==='interval' ? '' : (ov.origin.mode==='point' ? ' (start)' : ' (end)'); lbl.textContent=oj.name+':'+stageLbl+modeTxt+(ov.repeatStage?' ×':'')+' → '+getJ(ov.dest.junc).name; } var del=document.createElement('button'); del.className='small'; del.textContent='Remove'; (function(id){ del.addEventListener('click', function(){ state.overlays=state.overlays.filter(function(x){return x.id!==id;}); renderLegend(); render(); }); })(ov.id); item.appendChild(sw); item.appendChild(lbl); item.appendChild(del); el.appendChild(item);} }
+  window.renderLegend = renderLegend;
   render();
   var b=$('bootBanner'); if(b){ b.textContent='script: DOM ready'; setTimeout(function(){ if(b && b.parentNode) b.parentNode.removeChild(b); }, 2000); }
-  log('App initialised', 'info');
+  log('App initialised','info');
 });
 </script>
 </body>

@@ -1,3 +1,4 @@
-# Signal Plan Checker — Known Bugs & Fixes Log (Regression Guard)
+# BUGS — v1.0.24.2 delta
 
-[See earlier provided BUGS log; include this in your repo as baseline.]
+- Fixed: Point overlays (stage start/end) incorrectly behaved like full interval overlays. Now they render only the forward path and a small arrival tick at the destination.
+- Guard: Rendering checks `seg.startAbs === seg.endAbs` to treat as point-mode and skip polygon/band.

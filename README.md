@@ -1,6 +1,9 @@
 # Signal Plan Checker
 
-**Version:** v1.0.24 (stable)  
-**Runtime:** Pure HTML/CSS/JS — no server required. iPad Safari + desktop friendly.
+**Version:** v1.0.24.2 (overlay point-mode fix)  
+**Runtime:** Pure HTML/CSS/JS — no server required.
 
-See PROMPT.md for the authoritative spec and BUGS.md for the regression checklist.
+### What's fixed
+- **Add Overlay → Mode: Point / Point (end)** now draws a **single arrival line** to the destination (no full-stage band). Interval (whole stage) continues to draw the sloped front/back lines, polygon, and shaded band at the destination.
+
+All other functionality matches v1.0.24.1.

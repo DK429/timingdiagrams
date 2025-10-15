@@ -1,9 +1,10 @@
 {
   "name": "Signal Plan Checker",
-  "version": "1.0.24",
+  "version": "1.0.24.2",
   "channel": "stable",
-  "build_date": "2025-10-15T04:10:03Z",
+  "build_date": "2025-10-15T04:30:00Z",
   "notes": [
-    "Full stable app + docs (single-file HTML app)"
+    "Fix: Point/PointEnd overlays render as single lines without bands",
+    "Base: v1.0.24.1"
   ]
 }
