@@ -187,7 +187,7 @@ function runValidation(){
   App.state.junctions.forEach(j=>errs.push(...validateJunction(j)));
   const ok = errs.length===0;
   if(ok){
-    App.state.validOk = true;  # NOTE: We'll correct capitalization right after writing; this is placeholder.
+    App.state.validOk = true;  // Set validation flag when no errors
   }
   return ok;
 }
