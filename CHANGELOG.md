@@ -4,30 +4,8 @@
 - Copies hidden canvas window (cycles 1..1+N) to visible at 1:1.
 - No changes to logic or defaults.
 
-## v1.1.9-alpha.6 — 2025-10-15T21:24:36Z UTC
-- Safari robustness: added cache-busting to `init.config.json` fetch and exposed APP_VERSION at runtime; status chip now shows version after Validate/Plot.
-
-## v1.2.0-alpha — 2025-10-15T21:33:14Z UTC
-- UI: Introduced master tabs (Data, Hidden ext canvas, Visible canvas). Hidden and visible canvases now occupy their own tabs for full-screen plotting.
-- Plot: Improved stage-label visibility (thinner padding, lower width threshold, slightly larger font, guaranteed overdraw).
-
-## v1.2.1-alpha — 2025-10-15T21:42:04Z UTC
-- Visible canvas: overlay cycle-time counter now shows (N-1) × mainCycle (i.e., actual window minus one cycle). Clears and redraws per transfer.
-- Full-screen fit: visible canvas auto-scales to fill the entire visible tab (both width and height) using CSS transform scaling, preserving crispness.
-- Tab switch to "Visible canvas" now re-transfers and scales automatically.
-
-## v1.3.0-alpha — 2025-10-15T21:50:38Z UTC
-- Visible canvas now re-renders using the same plotting pipeline as hidden, but with an origin shift of one main cycle:
-  - Grid/labels across the full widened horizon.
-  - Plotting starts from cycle 2 (t ≥ mainCycle). Earlier grid remains visible with muted labels.
-  - Time labels display (t - mainCycle), so 0 aligns with the start of cycle 2.
-- Transfer action now re-renders rather than blitting and scales to the full tab.
-
-## v1.3.1-alpha — 2025-10-15T21:59:39Z UTC
-- Visible canvas alignment: origin now aligns with the left margin via context translation; eliminates left offset.
-- Time axis on visible shows (t − mainCycle) labels only (no negatives); grid starts at cycle 2 to prevent hidden-canvas artefacts.
-- Removed prior clamping/skips; rendering now mirrors hidden pipeline exactly with a translated origin.
-
-## v1.3.2-alpha — 2025-10-15T22:12:15Z UTC
-- Visible origin is now 2 × mainCycle at the left margin; grid and labels start at origin and display (t − origin).
-- Added clip region to ensure no pre-origin artefacts appear on the visible time axis.
+## v1.4.0-alpha — 2025-10-15T22:26:43Z UTC
+- Dual clocks: **A** drives plotting (unchanged), **B** drives the **visible** top-axis labels.
+- Visible transfer is now a **B-window**: start at B0 = max(0, A_left − mainCycle) and width = (viewCycles × mainCycle).
+- Axis overlay masks A-label artefacts and writes clean B labels (every 10s) over the visible span.
+- Scrolling/zooming the hidden canvas shifts **B0**, so you can pan left/right and re-Transfer to update.
