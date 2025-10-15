@@ -16,3 +16,6 @@
 
 ## v1.1.9-alpha.1 — 2025-10-15T21:03:19Z UTC
 - Hotfix: removed stray replacement token causing a syntax error near end-of-file.
+
+## v1.1.9-alpha.2 — 2025-10-15T21:11:47Z UTC
+- Hotfix: guarded queued-change annotations; now use local `_rqNext` and `_delay` so no ReferenceError if variables are not yet declared in this scope.

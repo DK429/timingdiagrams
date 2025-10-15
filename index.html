@@ -430,15 +430,19 @@ function drawHidden(){
           ctx.restore();
         })();
     }
+        // ensure local vars exist for queued calculations
+        const _rqNext = (rc.details[i] && rc.details[i].rqNext) ?? 0;
+        const _delay = (rc.details[i] && rc.details[i].delay) ?? 0;
+
         
-        if(App.initCfg.utcPlan.warnOnDelay && delay>0){
-          log(`${j.name}: queued change — requested at t=${Math.round((nextReq)%Cj)}s, realised at t=${Math.round((RCn)%Cj)}s (delay=${Math.round(delay)}s)`, 'warn');
+        if(App.initCfg.utcPlan.warnOnDelay && _delay>0){
+          log(`${j.name}: queued change — requested at t=${Math.round((_rqNext)%Cj)}s, realised at t=${Math.round((RCn)%Cj)}s (delay=${Math.round(_delay)}s)`, 'warn');
         }
 
-        if(App.initCfg.utcPlan.showQueuedChangeMarkers && delay>0){
+        if(App.initCfg.utcPlan.showQueuedChangeMarkers && _delay>0){
           ctx.strokeStyle="rgba(74,161,255,0.7)";
           ctx.setLineDash([4,3]);
-          const x1 = left + (nextReq + k*Cj)*pps;
+          const x1 = left + (_rqNext + k*Cj)*pps;
           const x2 = left + (RCn + k*Cj)*pps;
           ctx.beginPath(); ctx.moveTo(x1, y0+4); ctx.lineTo(x2, y0+4); ctx.stroke();
           ctx.setLineDash([]);
