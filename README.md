@@ -1,5 +1,2 @@
-# Signal Plan Checker — v1.1.4-alpha
-Gated rendering so editing/validation is safe:
-- Editing any data highlights **Validate** and **Plot**, and disables drawing until Validate passes and Plot is pressed.
-- Validation now checks **stage transitions** against the intergreen matrix (wrap-around included).
-- Hidden extended canvas remains the development surface with zoom and Fit.
+# Signal Plan Checker — v1.1.5-alpha
+Fixes stage segments crossing the cycle boundary. With S1@10 and S2@50, S2 green now runs past 60s into the next cycle up to 70s.

@@ -1,3 +1,3 @@
 # Known Issues
-- Min-green enforcement (delays/queued changes) still pending.
+- Min-green enforcement and queueing not yet implemented.
 - Visible window copy & overlays pending.
