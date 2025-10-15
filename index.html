@@ -40,6 +40,17 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
 </style>
 </head>
 <body>
+<div id="masterTabs" class="tabbar" style="display:flex;gap:6px;padding:8px;border-bottom:1px solid #ddd;position:sticky;top:0;background:#fafafa;z-index:10">
+  <button class="tabbtn" data-tab="data"    style="padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#fff;cursor:pointer">Data</button>
+  <button class="tabbtn" data-tab="hidden"  style="padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#eee;cursor:pointer">Hidden ext canvas</button>
+  <button class="tabbtn" data-tab="visible" style="padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#eee;cursor:pointer">Visible canvas</button>
+</div>
+<div id="tabPanels">
+  <section id="tab-data" style="display:block;"></section>
+  <section id="tab-hidden" style="display:none; height: calc(100vh - 48px); overflow:auto; padding:8px;"></section>
+  <section id="tab-visible" style="display:none; height: calc(100vh - 48px); overflow:auto; padding:8px;"></section>
+</div>
+
 <header>
   <h1>Signal Plan Checker <small class="muted">1.1.7-alpha</small></h1>
   <div class="row"><span class="badge">Min-green + queued (hidden)</span><span class="badge">Transfer-ready visible canvas</span></div>
@@ -559,6 +570,63 @@ async function boot(){
   }); }
 }
 boot();
+</script>
+<script>
+// --- Master Tabs setup ---
+(function(){
+  function byId(id){ return document.getElementById(id); }
+  function moveTo(panelId, el){
+    const panel = byId(panelId);
+    if(panel && el){ panel.appendChild(el); }
+  }
+  // Panels exist above; now relocate key sections:
+  // - Data: everything except the two canvas wrappers
+  // Find existing wrappers (if missing, skip gracefully)
+  const hiddenWrap = document.getElementById('hiddenWrap');
+  const visibleWrap = document.getElementById('visibleWrap') || document.getElementById('visible'); // fallback id if different
+  // Create a staging div to collect all original body children once (except our tabs container)
+  const tabsRoot = document.getElementById('masterTabs').parentElement;
+  const tabData = document.getElementById('tab-data');
+  const tabHidden = document.getElementById('tab-hidden');
+  const tabVisible = document.getElementById('tab-visible');
+
+  // Move canvas wrappers first so they don't remain in Data
+  if(hiddenWrap) moveTo('tab-hidden', hiddenWrap);
+  if(visibleWrap) moveTo('tab-visible', visibleWrap);
+
+  // Move any remaining non-tab content into Data (excluding the masterTabs + tabPanels)
+  const tabPanels = document.getElementById('tabPanels');
+  const bodyKids = Array.from(document.body.children);
+  bodyKids.forEach(node=>{
+    if(node===document.getElementById('masterTabs') || node===tabPanels) return;
+    if(node.id==='tab-data' || node.id==='tab-hidden' || node.id==='tab-visible') return;
+    // Already moved wrappers will no longer be here
+    // Put remaining content under Data
+    tabData.appendChild(node);
+  });
+
+  // Tab interactions
+  function activate(tab){
+    ['data','hidden','visible'].forEach(t=>{
+      const btn = document.querySelector(`.tabbtn[data-tab="${t}"]`);
+      const sec = byId('tab-'+t);
+      if(!btn || !sec) return;
+      const active = (t===tab);
+      sec.style.display = active ? 'block' : 'none';
+      btn.style.background = active ? '#fff' : '#eee';
+      btn.style.borderBottom = active ? '1px solid #fff' : '1px solid #ccc';
+    });
+    // On entering a canvas tab, auto-fit width if possible
+    if(tab==='hidden'){ try{ const fit=document.getElementById('fitBtn'); if(fit) fit.click(); }catch(e){} }
+    if(tab==='visible'){ /* no-op; visible canvas is a copy; size matches selection */ }
+  }
+  document.querySelectorAll('.tabbtn').forEach(btn=>{
+    btn.addEventListener('click', ()=> activate(btn.getAttribute('data-tab')));
+  });
+  // Default: show Data
+  activate('data');
+})();
+
 </script>
 </body>
 </html>

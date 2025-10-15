@@ -6,3 +6,7 @@
 
 ## v1.1.9-alpha.6 — 2025-10-15T21:24:36Z UTC
 - Safari robustness: added cache-busting to `init.config.json` fetch and exposed APP_VERSION at runtime; status chip now shows version after Validate/Plot.
+
+## v1.2.0-alpha — 2025-10-15T21:33:14Z UTC
+- UI: Introduced master tabs (Data, Hidden ext canvas, Visible canvas). Hidden and visible canvases now occupy their own tabs for full-screen plotting.
+- Plot: Improved stage-label visibility (thinner padding, lower width threshold, slightly larger font, guaranteed overdraw).
