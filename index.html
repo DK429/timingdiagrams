@@ -59,7 +59,6 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
       </label>
       <button id="validateBtn">Validate</button>
       <button id="plotBtn" disabled>Plot</button>
-      <button id="transferBtn" disabled>Transfer to Visible</button>
       <span id="statusChip" class="infochip">Waiting for Validate…</span>
     </div>
     <div class="tabs" id="jtabs"></div>
@@ -78,7 +77,7 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <strong>Hidden</strong><span class="badge">full horizon</span>
         </div>
-        <div id="hiddenWrap">
+        <div id="hiddenWrap" style="overflow:auto;">>
           <canvas id="hiddenCanvas"></canvas>
         </div>
       </div>
@@ -86,10 +85,7 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <strong>Visible</strong><span class="badge">window: cycles 1..(1+N)</span>
         </div>
-        <div id="visibleWrap">
-          <canvas id="visibleCanvas"></canvas>
         </div>
-      </div>
     </div>
   </section>
 </main>
@@ -238,7 +234,7 @@ function runValidation({silent}={silent:false}){
     const v=document.getElementById('validateBtn'); if(v) v.classList.remove('dirty');
     const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Validated ✔ — press Plot to render';
     const plot=document.getElementById('plotBtn'); if(plot) plot.disabled=false;
-    const x=document.getElementById('transferBtn'); if(x) x.disabled=false;
+    // transfer removed
     if(!silent) log('VALIDATION OK','info');
     const ba=document.getElementById('bootAlert'); if(ba){ ba.classList.remove('show'); ba.textContent=''; }
   }else{
@@ -350,10 +346,6 @@ function drawHidden(){
 
 // ---- transfer to visible (no extra logic; just blit a window) ----
 
-function transferToVisible(){
-  if(!(App.state.validOk && App.state.readyToPlot)){
-    alert('Please Validate and Plot first.'); return;
-  }
   var hidden = document.getElementById('hiddenCanvas');
   var visible= document.getElementById('visibleCanvas');
   var wrap   = document.getElementById('hiddenWrap');
@@ -402,7 +394,7 @@ function transferToVisible(){
       vctx.fillText(String(bt)+'s', x + 2, 14);
     }
     vctx.restore();
-  } catch(e){ console.warn('B-axis overlay error', e); }
+  } catch(e){ console.warn('/* removed visible path */', e); }
 
   // Fit to the visible tab
   var panel = document.getElementById('tab-visible') || document.body;
@@ -419,7 +411,7 @@ function transferToVisible(){
     wrapper.style.width = (availW) + 'px';
   }
 
-  log('Transfer B-window: A_start='+A_start.toFixed(1)+'s, B0='+B0.toFixed(1)+'s, width='+A_width+'s ('+N+' cycles)', 'info');
+  log('/* removed visible path */ A_start='+A_start.toFixed(1)+'s, B0='+B0.toFixed(1)+'s, width='+A_width+'s ('+N+' cycles)', 'info');
 }
 
 
@@ -427,7 +419,7 @@ function drawHiddenGate(){
   if(!App.state.validOk){ alert('Please Validate first.'); return; }
   App.state.readyToPlot = true;
   const p=document.getElementById('plotBtn'); if(p) p.classList.remove('dirty');
-  const x=document.getElementById('transferBtn'); if(x) x.disabled=false;
+  // transfer removed
   const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Plotted ✓';
   log('Plot clicked — drawing (min-green enforced)','info');
   drawHidden();
@@ -557,6 +549,7 @@ async function boot(){
   document.getElementById('dbgClear').addEventListener('click', ()=>{ document.getElementById('log').textContent=''; });
 
   App.state = buildState(App.initCfg);
+  try{ fitToViewCycles(); }catch(e){}
   document.getElementById('mainCycle').value = App.state.mainCycle;
   document.getElementById('jCount').value = App.state.junctions.length;
   document.getElementById('viewCycles').value = String(App.state.viewCycles);
@@ -587,7 +580,7 @@ async function boot(){
     if(!App.state.validOk){ alert('Please Validate first.'); return; }
     App.state.readyToPlot = true;
     const p=document.getElementById('plotBtn'); if(p) p.classList.remove('dirty');
-    const x=document.getElementById('transferBtn'); if(x) x.disabled=false;
+    // transfer removed
     const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Plotted ✓';
     log('Plot clicked — drawing (hidden)','info');
     drawHidden();
@@ -597,13 +590,7 @@ async function boot(){
   const zoom = document.getElementById('zoom');
   if(zoom){ zoom.value = String(App.state.pxPerSec||4); zoom.addEventListener('input', ()=>{ App.state.pxPerSec=parseInt(zoom.value,10); drawHidden(); }); }
   const fit = document.getElementById('fitBtn');
-  if(fit){ fit.addEventListener('click', ()=>{
-    const wrap=document.getElementById('hiddenWrap');
-    const M=App.state.mainCycle; const mult=App.initCfg.plot.hiddenWindowMultiplier||5; const T=M*mult;
-    const lm=App.initCfg.plot.leftMargin||120; const rightPad=20; const usable=Math.max(100, wrap.clientWidth - lm - rightPad);
-    const pps=Math.max(1, Math.floor(usable/Math.max(1,T)));
-    App.state.pxPerSec=pps; if(zoom) zoom.value=String(pps); drawHidden();
-  }); }
+  if(fit){ fit.addEventListener('click', ()=>{ fitToViewCycles(); }); }
 }
 boot();
 </script>
@@ -618,6 +605,71 @@ function getTimeParams(){
   return {pps:pps, M:M, N:N, left:left, T:T};
 }
 
+</script>
+<script>
+
+function fitToViewCycles(){
+  try{
+    const wrap = document.getElementById('hiddenWrap');
+    if(!wrap) return;
+    const M = App.state.mainCycle;
+    const N = App.state.viewCycles || 2;
+    const left = App.initCfg.plot.leftMargin || 120;
+    const rightPad = 20;
+    const usable = Math.max(100, wrap.clientWidth - left - rightPad);
+    const pps = Math.max(1, Math.floor(usable / Math.max(1, N * M)));
+    App.state.pxPerSec = pps;
+    const zoom = document.getElementById('zoom'); if(zoom) zoom.value = String(pps);
+    drawHidden();
+  }catch(e){ console.warn('fitToViewCycles failed', e); }
+}
+
+</script>
+<script>
+
+// Hook view cycles change -> fit canvas width
+(function(){
+  var vc = document.querySelector('[data-key="plot.viewCycles"]') || document.getElementById('viewCycles');
+  if(vc){
+    vc.addEventListener('change', function(){
+      var n = parseInt(vc.value, 10);
+      if(!isNaN(n)){ App.state.viewCycles = n; }
+      fitToViewCycles();
+    });
+  }
+  // Refit on window resize to keep N cycles visible
+  window.addEventListener('resize', function(){ fitToViewCycles(); });
+})();
+</script>
+<script>
+function fitVisibleCycles(){
+  const wrap = document.getElementById('hiddenWrap');
+  if(!wrap) return;
+  const M = App.state.mainCycle;
+  const N = App.state.viewCycles || 2;
+  const left = App.initCfg.plot.leftMargin || 120;
+  const rightPad = 20;
+  const usable = Math.max(100, wrap.clientWidth - left - rightPad);
+  const needed = Math.max(1, N * M);
+  const pps = Math.max(1, Math.floor(usable / needed));
+  App.state.pxPerSec = pps;
+  const zoom = document.getElementById('zoom'); if(zoom) zoom.value = String(pps);
+  drawHidden();
+}
+
+</script>
+<script>
+// Re-fit when the number of visible cycles changes
+(function(){
+  var vc = document.getElementById('viewCycles') || document.querySelector('[data-t="viewCycles"]');
+  if(vc){ vc.addEventListener('change', ()=>{
+    var v = parseInt(vc.value, 10);
+    if(!isNaN(v) && v>0){ App.state.viewCycles = v; }
+    fitVisibleCycles();
+  }); }
+})();
+</script>
+<script>try{ window.addEventListener('resize', fitVisibleCycles); }catch(e){}
 </script>
 </body>
 </html>
