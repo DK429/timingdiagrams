@@ -1,5 +1,3 @@
-# Signal Plan Checker — Baseline
-
-**Version:** v1.0.25.0-baseline
-Clean baseline from v1.0.24.2. Core behaviour unchanged.
-Includes a Debug dock (non-invasive) + optional validation button.
+# Signal Plan Checker — v1.1.0-alpha
+This build begins the Simplification phase. Core UI + data model scaffolding implemented.
+Plot renderer is stubbed; next step adds hidden-canvas extended window + window copy rendering.

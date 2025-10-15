@@ -1,12 +1,7 @@
 # Changelog — Signal Plan Checker
-
-## v1.0.25.0-baseline — Baseline from 1.0.24.2
+## v1.1.0-alpha — Simplification Build Kickoff
 **Date:** 2025-10-15 (UTC)
-
-### Added
-- Floating debug dock with error logging.
-- Optional validation button (uses `state.junctions` if available).
-- Docs policy note in the dock.
-
-### Unchanged
-- Core plotting/drawing logic, data model, wrap handling remain as in v1.0.24.2.
+- Init-configurable limits and debug flags (`init.config.json`)
+- New UI scaffolding per spec (global cycle, junction tabs, stages, intergreen matrix, adjacent travel)
+- Validation per new rules (global + junction)
+- Renderer stub (next step)

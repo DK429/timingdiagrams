@@ -1,11 +1,12 @@
 {
   "name": "Signal Plan Checker",
-  "version": "1.0.25.0-baseline",
-  "channel": "baseline",
-  "build_date": "2025-10-15T12:23:53Z",
+  "version": "1.1.0-alpha",
+  "channel": "alpha",
+  "build_date": "2025-10-15T17:12:55Z",
   "notes": [
-    "Non-invasive debug dock",
-    "Optional validator (state.junctions-aware)",
-    "Core logic unchanged from 1.0.24.2"
+    "Simplification scaffolding",
+    "Init-configurable defaults + debug",
+    "Validation wired",
+    "Renderer stub (next)"
   ]
 }
