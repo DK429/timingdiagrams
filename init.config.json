@@ -55,6 +55,7 @@
   "utcPlan": {
     "requireAtLeastOneChange": true,
     "markRequestsBlue": true,
+    "showQueuedChangeMarkers": true,
     "warnOnDelay": true,
     "alertOnMissedChange": true,
     "defaults": [

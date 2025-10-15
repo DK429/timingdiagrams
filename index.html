@@ -3,15 +3,17 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Signal Plan Checker 1.1.5.2-alpha</title>
+<title>Signal Plan Checker 1.1.7-alpha</title>
 <style>
-:root{--bg:#ffffff;--card:#f8f9fb;--line:#e8e8e8;--ink:#222;--muted:#666;--accent:#0a66ff}
+:root{--bg:#ffffff;--card:#f8f9fb;--line:#e8e8e8;--ink:#222;--muted:#666;--accent:#0a66ff;--errbg:#fff4f4;--errbd:#f5c2c7;--errink:#842029}
 *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;height:100%}
 header{padding:14px 16px;border-bottom:1px solid var(--line);background:#fafafa}
 h1{font-size:18px;margin:0} small.muted{color:var(--muted)}
 main{height:calc(100vh - 60px);display:grid;grid-template-rows:auto 1fr;gap:10px;padding:10px}
 .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}
+.alert{display:none;margin:8px 0;padding:10px 12px;border:1px solid var(--errbd);background:var(--errbg);color:var(--errink);border-radius:8px}
+.alert.show{display:block}
 .tabs{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
 .tab{padding:8px 10px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:#f1f3f6;cursor:pointer}
 .tab.active{background:#fff}
@@ -20,6 +22,7 @@ main{height:calc(100vh - 60px);display:grid;grid-template-rows:auto 1fr;gap:10px
 .grid{border-collapse:collapse;width:100%} .grid th,.grid td{border:1px solid #eee;padding:6px 8px;font-size:12px;text-align:center} .grid th{background:#f7f7f7}
 button{padding:8px 10px;border:1px solid #d0d0d0;border-radius:8px;background:#f7f7f7;cursor:pointer;transition:box-shadow .15s,border-color .15s}
 button.dirty{border-color:var(--accent); box-shadow: 0 0 0 3px rgba(10,102,255,.15)}
+button:disabled{opacity:.55; cursor:not-allowed}
 label{display:flex;flex-direction:column;font-size:12px;gap:4px}
 input[type=number], select{padding:6px 8px;border:1px solid #d6d6d6;border-radius:6px;min-width:70px}
 .badge{padding:2px 6px;border-radius:6px;background:#eef1ff;border:1px solid #dbe1ff;font-size:12px}
@@ -27,20 +30,24 @@ input[type=number], select{padding:6px 8px;border:1px solid #d6d6d6;border-radiu
 #plotToolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 #hiddenWrap{border:1px dashed #bbb;border-radius:8px;background:#fff;overflow:auto;position:relative}
 #hiddenCanvas{display:block;image-rendering:crisp-edges}
+#visibleWrap{border:1px solid #bbb;border-radius:8px;background:#fff;overflow:auto;position:relative}
+#visibleCanvas{display:block;image-rendering:crisp-edges}
 #debugDock{position:fixed;left:10px;right:10px;bottom:10px;max-height:38vh;overflow:auto;background:#0d1117;color:#c9d1d9;
 border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace,Consolas,Monaco,monospace;z-index:9999}
 .logline.info{color:#a5d6ff} .logline.warn{color:#ffd27f} .logline.err{color:#ffb4b4}
 .infochip{padding:4px 8px;border-radius:999px;border:1px solid #e0e0e0;background:#fff;font-size:12px}
+#twoCols{display:grid;grid-template-columns:1fr 1fr;gap:10px;height:100%}
 </style>
 </head>
 <body>
 <header>
-  <h1>Signal Plan Checker <small class="muted">1.1.5.2-alpha</small></h1>
-  <div class="row"><span class="badge">UTC plan editor</span><span class="badge">Hidden canvas zoom+scroll</span><span class="badge">Gated render</span></div>
+  <h1>Signal Plan Checker <small class="muted">1.1.7-alpha</small></h1>
+  <div class="row"><span class="badge">Min-green + queued (hidden)</span><span class="badge">Transfer-ready visible canvas</span></div>
 </header>
 
 <main>
   <section class="card">
+    <div id="bootAlert" class="alert"></div>
     <div class="row">
       <span class="badge">Init auto-loaded</span>
       <label>Main cycle (s)<input id="mainCycle" type="number" min="1" max="240" value="60"/></label>
@@ -51,7 +58,8 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
         </select>
       </label>
       <button id="validateBtn">Validate</button>
-      <button id="plotBtn">Plot</button>
+      <button id="plotBtn" disabled>Plot</button>
+      <button id="transferBtn" disabled>Transfer to Visible</button>
       <span id="statusChip" class="infochip">Waiting for Validate…</span>
     </div>
     <div class="tabs" id="jtabs"></div>
@@ -65,8 +73,23 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
       <button id="fitBtn">Fit</button>
       <span id="info" class="badge">—</span>
     </div>
-    <div id="hiddenWrap">
-      <canvas id="hiddenCanvas"></canvas>
+    <div id="twoCols">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <strong>Hidden</strong><span class="badge">full horizon</span>
+        </div>
+        <div id="hiddenWrap">
+          <canvas id="hiddenCanvas"></canvas>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <strong>Visible</strong><span class="badge">window: cycles 1..(1+N)</span>
+        </div>
+        <div id="visibleWrap">
+          <canvas id="visibleCanvas"></canvas>
+        </div>
+      </div>
     </div>
   </section>
 </main>
@@ -85,8 +108,10 @@ const App = { initCfg:null, state:{ validOk:false, readyToPlot:false, pxPerSec:4
 function setDirty(){
   const v=document.getElementById('validateBtn');
   const p=document.getElementById('plotBtn');
+  const x=document.getElementById('transferBtn');
   if(v) v.classList.add('dirty');
-  if(p) p.classList.add('dirty');
+  if(p){ p.classList.add('dirty'); p.disabled = true; }
+  if(x){ x.disabled = true; }
   App.state.validOk=false;
   App.state.readyToPlot=false;
   const chip=document.getElementById('statusChip');
@@ -109,7 +134,7 @@ async function loadBundledInit(){
     if(!res.ok) throw new Error('init.config.json not found');
     return await res.json();
   }catch(e){
-    return {"appName": "Signal Plan Checker", "ui": {"debug": {"enabled": true, "dock": {"showOnLoad": true}, "logLevel": "info", "validationOnActions": false, "perfMarkers": true}}, "mainCycleTime": {"default": 60, "min": 1, "max": 240, "mustBeEvenWhenAnyDouble": true}, "junctionCount": {"default": 3, "min": 2, "max": 5}, "doubleCycle": {"allowed": true, "requireAtLeastOneMainCycle": true}, "stageCount": {"default": 2, "min": 2}, "stage": {"minGreen": {"default": 7, "min": 1}}, "intergreen": {"diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": {"offDiagonal": 5}, "domain": {"min": 0, "max": 60}}, "journeyTime": {"default": 20, "min": 0, "max": 60}, "utcPlan": {"requireAtLeastOneChange": true, "markRequestsBlue": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [{"to": "S1", "at": 0}, {"to": "S2", "at": 30}]}, "plot": {"hiddenWindowMultiplier": 5, "viewCycles": {"options": [1, 2, 3], "default": 2}, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4}, "overlays": {"adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true}, "packaging": {"includeDocs": true}};
+    return {"appName": "Signal Plan Checker", "ui": {"debug": {"enabled": true, "dock": {"showOnLoad": true}, "logLevel": "info", "validationOnActions": false, "perfMarkers": true}}, "mainCycleTime": {"default": 60, "min": 1, "max": 240, "mustBeEvenWhenAnyDouble": true}, "junctionCount": {"default": 3, "min": 2, "max": 5}, "doubleCycle": {"allowed": true, "requireAtLeastOneMainCycle": true}, "stageCount": {"default": 2, "min": 2}, "stage": {"minGreen": {"default": 7, "min": 1}}, "intergreen": {"diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": {"offDiagonal": 5}, "domain": {"min": 0, "max": 60}}, "journeyTime": {"default": 20, "min": 0, "max": 60}, "utcPlan": {"requireAtLeastOneChange": true, "markRequestsBlue": true, "showQueuedChangeMarkers": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [{"to": "S1", "at": 0}, {"to": "S2", "at": 30}]}, "plot": {"hiddenWindowMultiplier": 5, "viewCycles": {"options": [1, 2, 3], "default": 2}, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4}, "overlays": {"adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true}, "packaging": {"includeDocs": true}};
   }
 }
 
@@ -137,6 +162,50 @@ function effectiveCycle(j){ return j.doubleCycle ? (App.state.mainCycle/2) : App
 function stageIndex(j, label){ const idx = j.stages.findIndex(s=>s.label===label); return (idx>=0? idx : 0); }
 function clampInt(v, lo, hi){ v=parseInt(v||0,10); if(isNaN(v)) v=0; return Math.max(lo, Math.min(hi, v)); }
 
+// ---- min-green realised times (from v1.1.6-alpha) ----
+function computeRealisedCycle(j){
+  const Cj = effectiveCycle(j);
+  const plan = (j.utcPlan||[]).slice().sort((a,b)=>a.at-b.at);
+  const N = plan.length;
+  if(N===0) return {ok:false, err:['UTC plan empty']};
+  const toIdx = plan.map(p=>stageIndex(j,p.to));
+  for(let i=0;i<N;i++){
+    const from = toIdx[i];
+    const to = toIdx[(i+1)%N];
+    if(j.intergreen[from][to] === -1){
+      const a=j.stages[from].label, b=j.stages[to].label;
+      return {ok:false, err:[`${j.name}: Stage move not permitted ${a} → ${b}`]};
+    }
+  }
+  const Rq = new Array(N*2);
+  for(let i=0;i<N;i++){ Rq[i]=plan[i].at; }
+  for(let i=0;i<N;i++){ Rq[i+N]=plan[i].at + Cj; }
+  const RC = new Array(N+1).fill(0);
+  RC[0] = Rq[0];
+  const details = [];
+  for(let i=0;i<N;i++){
+    const curIdx = toIdx[i%N];
+    const prevIdx = toIdx[(i-1+N)%N];
+    const nextIdx = toIdx[(i+1)%N];
+    const igPrev = Math.max(0, j.intergreen[prevIdx][curIdx]);
+    const mgCur = j.stages[curIdx].minGreenSec|0;
+    const nextReq = Rq[i+1];
+    const nextNextReq = (i+2<=N) ? Rq[i+2] : (Rq[(i+2)%(N)] + Cj);
+    const stageStart = RC[i] + igPrev;
+    const earliestMG = stageStart + mgCur;
+    const realisedNext = Math.max(nextReq, earliestMG);
+    if(realisedNext >= nextNextReq){
+      const a = j.stages[curIdx].label, b=j.stages[nextIdx].label;
+      return {ok:false, err:[`${j.name}: Stage ${a} change point missed — request not achievable`]}
+    }
+    RC[i+1] = realisedNext;
+    details.push({i, rqCur:Rq[i], rqNext:nextReq, rqNext2:nextNextReq, igPrev, mgCur, stageStart, earliestMG, realisedNext, delay: realisedNext - nextReq, curStage:j.stages[curIdx].label, nextStage:j.stages[nextIdx].label});
+  }
+  const RCmod = RC.map(t=> t % Cj);
+  return {ok:true, Cj, plan, toIdx, RC, RCmod, details};
+}
+
+// ---- validation
 function validateJunction(j){
   const errs=[];
   j.stages.forEach((s)=>{
@@ -149,37 +218,14 @@ function validateJunction(j){
     if(p.at>=Cj) errs.push(`${j.name}: Plan row #${i+1} at=${p.at} ≥ cycle (${Cj})`);
     if(!j.stages.find(s=>s.label===p.to)) errs.push(`${j.name}: Plan row #${i+1} stage '${p.to}' not found`);
   });
-  if((j.utcPlan||[]).length>0){
-    const sorted = j.utcPlan.slice().sort((a,b)=>a.at-b.at);
-    const idxPlan = sorted.map(p=>({toIdx: stageIndex(j,p.to), at:p.at}));
-    for(let i=0;i<idxPlan.length;i++){
-      const cur = idxPlan[i];
-      const nxt = idxPlan[(i+1)%idxPlan.length];
-      const ig = j.intergreen[cur.toIdx][nxt.toIdx];
-      if(ig === -1){
-        const curName = j.stages[cur.toIdx] ? j.stages[cur.toIdx].label : ('S'+(cur.toIdx+1));
-        const nxtName = j.stages[nxt.toIdx] ? j.stages[nxt.toIdx].label : ('S'+(nxt.toIdx+1));
-        errs.push(`${j.name}: Stage move not permitted ${curName} → ${nxtName}`);
-      }
-    }
-  }
-  const N=j.stages.length;
-  for(let r=0;r<N;r++){ for(let c=0;c<N;c++){
-    const v=j.intergreen[r][c];
-    if(r===c && v!==App.initCfg.intergreen.diagonalLockedValue) errs.push(`${j.name}: IG ${j.stages[r].label}→${j.stages[c].label} diagonal must be ${App.initCfg.intergreen.diagonalLockedValue}`);
-    if(r!==c){
-      if(!Number.isInteger(v)) errs.push(`${j.name}: IG ${j.stages[r].label}→${j.stages[c].label} must be integer or -1`);
-      if(v<-1) errs.push(`${j.name}: IG ${j.stages[r].label}→${j.stages[c].label} < -1 invalid`);
-      if(v>App.initCfg.intergreen.domain.max) errs.push(`${j.name}: IG ${j.stages[r].label}→${j.stages[c].label} > max ${App.initCfg.intergreen.domain.max}`);
-    }
-  }}
-  if(j.travelPrev<App.initCfg.journeyTime.min || j.travelPrev>App.initCfg.journeyTime.max) errs.push(`${j.name}: Travel ↑ out of range (0..${App.initCfg.journeyTime.max})`);
-  if(j.travelNext<App.initCfg.journeyTime.min || j.travelNext>App.initCfg.journeyTime.max) errs.push(`${j.name}: Travel ↓ out of range (0..${App.initCfg.journeyTime.max})`);
+  if(errs.length) return errs;
+  const rc = computeRealisedCycle(j);
+  if(!rc.ok){ errs.push(...rc.err); }
   return errs;
 }
 
-function runValidation(){
-  log('Validate clicked','info');
+function runValidation({silent}={silent:false}){
+  if(!silent) log('Validate clicked','info');
   const errs=[];
   const anyDouble = App.state.junctions.some(j=>j.doubleCycle);
   if(anyDouble && (App.state.mainCycle % 2 !== 0)) errs.push(`Main cycle must be even when any junction is double-cycling.`);
@@ -191,18 +237,269 @@ function runValidation(){
     App.state.validOk = true;
     const v=document.getElementById('validateBtn'); if(v) v.classList.remove('dirty');
     const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Validated ✔ — press Plot to render';
-    log('VALIDATION OK','info');
+    const plot=document.getElementById('plotBtn'); if(plot) plot.disabled=false;
+    const x=document.getElementById('transferBtn'); if(x) x.disabled=false;
+    if(!silent) log('VALIDATION OK','info');
+    const ba=document.getElementById('bootAlert'); if(ba){ ba.classList.remove('show'); ba.textContent=''; }
   }else{
     App.state.validOk = false;
-    alert('Fix these first:
- - '+errs.join('
- - '));
     const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Validation failed — see alerts';
-    log('VALIDATION FAIL: '+errs.join(' | '),'warn');
+    const plot=document.getElementById('plotBtn'); if(plot) plot.disabled=true;
+    const x=document.getElementById('transferBtn'); if(x) x.disabled=true;
+    const msg = 'Fix these first:\n - '+errs.join('\n - ');
+    if(silent){
+      const ba=document.getElementById('bootAlert'); if(ba){ ba.classList.add('show'); ba.textContent = msg; }
+      log('BOOT VALIDATION FAIL: '+errs.join(' | '),'warn');
+    }else{
+      alert(msg);
+      log('VALIDATION FAIL: '+errs.join(' | '),'warn');
+    }
   }
   return ok;
 }
 
+// ---- drawing hidden
+function drawHidden(){
+  if(!(App.state.validOk && App.state.readyToPlot)){
+    log('Draw suppressed (requires Validate OK + Plot)','warn');
+    return;
+  }
+  const C = document.getElementById('hiddenCanvas'); const ctx = C.getContext('2d');
+  const M = App.state.mainCycle; const mult = App.initCfg.plot.hiddenWindowMultiplier || 5; const T = M*mult;
+  const pps = App.state.pxPerSec || 4; const left = App.initCfg.plot.leftMargin || 120; const top = App.initCfg.plot.topMargin || 24;
+  const rowH = App.initCfg.plot.rowHeight || 48; const gap = App.initCfg.plot.rowGap || 18;
+  const width = left + T*pps + 20; const height = top + App.state.junctions.length*(rowH+gap) + 20;
+  C.width = width; C.height = height;
+
+  // bg & grid
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,width,height);
+  ctx.strokeStyle="#eee"; ctx.lineWidth=1;
+  for(let t=0;t<=T;t+=10){ const x=left+t*pps; ctx.beginPath(); ctx.moveTo(x, top-8); ctx.lineTo(x, height-10); ctx.stroke();
+    ctx.fillStyle="#999"; ctx.font="10px system-ui"; ctx.fillText(String(t)+'s', x-8, top-12); }
+
+  const greens = ["rgba(60,180,75,0.9)","rgba(90,205,105,0.9)","rgba(120,220,135,0.9)","rgba(150,235,165,0.9)"];
+
+  App.state.junctions.forEach((j, idx)=>{
+    const y0 = top + idx*(rowH+gap);
+    ctx.fillStyle="#111"; ctx.font="12px system-ui"; ctx.fillText(j.name, 12, y0 + rowH*0.6);
+    ctx.strokeStyle="#ddd"; ctx.strokeRect(left, y0, T*pps, rowH);
+
+    const rc = computeRealisedCycle(j);
+    if(!rc.ok){
+      
+    // On-plot alert badge (missed change / validation)
+    (function(){
+      const msg = "⚠ " + rc.err.join(' | ');
+      const pad = 8;
+      const badgeH = 22;
+      const tx = left + 8;
+      const ty = y0 + Math.max(16, Math.floor((rowH)/2));
+      // draw pill background
+      ctx.save();
+      ctx.font = "12px ui-monospace, Consolas, monospace";
+      const tw = ctx.measureText(msg).width;
+      const bw = tw + 2*pad;
+      const bx = tx - pad;
+      const by = ty - badgeH/2;
+      // rounded rect
+      const r = 8;
+      ctx.fillStyle = "rgba(176,0,32,0.9)";
+      ctx.beginPath();
+      ctx.moveTo(bx+r, by);
+      ctx.lineTo(bx+bw-r, by);
+      ctx.quadraticCurveTo(bx+bw, by, bx+bw, by+r);
+      ctx.lineTo(bx+bw, by+badgeH-r);
+      ctx.quadraticCurveTo(bx+bw, by+badgeH, bx+bw-r, by+badgeH);
+      ctx.lineTo(bx+r, by+badgeH);
+      ctx.quadraticCurveTo(bx, by+badgeH, bx, by+badgeH-r);
+      ctx.lineTo(bx, by+r);
+      ctx.quadraticCurveTo(bx, by, bx+r, by);
+      ctx.closePath();
+      ctx.fill();
+      // text
+      ctx.fillStyle = "#fff";
+      ctx.textBaseline = "middle";
+      ctx.fillText(msg, tx, ty);
+      ctx.restore();
+    })();
+    log(`DRAW SKIP ${j.name}: `+rc.err.join(' | '),'warn');
+    return;
+
+    }
+    rc.details.forEach(d=>{
+      log(`${j.name} i=${d.i} rq=${Math.round(d.rqNext)} stage=${d.curStage}->${d.nextStage} start=${Math.round(d.stageStart)} MG=${d.mgCur} RC=${Math.round(d.realisedNext)} delay=${Math.round(d.delay)}`,'info');
+    });
+
+    const Cj = rc.Cj;
+    const cycles = Math.ceil(T / Cj);
+    const N = rc.plan.length;
+
+    for(let k=0;k<cycles;k++){
+      const base = k*Cj;
+      if(App.initCfg.utcPlan.markRequestsBlue){
+        ctx.strokeStyle="#4aa1ff"; ctx.lineWidth=2;
+        for(let i=0;i<N;i++){
+          const rq = rc.plan[i].at;
+          const x= left + (base + rq)*pps; ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y0+rowH); ctx.stroke();
+        }
+      }
+      for(let i=0;i<N;i++){
+        const curIdx = rc.toIdx[i];
+        const prevIdx = rc.toIdx[(i-1+N)%N];
+        const nextIdx = rc.toIdx[(i+1)%N];
+        const igPrev = Math.max(0, j.intergreen[prevIdx][curIdx]);
+        const RCi = rc.RC[i];
+        const RCn = rc.RC[i+1];
+        const segStart = (RCi + igPrev) + k*Cj;
+        const segEnd = RCn + k*Cj;
+        if(segEnd > segStart){
+          ctx.fillStyle = greens[curIdx % greens.length];
+          ctx.fillRect(left + segStart*pps, y0+6, (segEnd-segStart)*pps, rowH-12);
+        
+        
+        // Stage label overlay (adaptive)
+        (function(){
+          const segW = (segEnd - segStart) * pps;
+          if(segW <= 14) return; // too narrow to render text
+          const padX = 4, padY = 2;
+          const cx = left + segStart*pps;
+          const cy = y0+6;
+          const h = rowH-12;
+          ctx.save();
+          ctx.fillStyle = "#ffffff";
+          ctx.textBaseline = "middle";
+          // choose font size that fits bar height nicely
+          const fsize = Math.max(10, Math.min(14, Math.floor(h*0.5)));
+          ctx.font = `${fsize}px ui-monospace, Consolas, monospace`;
+
+          const full = j.stages[curIdx].label ?? (`S${curIdx+1}`);
+          const shortS = `S${curIdx+1}`;
+          const shortN = `${curIdx+1}`;
+
+          function fits(t){ return ctx.measureText(t).width + 2*padX <= segW; }
+
+          let textLabel = full;
+          if(!fits(textLabel)) textLabel = shortS;
+          if(!fits(textLabel)) textLabel = shortN;
+          if(!fits(textLabel)) { ctx.restore(); return; }
+
+          // center horizontally if space, else left-pad
+          const tw = ctx.measureText(textLabel).width;
+          const tx = (tw + 2*padX <= segW) ? (cx + (segW - tw)/2) : (cx + padX);
+          const ty = cy + h/2;
+          // subtle shadow for readability
+          ctx.shadowColor = "rgba(0,0,0,0.25)";
+          ctx.shadowBlur = 2;
+          ctx.fillText(textLabel, tx, ty);
+          ctx.restore();
+        })();
+    // Stage label overlay (adaptive)
+        (function(){
+          const segW = (segEnd - segStart) * pps;
+          if(segW <= 14) return; // too narrow to render text
+          const padX = 4, padY = 2;
+          const cx = left + segStart*pps;
+          const cy = y0+6;
+          const h = rowH-12;
+          ctx.save();
+          ctx.fillStyle = "#ffffff";
+          ctx.textBaseline = "middle";
+          // choose font size that fits bar height nicely
+          const fsize = Math.max(10, Math.min(14, Math.floor(h*0.5)));
+          ctx.font = `${fsize}px ui-monospace, Consolas, monospace`;
+
+          const full = j.stages[curIdx].label ?? (`S${curIdx+1}`);
+          const shortS = `S${curIdx+1}`;
+          const shortN = `${curIdx+1}`;
+
+          function fits(t){ return ctx.measureText(t).width + 2*padX <= segW; }
+
+          let textLabel = full;
+          if(!fits(textLabel)) textLabel = shortS;
+          if(!fits(textLabel)) textLabel = shortN;
+          if(!fits(textLabel)) { ctx.restore(); return; }
+
+          // center horizontally if space, else left-pad
+          const tw = ctx.measureText(textLabel).width;
+          const tx = (tw + 2*padX <= segW) ? (cx + (segW - tw)/2) : (cx + padX);
+          const ty = cy + h/2;
+          // subtle shadow for readability
+          ctx.shadowColor = "rgba(0,0,0,0.25)";
+          ctx.shadowBlur = 2;
+          ctx.fillText(textLabel, tx, ty);
+          ctx.restore();
+        })();
+    }
+        
+\1
+        if(App.initCfg.utcPlan.warnOnDelay && delay>0){
+          log(`${j.name}: queued change — requested at t=${Math.round((nextReq)%Cj)}s, realised at t=${Math.round((RCn)%Cj)}s (delay=${Math.round(delay)}s)`, 'warn');
+        }
+
+        if(App.initCfg.utcPlan.showQueuedChangeMarkers && delay>0){
+          ctx.strokeStyle="rgba(74,161,255,0.7)";
+          ctx.setLineDash([4,3]);
+          const x1 = left + (nextReq + k*Cj)*pps;
+          const x2 = left + (RCn + k*Cj)*pps;
+          ctx.beginPath(); ctx.moveTo(x1, y0+4); ctx.lineTo(x2, y0+4); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle="rgba(74,161,255,0.9)";
+          const triX = x2, triY = y0+4;
+          ctx.beginPath(); ctx.moveTo(triX, triY); ctx.lineTo(triX-5, triY-8); ctx.lineTo(triX+5, triY-8); ctx.closePath(); ctx.fill();
+        }
+        const igNext = Math.max(0, j.intergreen[curIdx][nextIdx]);
+        if(igNext>0){
+          const igStart = RCn + k*Cj;
+          ctx.fillStyle = "rgba(150,150,150,0.35)";
+          ctx.fillRect(left + igStart*pps, y0+6, igNext*pps, rowH-12);
+        }
+      }
+    }
+  });
+
+  const info = document.getElementById('info');
+  if(info) info.textContent = `Hidden T=${T}s · scale=${pps}px/s · canvas ${C.width}×${C.height}`;
+  log('Hidden canvas redrawn (min-green enforced)','info');
+}
+
+// ---- transfer to visible (no extra logic; just blit a window) ----
+function transferToVisible(){
+  if(!(App.state.validOk && App.state.readyToPlot)){
+    alert('Please Validate and Plot first.'); return;
+  }
+  const hidden = document.getElementById('hiddenCanvas');
+  const visible = document.getElementById('visibleCanvas');
+  const wrap = document.getElementById('visibleWrap');
+  const pps = App.state.pxPerSec || 4;
+  const M = App.state.mainCycle;
+  const N = App.state.viewCycles || 2;
+  const left = App.initCfg.plot.leftMargin || 120;
+  const top = App.initCfg.plot.topMargin || 24;
+  const Cj = M; // window cycles are based on main, starting at 1*C .. (1+N)*C
+  const sx = left + 1*Cj*pps; // start at 1*C
+  const sw = N*Cj*pps; // width of N cycles
+  const sy = 0;
+  const sh = hidden.height;
+  // size visible to match the slice
+  visible.width = sw;
+  visible.height = sh;
+  const vctx = visible.getContext('2d');
+  vctx.clearRect(0,0,visible.width,visible.height);
+  vctx.drawImage(hidden, sx, sy, sw, sh, 0, 0, sw, sh);
+  log(`Transferred window: x=${sx}px w=${sw}px from hidden→visible (cycles 1..${1+N})`,'info');
+}
+
+function drawHiddenGate(){
+  if(!App.state.validOk){ alert('Please Validate first.'); return; }
+  App.state.readyToPlot = true;
+  const p=document.getElementById('plotBtn'); if(p) p.classList.remove('dirty');
+  const x=document.getElementById('transferBtn'); if(x) x.disabled=false;
+  const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Plotted ✓';
+  log('Plot clicked — drawing (min-green enforced)','info');
+  drawHidden();
+}
+
+// ---- UI rendering (same as v1.1.6) ----
 function renderUTCEditor(j){
   let rows=''; (j.utcPlan||[]).forEach((r,i)=>{
     rows += `<tr>
@@ -227,7 +524,7 @@ function renderJunctionPanel(j){
       <td><input type="number" min="${cfg.stage.minGreen.min}" value="${j.stages[i].minGreenSec}" data-t="minGreen" data-id="${j.id}" data-idx="${i}"></td>
     </tr>`;
   }
-  let ig = '<table class="grid"><thead><tr><th>From \ To</th>';
+  let ig = '<table class="grid"><thead><tr><th>From \\ To</th>';
   for(let c=0;c<N;c++){ ig += `<th>${j.stages[c].label}</th>`; }
   ig += '</tr></thead><tbody>';
   for(let r=0;r<N;r++){
@@ -318,67 +615,6 @@ function resizeStages(j, n){
   j.utcPlan.forEach(p=>{ if(!j.stages.find(s=>s.label===p.to)) p.to = j.stages[0].label; });
 }
 
-// ---- drawing (gated)
-function drawHidden(){
-  if(!(App.state.validOk && App.state.readyToPlot)){
-    log('Draw suppressed (requires Validate OK + Plot)','warn');
-    return;
-  }
-  const C = document.getElementById('hiddenCanvas'); const ctx = C.getContext('2d');
-  const M = App.state.mainCycle; const mult = App.initCfg.plot.hiddenWindowMultiplier || 5; const T = M*mult;
-  const pps = App.state.pxPerSec || 4; const left = App.initCfg.plot.leftMargin || 120; const top = App.initCfg.plot.topMargin || 24;
-  const rowH = App.initCfg.plot.rowHeight || 48; const gap = App.initCfg.plot.rowGap || 18;
-  const width = left + T*pps + 20; const height = top + App.state.junctions.length*(rowH+gap) + 20;
-  C.width = width; C.height = height;
-
-  // bg & grid
-  ctx.fillStyle="#fff"; ctx.fillRect(0,0,width,height);
-  ctx.strokeStyle="#eee"; ctx.lineWidth=1;
-  for(let t=0;t<=T;t+=10){ const x=left+t*pps; ctx.beginPath(); ctx.moveTo(x, top-8); ctx.lineTo(x, height-10); ctx.stroke();
-    ctx.fillStyle="#999"; ctx.font="10px system-ui"; ctx.fillText(String(t)+'s', x-8, top-12); }
-
-  const greens = ["rgba(60,180,75,0.9)","rgba(90,205,105,0.9)","rgba(120,220,135,0.9)","rgba(150,235,165,0.9)"];
-
-  App.state.junctions.forEach((j, idx)=>{
-    const y0 = top + idx*(rowH+gap);
-    ctx.fillStyle="#111"; ctx.font="12px system-ui"; ctx.fillText(j.name, 12, y0 + rowH*0.6);
-    ctx.strokeStyle="#ddd"; ctx.strokeRect(left, y0, T*pps, rowH);
-
-    const Cj = effectiveCycle(j);
-    const cycles = Math.ceil(T / Cj);
-    const sortedPlan = (j.utcPlan||[]).slice().sort((a,b)=>a.at-b.at);
-    if(!sortedPlan.length) return;
-    const planIdx = sortedPlan.map(p=>({toIdx: stageIndex(j,p.to), at:p.at}));
-
-    for(let k=0;k<cycles;k++){
-      const base = k*Cj;
-      if(App.initCfg.utcPlan.markRequestsBlue){
-        ctx.strokeStyle="#4aa1ff"; ctx.lineWidth=2;
-        planIdx.forEach(r=>{ const x= left + (base + r.at)*pps; ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y0+rowH); ctx.stroke(); });
-      }
-      for(let i=0;i<planIdx.length;i++){
-        const r = planIdx[i], next = planIdx[(i+1)%planIdx.length], prev = planIdx[(i-1+planIdx.length)%planIdx.length];
-        let igPrev = j.intergreen[prev.toIdx][r.toIdx]; if(igPrev<0) igPrev=0;
-        const start = base + r.at + igPrev;
-        let end = base + next.at; if(next.at <= r.at) end += Cj;
-        if(end > start){
-          ctx.fillStyle = greens[r.toIdx % greens.length];
-          ctx.fillRect(left + start*pps, y0+6, (end-start)*pps, rowH-12);
-        }
-        let igNext = j.intergreen[r.toIdx][next.toIdx];
-        if(igNext>0){
-          ctx.fillStyle = "rgba(150,150,150,0.35)";
-          ctx.fillRect(left + end*pps, y0+6, igNext*pps, rowH-12);
-        }
-      }
-    }
-  });
-
-  const info = document.getElementById('info');
-  if(info) info.textContent = `Hidden T=${T}s · scale=${pps}px/s · canvas ${C.width}×${C.height}`;
-  log('Hidden canvas redrawn','info');
-}
-
 // ---- boot
 async function boot(){
   App.initCfg = await loadBundledInit();
@@ -392,7 +628,10 @@ async function boot(){
   document.getElementById('viewCycles').value = String(App.state.viewCycles);
   rebuildTabs();
   setDirty(); // force validation before any plot
-  log('App booted — waiting for Validate…','info');
+  log('App booted — smoke-check…','info');
+
+  // Boot-time smoke-check (silent)
+  runValidation({silent:true});
 
   document.getElementById('mainCycle').addEventListener('change', (e)=>{
     const v=parseInt(e.target.value||60,10);
@@ -409,19 +648,17 @@ async function boot(){
   });
   document.getElementById('viewCycles').addEventListener('change', (e)=>{ App.state.viewCycles=parseInt(e.target.value||2,10); setDirty(); });
 
-  document.getElementById('validateBtn').addEventListener('click', ()=>{
-    const ok = runValidation();
-  });
+  document.getElementById('validateBtn').addEventListener('click', ()=>{ runValidation({silent:false}); });
   document.getElementById('plotBtn').addEventListener('click', ()=>{
-    if(!App.state.validOk){
-      alert('Please Validate first.'); return;
-    }
+    if(!App.state.validOk){ alert('Please Validate first.'); return; }
     App.state.readyToPlot = true;
     const p=document.getElementById('plotBtn'); if(p) p.classList.remove('dirty');
+    const x=document.getElementById('transferBtn'); if(x) x.disabled=false;
     const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Plotted ✓';
-    log('Plot clicked — drawing','info');
+    log('Plot clicked — drawing (hidden)','info');
     drawHidden();
   });
+  document.getElementById('transferBtn').addEventListener('click', transferToVisible);
 
   const zoom = document.getElementById('zoom');
   if(zoom){ zoom.value = String(App.state.pxPerSec||4); zoom.addEventListener('input', ()=>{ App.state.pxPerSec=parseInt(zoom.value,10); drawHidden(); }); }
