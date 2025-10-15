@@ -362,21 +362,24 @@ function drawHidden(){
 
 function drawVisibleLikeHidden(){
   if(!(App.state.validOk && App.state.readyToPlot)){
-    log('Visible draw suppressed (requires Validate OK + Plot)','warn');
+    log('Draw suppressed (requires Validate OK + Plot)','warn');
     return;
   }
   const C = document.getElementById('visibleCanvas'); const ctx = C.getContext('2d');
   const M = App.state.mainCycle; const mult = App.initCfg.plot.hiddenWindowMultiplier || 5; const T = M*mult;
   const pps = App.state.pxPerSec || 4; const left = App.initCfg.plot.leftMargin || 120; const top = App.initCfg.plot.topMargin || 24;
   const rowH = App.initCfg.plot.rowHeight || 48; const gap = App.initCfg.plot.rowGap || 18;
-  const origin = App.state.mainCycle; const width = left + T*pps + 20; const height = top + App.state.junctions.length*(rowH+gap) + 20;
+  const width = left + T*pps + 20; const height = top + App.state.junctions.length*(rowH+gap) + 20;
   C.width = width; C.height = height;
+
+  const origin = App.state.mainCycle; // seconds
+  ctx.save();
+  ctx.translate(-origin*pps, 0);
 
   // bg & grid
   ctx.fillStyle="#fff"; ctx.fillRect(0,0,width,height);
   ctx.strokeStyle="#eee"; ctx.lineWidth=1;
-  for(let t=0;t<=T;t+=10){ const x=left+t*pps; ctx.beginPath(); ctx.moveTo(x, top-8); ctx.lineTo(x, height-10); ctx.stroke();
-    const label = t - origin; ctx.fillStyle = (t<origin? '#999':'#444'); ctx.font='11px ui-monospace, Consolas, monospace'; ctx.fillText(String(label), x+2, top-10);
+  for(let t=origin;t<=T;t+=10){ const x=left+t*pps; ctx.beginPath(); ctx.moveTo(x, top-8); ctx.lineTo(x, height-10); ctx.stroke(); ctx.fillStyle='#444'; ctx.font='11px ui-monospace, Consolas, monospace'; ctx.fillText(String(t-origin), x+2, top-10);
     ctx.fillStyle="#999"; ctx.font="10px system-ui"; ctx.fillText(String(t)+'s', x-8, top-12); }
 
   const greens = ["rgba(60,180,75,0.9)","rgba(90,205,105,0.9)","rgba(120,220,135,0.9)","rgba(150,235,165,0.9)"];
@@ -406,7 +409,7 @@ function drawVisibleLikeHidden(){
         ctx.strokeStyle="#4aa1ff"; ctx.lineWidth=2;
         for(let i=0;i<N;i++){
           const rq = rc.plan[i].at;
-          const x= left + (base + rq)*pps; if((base + rq) >= origin){ ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y0+rowH); ctx.stroke(); }
+          const x= left + (base + rq)*pps; ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y0+rowH); ctx.stroke();
         }
       }
       for(let i=0;i<N;i++){
@@ -416,7 +419,7 @@ function drawVisibleLikeHidden(){
         const igPrev = Math.max(0, j.intergreen[prevIdx][curIdx]);
         const RCi = rc.RC[i];
         const RCn = rc.RC[i+1];
-        let segStart = (RCi + igPrev) + k*Cj; if(segStart < origin) segStart = origin;
+        const segStart = (RCi + igPrev) + k*Cj;
         const segEnd = RCn + k*Cj;
         if(segEnd > segStart){
           ctx.fillStyle = greens[curIdx % greens.length];
@@ -455,13 +458,14 @@ function drawVisibleLikeHidden(){
 // ---- transfer to visible (no extra logic; just blit a window) ----
 
 
+
 function transferToVisible(){
   if(!(App.state.validOk && App.state.readyToPlot)){
     alert('Please Validate and Plot first.'); return;
   }
   const visible = document.getElementById('visibleCanvas');
   const panel = document.getElementById('tab-visible') || document.body;
-  // Draw like hidden but with origin shift
+  // Re-render like hidden with origin shift so left edge = mainCycle (time 0)
   drawVisibleLikeHidden();
   // Fit to panel
   const sw = visible.width, sh = visible.height;
@@ -478,6 +482,7 @@ function transferToVisible(){
     wrapper.style.width = (availW) + 'px';
   }
 }
+
 
 
 

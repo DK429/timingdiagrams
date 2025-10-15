@@ -22,3 +22,8 @@
   - Plotting starts from cycle 2 (t ≥ mainCycle). Earlier grid remains visible with muted labels.
   - Time labels display (t - mainCycle), so 0 aligns with the start of cycle 2.
 - Transfer action now re-renders rather than blitting and scales to the full tab.
+
+## v1.3.1-alpha — 2025-10-15T21:59:39Z UTC
+- Visible canvas alignment: origin now aligns with the left margin via context translation; eliminates left offset.
+- Time axis on visible shows (t − mainCycle) labels only (no negatives); grid starts at cycle 2 to prevent hidden-canvas artefacts.
+- Removed prior clamping/skips; rendering now mirrors hidden pipeline exactly with a translated origin.
