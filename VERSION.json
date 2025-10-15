@@ -1,10 +1,11 @@
 {
   "name": "Signal Plan Checker",
-  "version": "1.0.24.2",
+  "version": "1.0.24.3",
   "channel": "stable",
-  "build_date": "2025-10-15T05:21:40Z",
+  "build_date": "2025-10-15T06:08:20Z",
   "notes": [
-    "Add: Copy plot to clipboard (PNG with SVG-text fallback)",
-    "Base: v1.0.24.1 stage selector refresh"
+    "Restore full app index",
+    "Robust init guards + error logging",
+    "Clipboard copy retained"
   ]
 }

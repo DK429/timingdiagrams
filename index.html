@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Signal Plan Checker v1.0.24.2</title>
+<title>Signal Plan Checker v1.0.24.3</title>
 <style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#1b1b1b}
 header{padding:16px 20px;border-bottom:1px solid #eee;background:#fafafa}
@@ -48,7 +48,7 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 .arrivalHighlight{fill:#ffd54d;opacity:.35}
 .channelGrid{stroke:#e9e9e9;stroke-width:1}
 .channelTT{font-size:11px; fill:#333}
-.debugLog{max-height:180px; overflow:auto; background:#0d1117; color:#c9d1d9; font-family:ui-monospace,Consolas,Monaco,monospace; font-size:12px; padding:8px; border-radius:6px; border:1px solid #30363d}
+.debugLog{max-height:220px; overflow:auto; background:#0d1117; color:#c9d1d9; font-family:ui-monospace,Consolas,Monaco,monospace; font-size:12px; padding:8px; border-radius:6px; border:1px solid #30363d}
 .debugLog .err{color:#ffb4b4}.debugLog .warn{color:#ffd27f}.debugLog .info{color:#a5d6ff}
 #bootBanner{position:fixed;inset:auto 12px 12px auto;background:#0d1117;color:#ffd27f;padding:8px 10px;border-radius:8px;
 font-family:ui-monospace,Consolas,Monaco,monospace;font-size:12px;z-index:99999}
@@ -57,8 +57,8 @@ summary{cursor:pointer}
 </head>
 <body>
 <header>
-  <h1>Signal Plan Checker <span class="badge">v1.0.24.2</span></h1>
-  <div>Baseline v1.0.24.1 + new: Copy Plot to Clipboard.</div>
+  <h1>Signal Plan Checker <span class="badge">v1.0.24.3</span></h1>
+  <div>Clipboard hotfix + robust init guards.</div>
 </header>
 
 <main>
@@ -90,7 +90,7 @@ summary{cursor:pointer}
       <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
       <button type="button" id="forceInitBtn" class="small">Force init</button>
       <button type="button" id="validateBtn">Validate</button>
-      <span class="version">v1.0.24.2</span>
+      <span class="version">v1.0.24.3</span>
     </div>
     <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -175,58 +175,171 @@ summary{cursor:pointer}
 <div id="bootBanner">script: loading…</div>
 
 <script>
+// ===== Utilities =====
 function $(id){ return document.getElementById(id); }
 function elNS(tag){ return document.createElementNS('http://www.w3.org/2000/svg', tag); }
 function setAttrs(ele, attrs){ for(var k in attrs) ele.setAttribute(k, attrs[k]); return ele; }
 function num(v){ var s=String(v||'').replace(/[^0-9]/g, ''); var n=Number(s); return isFinite(n)?n:0; }
-function log(msg, level){ var box=$('debugLog'); if(!box) return; var div=document.createElement('div'); div.className=level||'info'; var t=(new Date()).toLocaleTimeString(); div.textContent='['+t+'] '+msg; box.appendChild(div); box.scrollTop=box.scrollHeight; }
+function log(msg, level){ try{ var box=$('debugLog'); if(!box) return; var div=document.createElement('div'); div.className=level||'info'; var t=(new Date()).toLocaleTimeString(); div.textContent='['+t+'] '+msg; box.appendChild(div); box.scrollTop=box.scrollHeight; }catch(e){} }
 
 (function(){ var b=$('bootBanner'); if(b){ b.textContent='script: running (pre-DOM)'; } })();
 
+// Global error traps (helps on iPad)
+window.addEventListener('error', function(e){ log('ERROR: '+(e.message||e.error), 'err'); });
+window.addEventListener('unhandledrejection', function(e){ log('PROMISE: '+(e.reason&&e.reason.message?e.reason.message:e.reason), 'err'); });
+
+// ===== State =====
 var state = { junctions: [], journeys: {}, horizonSec: 0, horizonIsDefault: true, overlays: [],
   rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip' };
 
-function initTabs(){ var tabs=document.querySelectorAll('.tab'); for(var i=0;i<tabs.length;i++){ (function(btn){ btn.addEventListener('click', function(){ var all=document.querySelectorAll('.tab'); for(var j=0;j<all.length;j++) all[j].classList.remove('active'); var panels=document.querySelectorAll('.tabPanel'); for(var j=0;j<panels.length;j++) panels[j].classList.remove('active'); btn.classList.add('active'); var id=btn.getAttribute('data-tab'); var panel=$(id); if(panel) panel.classList.add('active'); if(id==='plotTab') render(); }); })(tabs[i]); } }
+// ===== Tabs =====
+function initTabs(){
+  var tabs=document.querySelectorAll('.tab');
+  for(var i=0;i<tabs.length;i++){
+    (function(btn){
+      btn.addEventListener('click', function(){
+        var all=document.querySelectorAll('.tab'); for(var j=0;j<all.length;j++) all[j].classList.remove('active');
+        var panels=document.querySelectorAll('.tabPanel'); for(var j=0;j<panels.length;j++) panels[j].classList.remove('active');
+        btn.classList.add('active');
+        var id=btn.getAttribute('data-tab'); var panel=$(id);
+        if(panel) panel.classList.add('active');
+        if(id==='plotTab') render();
+      });
+    })(tabs[i]);
+  }
+}
 
-function buildDefaults(){ state.junctions=[]; function makeJ(id){ return { id:id, name:'Junction '+id, cycleTimeSec:60, startTimeSec:0, stages:[{label:id+'1',durationSec:15},{label:id+'2',durationSec:15},{label:id+'3',durationSec:15}], intergreens:[{durationSec:5},{durationSec:5},{durationSec:5}] }; } state.junctions.push(makeJ('A'),makeJ('B'),makeJ('C'),makeJ('D')); state.journeys={'A->B':22,'B->A':24,'B->C':26,'C->B':23,'C->D':28,'D->C':29}; setDefaultHorizon(); log('Default data created','info'); }
+// ===== Defaults =====
+function buildDefaults(){
+  state.junctions = [];
+  function makeJ(id){
+    return { id:id, name:'Junction '+id, cycleTimeSec:60, startTimeSec:0,
+      stages:[{label:id+'1',durationSec:15},{label:id+'2',durationSec:15},{label:id+'3',durationSec:15}],
+      intergreens:[{durationSec:5},{durationSec:5},{durationSec:5}] };
+  }
+  state.junctions.push(makeJ('A'), makeJ('B'), makeJ('C'), makeJ('D'));
+  state.journeys = {'A->B':22,'B->A':24,'B->C':26,'C->B':23,'C->D':28,'D->C':29};
+  setDefaultHorizon();
+  log('Default data created','info');
+}
 function getJ(id){ for(var i=0;i<state.junctions.length;i++){ if(state.junctions[i].id===id) return state.junctions[i]; } return null; }
 function alignIntergreens(j){ var n=j.stages.length; while(j.intergreens.length<n) j.intergreens.push({durationSec:0}); if(j.intergreens.length>n) j.intergreens=j.intergreens.slice(0,n); }
-function updateTotalsForJunction(id){ var j=getJ(id); if(!j) return; var st=0,ig=0; for(var i=0;i<j.stages.length;i++){ st+=num(j.stages[i].durationSec); ig+=num(j.intergreens[i].durationSec||0); } var el=$('tot_'+id); if(el){ el.textContent='Total used: '+(st+ig)+'s (stages '+st+'s + intergreens '+ig+'s) / cycle '+j.cycleTimeSec+'s'; } }
+function updateTotalsForJunction(id){
+  var j=getJ(id); if(!j) return;
+  var st=0,ig=0; for(var i=0;i<j.stages.length;i++){ st+=num(j.stages[i].durationSec); ig+=num(j.intergreens[i].durationSec||0); }
+  var el=$('tot_'+id); if(el){ el.textContent='Total used: '+(st+ig)+'s (stages '+st+'s + intergreens '+ig+'s) / cycle '+j.cycleTimeSec+'s'; }
+}
 
-function renderJunctionList(){ var container=$('junctionList'); container.innerHTML=''; for(var ji=0;ji<state.junctions.length;ji++){ var j=state.junctions[ji]; alignIntergreens(j); var card=document.createElement('div'); card.className='junctionCard'; card.innerHTML=''
-+'<div class="junctionRow">'
-+'<label>Id <input value="'+j.id+'" disabled></label>'
-+'<label>Name <input data-bind="name" data-id="'+j.id+'" value="'+j.name+'"></label>'
-+'<label>Start offset (s) <input data-bind="start" data-id="'+j.id+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+j.startTimeSec+'"></label>'
-+'</div>'
-+'<div class="junctionRow">'
-+'<label>Cycle time (s) <input data-bind="cycle" data-id="'+j.id+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+j.cycleTimeSec+'"></label>'
-+'</div>'
-+'<h4>Stages</h4>'
-+'<table class="stagesTable"><thead><tr><th>Label</th><th>Duration (s)</th><th>Intergreen after (s)</th><th></th></tr></thead>'
-+'<tbody id="stBody_'+j.id+'"></tbody></table>'
-+'<div class="stageBtns"><button type="button" class="small" data-add-stage="'+j.id+'">+ Add stage</button>'+(state.junctions.length>2? '<button type="button" class="small" data-remove-j="'+j.id+'">Remove junction</button>':'')+'</div>'
-+'<div class="totalsRow" id="tot_'+j.id+'" style="margin-top:6px;font-size:12px;color:#555"></div>'; container.appendChild(card); var tbody=card.querySelector('#stBody_'+j.id+''); for(var i=0;i<j.stages.length;i++){ var s=j.stages[i], ig=j.intergreens[i].durationSec||0; var tr=document.createElement('tr'); tr.innerHTML='<td><input data-st="label" data-id="'+j.id+'" data-idx="'+i+'" value="'+s.label+'"></td>'
-+'<td><input type="text" inputmode="numeric" pattern="[0-9]*" data-st="dur" data-id="'+j.id+'" data-idx="'+i+'" value="'+s.durationSec+'"></td>'
-+'<td><input type="text" inputmode="numeric" pattern="[0-9]*" data-st="ig" data-id="'+j.id+'" data-idx="'+i+'" value="'+ig+'"></td>'
-+'<td><button type="button" class="small" data-del-stage="'+j.id+'" data-idx="'+i+'">✕</button></td>'; tbody.appendChild(tr); } }
-  var binds=container.querySelectorAll('input[data-bind]'); for(var b=0;b<binds.length;b++){ (function(inp){ function commit(){ var j=getJ(inp.getAttribute('data-id')); if(!j) return; var bind=inp.getAttribute('data-bind'); if(bind==='name') j.name=inp.value; if(bind==='start') j.startTimeSec=num(inp.value); if(bind==='cycle'){ j.cycleTimeSec=num(inp.value); if(state.horizonIsDefault){ setDefaultHorizon(); } } rebuildJourneyMatrix(); refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id); }
-    inp.addEventListener('blur', commit); inp.addEventListener('change', commit); })(binds[b]); }
-  var stInputs=container.querySelectorAll('input[data-st]'); for(var si=0; si<stInputs.length; si++){ (function(inp){ function commit(){ var j=getJ(inp.getAttribute('data-id')); var idx=Number(inp.getAttribute('data-idx')); if(inp.getAttribute('data-st')==='label') j.stages[idx].label = inp.value; if(inp.getAttribute('data-st')==='dur') j.stages[idx].durationSec = num(inp.value); if(inp.getAttribute('data-st')==='ig') j.intergreens[idx].durationSec = num(inp.value); refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id); }
-    inp.addEventListener('blur', commit); inp.addEventListener('change', commit); })(stInputs[si]); }
-  var addBtns=container.querySelectorAll('[data-add-stage]'); for(var ai=0; ai<addBtns.length; ai++){ addBtns[ai].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-add-stage'); var j=getJ(id); var n=j.stages.length+1; j.stages.push({label:id+n,durationSec:10}); j.intergreens.push({durationSec:2}); renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); }); }
-  var delBtns=container.querySelectorAll('[data-del-stage]'); for(var di=0; di<delBtns.length; di++){ delBtns[di].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-del-stage'); var idx=Number(ev.currentTarget.getAttribute('data-idx')); var j=getJ(id); j.stages.splice(idx,1); j.intergreens.splice(idx,1); renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); }); }
-  var remBtns=container.querySelectorAll('[data-remove-j]'); for(var ri=0; ri<remBtns.length; ri++){ remBtns[ri].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-remove-j'); state.junctions = state.junctions.filter(function(x){return x.id!==id;}); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render(); updateDataValidation(); }); }
+// ===== Data UI =====
+function renderJunctionList(){
+  var container=$('junctionList'); if(!container){ log('junctionList missing','err'); return; }
+  container.innerHTML='';
+  for(var ji=0; ji<state.junctions.length; ji++){
+    var j=state.junctions[ji]; alignIntergreens(j);
+    var card=document.createElement('div'); card.className='junctionCard';
+    card.innerHTML=''
+      +'<div class="junctionRow">'
+      +'<label>Id <input value="'+j.id+'" disabled></label>'
+      +'<label>Name <input data-bind="name" data-id="'+j.id+'" value="'+j.name+'"></label>'
+      +'<label>Start offset (s) <input data-bind="start" data-id="'+j.id+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+j.startTimeSec+'"></label>'
+      +'</div>'
+      +'<div class="junctionRow">'
+      +'<label>Cycle time (s) <input data-bind="cycle" data-id="'+j.id+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+j.cycleTimeSec+'"></label>'
+      +'</div>'
+      +'<h4>Stages</h4>'
+      +'<table class="stagesTable"><thead><tr><th>Label</th><th>Duration (s)</th><th>Intergreen after (s)</th><th></th></tr></thead>'
+      +'<tbody id="stBody_'+j.id+'"></tbody></table>'
+      +'<div class="stageBtns"><button type="button" class="small" data-add-stage="'+j.id+'">+ Add stage</button>'
+      +(state.junctions.length>2? '<button type="button" class="small" data-remove-j="'+j.id+'">Remove junction</button>':'')
+      +'</div>'
+      +'<div class="totalsRow" id="tot_'+j.id+'" style="margin-top:6px;font-size:12px;color:#555"></div>';
+    container.appendChild(card);
+    var tbody=card.querySelector('#stBody_'+j.id+'');
+    for(var i=0;i<j.stages.length;i++){
+      var s=j.stages[i], ig=j.intergreens[i].durationSec||0;
+      var tr=document.createElement('tr');
+      tr.innerHTML='<td><input data-st="label" data-id="'+j.id+'" data-idx="'+i+'" value="'+s.label+'"></td>'
+        +'<td><input type="text" inputmode="numeric" pattern="[0-9]*" data-st="dur" data-id="'+j.id+'" data-idx="'+i+'" value="'+s.durationSec+'"></td>'
+        +'<td><input type="text" inputmode="numeric" pattern="[0-9]*" data-st="ig" data-id="'+j.id+'" data-idx="'+i+'" value="'+ig+'"></td>'
+        +'<td><button type="button" class="small" data-del-stage="'+j.id+'" data-idx="'+i+'">✕</button></td>';
+      tbody.appendChild(tr);
+    }
+  }
+  // bindings
+  var binds=container.querySelectorAll('input[data-bind]');
+  for(var b=0;b<binds.length;b++){ (function(inp){
+    function commit(){
+      var j=getJ(inp.getAttribute('data-id')); if(!j) return;
+      var bind=inp.getAttribute('data-bind');
+      if(bind==='name') j.name=inp.value;
+      if(bind==='start') j.startTimeSec=num(inp.value);
+      if(bind==='cycle'){ j.cycleTimeSec=num(inp.value); if(state.horizonIsDefault){ setDefaultHorizon(); } }
+      rebuildJourneyMatrix(); refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id);
+    }
+    inp.addEventListener('blur', commit); inp.addEventListener('change', commit);
+  })(binds[b]); }
+  var stInputs=container.querySelectorAll('input[data-st]');
+  for(var si=0; si<stInputs.length; si++){ (function(inp){
+    function commit(){
+      var j=getJ(inp.getAttribute('data-id')); var idx=Number(inp.getAttribute('data-idx'));
+      if(inp.getAttribute('data-st')==='label') j.stages[idx].label = inp.value;
+      if(inp.getAttribute('data-st')==='dur') j.stages[idx].durationSec = num(inp.value);
+      if(inp.getAttribute('data-st')==='ig') j.intergreens[idx].durationSec = num(inp.value);
+      refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id);
+    }
+    inp.addEventListener('blur', commit); inp.addEventListener('change', commit);
+  })(stInputs[si]); }
+  var addBtns=container.querySelectorAll('[data-add-stage]');
+  for(var ai=0; ai<addBtns.length; ai++){ addBtns[ai].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-add-stage'); var j=getJ(id); var n=j.stages.length+1; j.stages.push({label:id+n,durationSec:10}); j.intergreens.push({durationSec:2}); renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); }); }
+  var delBtns=container.querySelectorAll('[data-del-stage]');
+  for(var di=0; di<delBtns.length; di++){ delBtns[di].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-del-stage'); var idx=Number(ev.currentTarget.getAttribute('data-idx')); var j=getJ(id); j.stages.splice(idx,1); j.intergreens.splice(idx,1); renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); }); }
+  var remBtns=container.querySelectorAll('[data-remove-j]');
+  for(var ri=0; ri<remBtns.length; ri++){ remBtns[ri].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-remove-j'); state.junctions = state.junctions.filter(function(x){return x.id!==id;}); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render(); updateDataValidation(); }); }
   for(var t=0;t<state.junctions.length;t++) updateTotalsForJunction(state.junctions[t].id);
   refreshOverlayPickers();
   log('Junction list rendered','info');
 }
 
-function rebuildJourneyMatrix(){ var cont=$('journeyMatrix'); cont.innerHTML=''; var n=state.junctions.length; if(n<2){ cont.textContent='Add at least two junctions.'; return; } var table=document.createElement('table'); table.className='stagesTable'; var thead=document.createElement('thead'); var hrow='<tr><th>From \\ To</th>'; for(var i=0;i<n;i++) hrow+='<th>'+state.junctions[i].name+'</th>'; hrow+='</tr>'; thead.innerHTML=hrow; table.appendChild(thead); var tbody=document.createElement('tbody'); for(var r=0;r<n;r++){ var fromJ=state.junctions[r]; var row='<td><strong>'+fromJ.name+'</strong></td>'; for(var c=0;c<n;c++){ var toJ=state.junctions[c]; if(fromJ.id===toJ.id){ row+='<td style="text-align:center;color:#888">—</td>'; } else { var key=fromJ.id+'->'+toJ.id; var val= state.journeys[key]!=null? state.journeys[key] : 20; row+='<td><input data-journey="'+key+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+val+'"></td>'; } } var tr=document.createElement('tr'); tr.innerHTML=row; tbody.appendChild(tr); } table.appendChild(tbody); cont.appendChild(table); var inps=cont.querySelectorAll('input[data-journey]'); for(var i=0;i<inps.length;i++){ (function(inp){ function commit(){ state.journeys[inp.getAttribute('data-journey')] = num(inp.value); render(); } inp.addEventListener('blur', commit); inp.addEventListener('change', commit); })(inps[i]); } log('Journey matrix rendered','info'); }
+function rebuildJourneyMatrix(){
+  var cont=$('journeyMatrix'); if(!cont){ log('journeyMatrix missing','err'); return; }
+  cont.innerHTML='';
+  var n=state.junctions.length; if(n<2){ cont.textContent='Add at least two junctions.'; return; }
+  var table=document.createElement('table'); table.className='stagesTable';
+  var thead=document.createElement('thead'); var hrow='<tr><th>From \\\\ To</th>'; for(var i=0;i<n;i++) hrow+='<th>'+state.junctions[i].name+'</th>'; hrow+='</tr>'; thead.innerHTML=hrow; table.appendChild(thead);
+  var tbody=document.createElement('tbody');
+  for(var r=0;r<n;r++){
+    var fromJ=state.junctions[r]; var row='<td><strong>'+fromJ.name+'</strong></td>';
+    for(var c=0;c<n;c++){
+      var toJ=state.junctions[c];
+      if(fromJ.id===toJ.id){ row+='<td style="text-align:center;color:#888">—</td>'; }
+      else{ var key=fromJ.id+'->'+toJ.id; var val= state.journeys[key]!=null? state.journeys[key] : 20;
+        row+='<td><input data-journey="'+key+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+val+'"></td>'; }
+    }
+    var tr=document.createElement('tr'); tr.innerHTML=row; tbody.appendChild(tr);
+  }
+  table.appendChild(tbody); cont.appendChild(table);
+  var inps = cont.querySelectorAll('input[data-journey]');
+  for(var i=0;i<inps.length;i++){ (function(inp){ function commit(){ state.journeys[inp.getAttribute('data-journey')] = num(inp.value); render(); } inp.addEventListener('blur', commit); inp.addEventListener('change', commit); })(inps[i]); }
+  log('Journey matrix rendered','info');
+}
 
-function validate(){ var errors=[]; if(state.junctions.length<2) errors.push('Add at least two junctions.'); for(var i=0;i<state.junctions.length;i++){ var j=state.junctions[i]; alignIntergreens(j); if(j.stages.length===0) errors.push(j.name+': add at least one stage.'); if(j.intergreens.length!==j.stages.length) errors.push(j.name+': intergreens count must match stages count.'); if(j.cycleTimeSec<=0) errors.push(j.name+': cycle time must be > 0.'); var st=0,ig=0; for(var k=0;k<j.stages.length;k++){ st+=num(j.stages[k].durationSec); ig+=num(j.intergreens[k].durationSec||0); } if((st+ig)!==j.cycleTimeSec){ errors.push(j.name+': stages + intergreens ('+(st+ig)+'s = '+st+'s + '+ig+'s) must equal cycle ('+j.cycleTimeSec+'s).'); } } return errors; }
-function updateDataValidation(){ var out=$('dataValidation'); var errs=validate(); if(errs.length){ out.innerHTML='<div class="bad"><strong>Fix these first:</strong><ul>'+errs.map(function(e){return '<li>'+e+'</li>';}).join('')+'</ul></div>'; } else out.innerHTML='<div class="good">Config looks valid ✔️</div>'; }
+// ===== Validation =====
+function validate(){
+  var errors=[];
+  if(state.junctions.length<2) errors.push('Add at least two junctions.');
+  for(var i=0;i<state.junctions.length;i++){
+    var j=state.junctions[i]; alignIntergreens(j);
+    if(j.stages.length===0) errors.push(j.name+': add at least one stage.');
+    if(j.intergreens.length!==j.stages.length) errors.push(j.name+': intergreens count must match stages count.');
+    if(j.cycleTimeSec<=0) errors.push(j.name+': cycle time must be > 0.');
+    var st=0, ig=0; for(var k=0;k<j.stages.length;k++){ st+=num(j.stages[k].durationSec); ig+=num(j.intergreens[k].durationSec||0); }
+    if((st+ig)!==j.cycleTimeSec){ errors.push(j.name+': stages + intergreens ('+(st+ig)+'s = '+st+'s + '+ig+'s) must equal cycle ('+j.cycleTimeSec+'s).'); }
+  }
+  return errors;
+}
+function updateDataValidation(){ var out=$('dataValidation'); if(!out) return; var errs=validate(); if(errs.length){ out.innerHTML='<div class="bad"><strong>Fix these first:</strong><ul>'+errs.map(function(e){return '<li>'+e+'</li>';}).join('')+'</ul></div>'; } else out.innerHTML='<div class="good">Config looks valid ✔️</div>'; }
 
+// ===== Plot helpers & renderer =====
 function presentRowOrder(){ var out=[]; for(var i=0;i<state.rowOrder.length;i++){ if(getJ(state.rowOrder[i])) out.push(state.rowOrder[i]); } return out; }
 function maxCycle(){ var m=0; for(var i=0;i<state.junctions.length;i++) m=Math.max(m, state.junctions[i].cycleTimeSec||0); return m; }
 function setDefaultHorizon(){ var def=Math.max(60, maxCycle()+20); var h=$('horizon'); if(!h) return; if(state.horizonIsDefault || !num(h.value)){ h.value=String(def); state.horizonSec=def; state.horizonIsDefault=true; } }
@@ -238,19 +351,116 @@ function otherEndOf(chId, cur){ var p=chId.split('-'); return cur===p[0]? p[1]:p
 function channelPath(a,b){ var o=presentRowOrder(); var ai=o.indexOf(a), bi=o.indexOf(b); if(ai===-1||bi===-1) return []; var path=[], step=ai<bi?1:-1; for(var i=ai;i!==bi;i+=step){ var id1=o[i], id2=o[i+step]; var top=o.indexOf(id1)<o.indexOf(id2)?id1:id2; var bottom=(top===id1)?id2:id1; path.push(top+'-'+bottom); } return path; }
 function ensureArrowDefs(s){ if(s.querySelector('defs#arrowDefs')) return; var defs=elNS('defs'); defs.id='arrowDefs'; var m=elNS('marker'); m.setAttribute('id','arrow'); m.setAttribute('viewBox','0 0 10 10'); m.setAttribute('refX','8'); m.setAttribute('refY','5'); m.setAttribute('markerWidth','6'); m.setAttribute('markerHeight','6'); m.setAttribute('orient','auto'); var p=elNS('path'); p.setAttribute('d','M 0 0 L 10 5 L 0 10 z'); p.setAttribute('fill','context-stroke'); m.appendChild(p); defs.appendChild(m); s.appendChild(defs); }
 
-function render(){ var s=$('diagram'); if(!s) return; s.innerHTML=''; var H = state.horizonSec = num($('horizon').value) || Math.max(60, maxCycle()+20); if(!$('horizon').value) $('horizon').value=String(H); var showMainGrid = state.showMainGrid = $('showMainGrid').checked; var width = s.clientWidth || 960; var MARGIN=60; var HEIGHT = 20 + (presentRowOrder().length-1)*(30+120) + 30 + 80; s.setAttribute('height', String(HEIGHT)); var usableW = (width - MARGIN - 10); var PAD = H; var xScale=function(t){return MARGIN + (t/H)*usableW;}; var xScaleAbs=function(tAbs){ return MARGIN + ((tAbs + PAD)/H)*usableW; }; ensureArrowDefs(s);
-  if(showMainGrid){ for(var t=0;t<=H;t+=10){ var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:8,x2:xScale(t),y2:HEIGHT-8,class:'gridLine'}); s.appendChild(ln); if(t%30===0){ var tx=elNS('text'); setAttrs(tx,{x:xScale(t)+2,y:12,class:'axisLabel'}); tx.textContent=t+'s'; s.appendChild(tx);} } } else { for(var t2=0;t2<=H;t2+=30){ var tx2=elNS('text'); setAttrs(tx2,{x:xScale(t2)+2,y:12,class:'axisLabel'}); tx2.textContent=t2+'s'; s.appendChild(tx2); } }
-  var order=presentRowOrder(); for(var r=0;r<order.length;r++){ var j=getJ(order[r]); var yTop=20 + r*(30+120); var yBandTop=yTop+10, yBandBot=yTop+30+30; var lbl=elNS('text'); setAttrs(lbl,{x:10,y:yTop+4,class:'rowLabel'}); lbl.textContent=j.name; s.appendChild(lbl); var offlbl=elNS('text'); setAttrs(offlbl,{x:10,y:yTop+16,class:'offsetLabel'}); offlbl.textContent='Offset: '+(j.startTimeSec||0)+'s'; s.appendChild(offlbl); for(var t=0;t<=H;t+=1){ var x=xScale(t); var l1=elNS('line'); setAttrs(l1,{x1:x,y1:yBandTop-3,x2:x,y2:yBandTop,class:'tick1'}); s.appendChild(l1); var l2=elNS('line'); setAttrs(l2,{x1:x,y1:yBandBot,x2:x,y2:yBandBot+3,class:'tick1'}); s.appendChild(l2); } for(var t5=0;t5<=H;t5+=5){ var x5=xScale(t5); var L1=elNS('line'); setAttrs(L1,{x1:x5,y1:yBandTop-6,x2:x5,y2:yBandTop,class:'tick5'}); s.appendChild(L1); var L2=elNS('line'); setAttrs(L2,{x1:x5,y1:yBandBot,x2:x5,y2:yBandBot+6,class:'tick5'}); s.appendChild(L2); }
-    var tiles=tileBands(j,H,-PAD,H+PAD); for(var b=0;b<tiles.length;b++){ var m=tiles[b]; var x0=xScaleAbs(m.startAbs), x1=xScaleAbs(m.endAbs), w=Math.max(0,x1-x0); var rect=elNS('rect'); setAttrs(rect,{x:x0,y:yBandTop,width:w,height:30,class:(m.type==='stage'?'stageRect':'intergreenRect')}); if(m.type==='stage') rect.setAttribute('fill', stageFill(m.index)); s.appendChild(rect); if(m.label && m.type==='stage' && w>24){ var tt=elNS('text'); setAttrs(tt,{x:x0+w/2,y:yBandTop+15,class:'stageLabel'}); tt.textContent=m.label; s.appendChild(tt);} }
-    var C=j.cycleTimeSec, t0=j.startTimeSec||0; var tTiles=tiles.filter(function(b){return b.type==='stage';}); for(var b2=0;b2<tTiles.length;b2++){ var bb=tTiles[b2]; var xs=xScaleAbs(bb.startAbs), xe=xScaleAbs(bb.endAbs); var startLocal=((bb.startAbs - t0)%C + C)%C, endLocal=((bb.endAbs - t0)%C + C)%C; var ty=yBandTop-8; var tS=elNS('text'); setAttrs(tS,{x:xs,y:ty,class:'stageTimeLabel'}); tS.textContent=startLocal+'s'; s.appendChild(tS); var tE=elNS('text'); setAttrs(tE,{x:xe,y:ty,class:'stageTimeLabel'}); tE.textContent=endLocal+'s'; s.appendChild(tE); }
-    if(C>0){ var first=t0; while(first<0) first+=C; while(first-C>=0) first-=C; for(var tt=first; tt<=H; tt+=C){ if(tt<=0) continue; var xl=xScale(tt); var ln2=elNS('line'); setAttrs(ln2,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'gridLine'}); ln2.setAttribute('stroke','#e53935'); ln2.setAttribute('stroke-width','2'); s.appendChild(ln2); } var yBottomLbl=yBandBot+16; var lab=t0; while(lab<0) lab+=5; while(lab-5>=0) lab-=5; for(var ttt=lab; ttt<=H; ttt+=5){ var tx=elNS('text'); setAttrs(tx,{x:xScale(ttt)+2,y:yBottomLbl,class:'axisLabel'}); tx.textContent=String(((ttt - t0)%C + C)%C)+'s'; s.appendChild(tx); } }
+function render(){
+  var s=$('diagram'); if(!s){ log('diagram SVG missing','err'); return; }
+  s.innerHTML='';
+  var H = state.horizonSec = num($('horizon').value) || Math.max(60, maxCycle()+20);
+  if(!$('horizon').value) $('horizon').value=String(H);
+  var showMainGrid = state.showMainGrid = $('showMainGrid') ? $('showMainGrid').checked : true;
+  var width = s.clientWidth || 960; var MARGIN=60; var HEIGHT = 20 + (presentRowOrder().length-1)*(30+120) + 30 + 80; s.setAttribute('height', String(HEIGHT));
+  var usableW = (width - MARGIN - 10);
+  var xScale = function(t){ return MARGIN + (t/H)*usableW; };
+
+  ensureArrowDefs(s);
+
+  // Global grid
+  if(showMainGrid){
+    for(var t=0;t<=H;t+=10){
+      var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:8,x2:xScale(t),y2:HEIGHT-8,class:'gridLine'}); s.appendChild(ln);
+      if(t%30===0){ var tx=elNS('text'); setAttrs(tx,{x:xScale(t)+2,y:12,class:'axisLabel'}); tx.textContent=t+'s'; s.appendChild(tx); }
+    }
+  } else {
+    for(var t2=0;t2<=H;t2+=30){ var tx2=elNS('text'); setAttrs(tx2,{x:xScale(t2)+2,y:12,class:'axisLabel'}); tx2.textContent=t2+'s'; s.appendChild(tx2); }
   }
-  if(showMainGrid){ for(var i=0;i<order.length-1;i++){ var ch=channelBox(i); for(var t=0;t<=H;t+=10){ var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:ch.y0,x2:xScale(t),y2:ch.y1,class:'channelGrid'}); s.appendChild(ln);} } }
-  updateDataValidation(); log('Plot rendered (H='+H+'s)','info');
+
+  var order = presentRowOrder();
+  for(var r=0;r<order.length;r++){
+    var j=getJ(order[r]); if(!j) continue;
+    var yTop=20 + r*(30+120); var yBandTop=yTop+10, yBandBot=yBandTop+30;
+    var lbl=elNS('text'); setAttrs(lbl,{x:10,y:yTop+4,class:'rowLabel'}); lbl.textContent=j.name; s.appendChild(lbl);
+    var offlbl=elNS('text'); setAttrs(offlbl,{x:10,y:yTop+16,class:'offsetLabel'}); offlbl.textContent='Offset: '+(j.startTimeSec||0)+'s'; s.appendChild(offlbl);
+    // tick lines
+    for(var t=0;t<=H;t+=1){ var x=xScale(t);
+      var l1=elNS('line'); setAttrs(l1,{x1:x,y1:yBandTop-3,x2:x,y2:yBandTop,class:'tick1'}); s.appendChild(l1);
+      var l2=elNS('line'); setAttrs(l2,{x1:x,y1:yBandBot,x2:x,y2:yBandBot+3,class:'tick1'}); s.appendChild(l2);
+    }
+    for(var t5=0;t5<=H;t5+=5){ var x5=xScale(t5);
+      var L1=elNS('line'); setAttrs(L1,{x1:x5,y1:yBandTop-6,x2:x5,y2:yBandTop,class:'tick5'}); s.appendChild(L1);
+      var L2=elNS('line'); setAttrs(L2,{x1:x5,y1:yBandBot,x2:x5,y2:yBandBot+6,class:'tick5'}); s.appendChild(L2);
+    }
+    // bands
+    var C=j.cycleTimeSec, t0=j.startTimeSec||0, t=0;
+    while(t<=H){
+      for(var i=0;i<j.stages.length;i++){
+        var sDur=j.stages[i].durationSec, ig=j.intergreens[i].durationSec||0;
+        var stStart=t + ((t0)%C + C)%C;
+        var s0=stStart%H, s1=(stStart+sDur)%H;
+        // stage rect(s)
+        if(s1 < s0){
+          var r1=elNS('rect'); setAttrs(r1,{x:xScale(s0),y:yBandTop,width:xScale(H)-xScale(s0),height:30,class:'stageRect'}); r1.setAttribute('fill', stageFill(i)); s.appendChild(r1);
+          var r2=elNS('rect'); setAttrs(r2,{x:xScale(0),y:yBandTop,width:xScale(s1)-xScale(0),height:30,class:'stageRect'}); r2.setAttribute('fill', stageFill(i)); s.appendChild(r2);
+        } else {
+          var rect=elNS('rect'); setAttrs(rect,{x:xScale(s0),y:yBandTop,width:Math.max(0,xScale(s1)-xScale(s0)),height:30,class:'stageRect'}); rect.setAttribute('fill', stageFill(i)); s.appendChild(rect);
+        }
+        // label
+        if(Math.abs(s1-s0)*usableW/H > 24){
+          var tx=elNS('text'); setAttrs(tx,{x:xScale((s0+s1)%H/2), y:yBandTop+15, class:'stageLabel'}); tx.textContent=j.stages[i].label; s.appendChild(tx);
+        }
+        // intergreen
+        var ig0=(stStart+sDur)%H, ig1=(stStart+sDur+ig)%H;
+        if(ig>0){
+          if(ig1 < ig0){
+            var igA=elNS('rect'); setAttrs(igA,{x:xScale(ig0),y:yBandTop,width:xScale(H)-xScale(ig0),height:30,class:'intergreenRect'}); s.appendChild(igA);
+            var igB=elNS('rect'); setAttrs(igB,{x:xScale(0),y:yBandTop,width:xScale(ig1)-xScale(0),height:30,class:'intergreenRect'}); s.appendChild(igB);
+          } else {
+            var igR=elNS('rect'); setAttrs(igR,{x:xScale(ig0),y:yBandTop,width:Math.max(0,xScale(ig1)-xScale(ig0)),height:30,class:'intergreenRect'}); s.appendChild(igR);
+          }
+        }
+        t += sDur + ig;
+      }
+    }
+    // cycle markers
+    if(C>0){
+      for(var tt=0; tt<=H; tt+=C){
+        var xl=xScale(tt); var ln2=elNS('line'); setAttrs(ln2,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'gridLine'});
+        ln2.setAttribute('stroke','#e53935'); ln2.setAttribute('stroke-width','2'); s.appendChild(ln2);
+      }
+      var yBottomLbl=yBandBot+16;
+      for(var ttt=0; ttt<=H; ttt+=5){
+        var tx3=elNS('text'); setAttrs(tx3,{x:xScale(ttt)+2,y:yBottomLbl,class:'axisLabel'}); tx3.textContent=String(ttt%C)+'s'; s.appendChild(tx3);
+      }
+    }
+  }
+
+  // channel grids (0..H)
+  if($('showMainGrid') && $('showMainGrid').checked){
+    for(var i=0;i<order.length-1;i++){ var ch=channelBox(i); for(var t=0;t<=H;t+=10){ var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:ch.y0,x2:xScale(t),y2:ch.y1,class:'channelGrid'}); s.appendChild(ln);} }
+  }
+
+  updateDataValidation();
+  log('Plot rendered (H='+H+'s)','info');
 }
 
-function refreshOverlayPickers(){ var o=$('ovOrigin'), d=$('ovDest'), s=$('ovStage'), coO=$('coOrigin'), coD=$('coDest'); function fillSelJ(sel){ if(!sel) return; var cur=sel.value; sel.innerHTML=''; for(var i=0;i<state.rowOrder.length;i++){ var id=state.rowOrder[i]; var j=getJ(id); if(j){ var opt=document.createElement('option'); opt.value=id; opt.textContent=j.name; sel.appendChild(opt);} } if(cur && getJ(cur)) sel.value=cur; } fillSelJ(o); fillSelJ(d); fillSelJ(coO); fillSelJ(coD); function fillStagesForOrigin(){ if(!s) return; var originId = o && o.value ? o.value : (presentRowOrder()[0] || null); s.innerHTML=''; if(originId){ var j = getJ(originId); if(j){ for(var i=0;i<j.stages.length;i++){ var op=document.createElement('option'); op.value=String(i); op.textContent=j.stages[i].label; s.appendChild(op);} } } } fillStagesForOrigin(); if(o && !o._hasStageSync){ o.addEventListener('change', function(){ fillStagesForOrigin(); }); o._hasStageSync=true; } }
+// ===== Overlay pickers =====
+function refreshOverlayPickers(){
+  var o=$('ovOrigin'), d=$('ovDest'), s=$('ovStage'), coO=$('coOrigin'), coD=$('coDest');
+  function fillSel(sel){
+    if(!sel) return;
+    var cur=sel.value; sel.innerHTML='';
+    for(var i=0;i<state.rowOrder.length;i++){ var id=state.rowOrder[i]; var j=getJ(id); if(j){ var opt=document.createElement('option'); opt.value=id; opt.textContent=j.name; sel.appendChild(opt);} }
+    if(cur && getJ(cur)) sel.value=cur;
+  }
+  fillSel(o); fillSel(d); fillSel(coO); fillSel(coD);
+  function fillStages(){
+    if(!s) return; s.innerHTML='';
+    var originId = o && o.value ? o.value : (presentRowOrder()[0]||null);
+    if(originId){ var j=getJ(originId); if(j){ for(var i=0;i<j.stages.length;i++){ var op=document.createElement('option'); op.value=String(i); op.textContent=j.stages[i].label; s.appendChild(op);} } }
+  }
+  fillStages();
+  if(o && !o._hasStageSync){ o.addEventListener('change', fillStages); o._hasStageSync=true; }
+}
 
+// ===== Clipboard =====
 async function copyPlotToClipboard(){
   try{
     var svg = $('diagram'); if(!svg){ alert('No diagram to copy.'); return; }
@@ -291,30 +501,39 @@ async function copyPlotToClipboard(){
       log('Copied plot as SVG text to clipboard','warn');
       $('readout').innerHTML = '<div class="warn">Image copy not supported — copied SVG markup as text.</div>';
     } catch(e2){
-      log('Clipboard copy failed: '+(e2.message or e2),'err')
+      log('Clipboard copy failed: '+(e2.message||e2),'err');
       $('readout').innerHTML = '<div class="bad">Clipboard not available. Try long-press → Copy, or take a screenshot.</div>';
     }
   }
 }
 
-document.addEventListener('DOMContentLoaded', function(){
-  $('clearDebugBtn').addEventListener('click', function(){ var box=$('debugLog'); if(box) box.innerHTML=''; });
-  initTabs();
-  buildDefaults();
-  renderJunctionList();
-  rebuildJourneyMatrix();
-  refreshOverlayPickers();
-  setDefaultHorizon();
-  $('plotBtn').addEventListener('click', function(){ render(); });
-  $('validateBtn').addEventListener('click', updateDataValidation);
-  $('rebuildMatrix').addEventListener('click', function(){ rebuildJourneyMatrix(); });
-  $('resetDefaultsBtn').addEventListener('click', function(){ buildDefaults(); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render(); updateDataValidation(); });
-  var h=$('horizon'); h.addEventListener('blur', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); }); h.addEventListener('change', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); });
-  $('showMainGrid').addEventListener('change', function(){ render(); });
-  $('copyPlotBtn').addEventListener('click', function(){ copyPlotToClipboard(); });
-  log('App initialised','info');
-  var b=$('bootBanner'); if(b){ b.textContent='script: DOM ready'; setTimeout(function(){ if(b && b.parentNode) b.parentNode.removeChild(b); }, 2000); }
-});
+// ===== App bootstrap =====
+function bootstrap(){
+  try{
+    initTabs();
+    buildDefaults();
+    renderJunctionList();
+    rebuildJourneyMatrix();
+    refreshOverlayPickers();
+    setDefaultHorizon();
+    if($('plotBtn')) $('plotBtn').addEventListener('click', function(){ render(); });
+    if($('validateBtn')) $('validateBtn').addEventListener('click', updateDataValidation);
+    if($('rebuildMatrix')) $('rebuildMatrix').addEventListener('click', function(){ rebuildJourneyMatrix(); });
+    if($('resetDefaultsBtn')) $('resetDefaultsBtn').addEventListener('click', function(){ buildDefaults(); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render(); updateDataValidation(); });
+    var h=$('horizon'); if(h){ h.addEventListener('blur', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); }); h.addEventListener('change', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); }); }
+    if($('showMainGrid')) $('showMainGrid').addEventListener('change', function(){ render(); });
+    if($('copyPlotBtn')) $('copyPlotBtn').addEventListener('click', function(){ copyPlotToClipboard(); });
+    if($('forceInitBtn')) $('forceInitBtn').addEventListener('click', function(){ log('Force init clicked','warn'); try{ bootstrap(); }catch(e){ log('Force init error: '+e.message,'err'); } });
+    render();
+    log('App initialised','info');
+  } catch(e){
+    log('Bootstrap error: '+(e.message||e), 'err');
+  } finally {
+    var b=$('bootBanner'); if(b){ b.textContent='script: DOM ready'; setTimeout(function(){ if(b && b.parentNode) b.parentNode.removeChild(b); }, 2000); }
+  }
+}
+
+document.addEventListener('DOMContentLoaded', bootstrap);
 </script>
 </body>
 </html>

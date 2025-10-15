@@ -1,5 +1,5 @@
-# BUGS — v1.0.25 delta
+# Known Issues — v1.0.24.3
 
-- Fixed: Overlay polygons skew/double-draw at horizon: intervals are now split at [0,H] when needed.
-- Added: Debug logs when overlays split at the horizon.
-- Added: Print preview in a new tab with A4/A3 and orientation control.
+- Overlay horizon wrap splitting not yet implemented (planned for v1.0.25).
+- Point overlays still mimic interval behaviour in some edge cases (pending fix).
+- Clipboard image may be blocked on some iPadOS; SVG text fallback remains.
