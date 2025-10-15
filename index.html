@@ -372,9 +372,10 @@ function drawVisibleLikeHidden(){
   const width = left + T*pps + 20; const height = top + App.state.junctions.length*(rowH+gap) + 20;
   C.width = width; C.height = height;
 
-  const origin = App.state.mainCycle; // seconds
+  const origin = 2*App.state.mainCycle; // seconds
   ctx.save();
   ctx.translate(-origin*pps, 0);
+  ctx.beginPath(); ctx.rect(left, 0, width-left, height); ctx.clip();
 
   // bg & grid
   ctx.fillStyle="#fff"; ctx.fillRect(0,0,width,height);

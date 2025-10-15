@@ -27,3 +27,7 @@
 - Visible canvas alignment: origin now aligns with the left margin via context translation; eliminates left offset.
 - Time axis on visible shows (t − mainCycle) labels only (no negatives); grid starts at cycle 2 to prevent hidden-canvas artefacts.
 - Removed prior clamping/skips; rendering now mirrors hidden pipeline exactly with a translated origin.
+
+## v1.3.2-alpha — 2025-10-15T22:12:15Z UTC
+- Visible origin is now 2 × mainCycle at the left margin; grid and labels start at origin and display (t − origin).
+- Added clip region to ensure no pre-origin artefacts appear on the visible time axis.
