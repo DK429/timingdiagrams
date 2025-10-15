@@ -360,46 +360,111 @@ function drawHidden(){
   log('Hidden canvas redrawn (min-green enforced)','info');
 }
 
+function drawVisibleLikeHidden(){
+  if(!(App.state.validOk && App.state.readyToPlot)){
+    log('Visible draw suppressed (requires Validate OK + Plot)','warn');
+    return;
+  }
+  const C = document.getElementById('visibleCanvas'); const ctx = C.getContext('2d');
+  const M = App.state.mainCycle; const mult = App.initCfg.plot.hiddenWindowMultiplier || 5; const T = M*mult;
+  const pps = App.state.pxPerSec || 4; const left = App.initCfg.plot.leftMargin || 120; const top = App.initCfg.plot.topMargin || 24;
+  const rowH = App.initCfg.plot.rowHeight || 48; const gap = App.initCfg.plot.rowGap || 18;
+  const origin = App.state.mainCycle; const width = left + T*pps + 20; const height = top + App.state.junctions.length*(rowH+gap) + 20;
+  C.width = width; C.height = height;
+
+  // bg & grid
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,width,height);
+  ctx.strokeStyle="#eee"; ctx.lineWidth=1;
+  for(let t=0;t<=T;t+=10){ const x=left+t*pps; ctx.beginPath(); ctx.moveTo(x, top-8); ctx.lineTo(x, height-10); ctx.stroke();
+    const label = t - origin; ctx.fillStyle = (t<origin? '#999':'#444'); ctx.font='11px ui-monospace, Consolas, monospace'; ctx.fillText(String(label), x+2, top-10);
+    ctx.fillStyle="#999"; ctx.font="10px system-ui"; ctx.fillText(String(t)+'s', x-8, top-12); }
+
+  const greens = ["rgba(60,180,75,0.9)","rgba(90,205,105,0.9)","rgba(120,220,135,0.9)","rgba(150,235,165,0.9)"];
+
+  App.state.junctions.forEach((j, idx)=>{
+    const y0 = top + idx*(rowH+gap);
+    ctx.fillStyle="#111"; ctx.font="12px system-ui"; ctx.fillText(j.name, 12, y0 + rowH*0.6);
+    ctx.strokeStyle="#ddd"; ctx.strokeRect(left, y0, T*pps, rowH);
+
+    const rc = computeRealisedCycle(j);
+    if(!rc.ok){
+      ctx.fillStyle="#b00020"; ctx.fillText("ERR: "+rc.err.join(' | '), left+8, y0+14);
+      log(`DRAW SKIP ${j.name}: `+rc.err.join(' | '),'warn');
+      return;
+    }
+    rc.details.forEach(d=>{
+      log(`${j.name} i=${d.i} rq=${Math.round(d.rqNext)} stage=${d.curStage}->${d.nextStage} start=${Math.round(d.stageStart)} MG=${d.mgCur} RC=${Math.round(d.realisedNext)} delay=${Math.round(d.delay)}`,'info');
+    });
+
+    const Cj = rc.Cj;
+    const cycles = Math.ceil(T / Cj);
+    const N = rc.plan.length;
+
+    for(let k=0;k<cycles;k++){
+      const base = k*Cj;
+      if(App.initCfg.utcPlan.markRequestsBlue){
+        ctx.strokeStyle="#4aa1ff"; ctx.lineWidth=2;
+        for(let i=0;i<N;i++){
+          const rq = rc.plan[i].at;
+          const x= left + (base + rq)*pps; if((base + rq) >= origin){ ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y0+rowH); ctx.stroke(); }
+        }
+      }
+      for(let i=0;i<N;i++){
+        const curIdx = rc.toIdx[i];
+        const prevIdx = rc.toIdx[(i-1+N)%N];
+        const nextIdx = rc.toIdx[(i+1)%N];
+        const igPrev = Math.max(0, j.intergreen[prevIdx][curIdx]);
+        const RCi = rc.RC[i];
+        const RCn = rc.RC[i+1];
+        let segStart = (RCi + igPrev) + k*Cj; if(segStart < origin) segStart = origin;
+        const segEnd = RCn + k*Cj;
+        if(segEnd > segStart){
+          ctx.fillStyle = greens[curIdx % greens.length];
+          ctx.fillRect(left + segStart*pps, y0+6, (segEnd-segStart)*pps, rowH-12);
+        }
+        const nextReq = rc.details[i].rqNext;
+        const delay = rc.details[i].delay;
+        if(App.initCfg.utcPlan.showQueuedChangeMarkers && delay>0){
+          ctx.strokeStyle="rgba(74,161,255,0.7)";
+          ctx.setLineDash([4,3]);
+          const x1 = left + (nextReq + k*Cj)*pps;
+          const x2 = left + (RCn + k*Cj)*pps;
+          ctx.beginPath(); ctx.moveTo(x1, y0+4); ctx.lineTo(x2, y0+4); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle="rgba(74,161,255,0.9)";
+          const triX = x2, triY = y0+4;
+          ctx.beginPath(); ctx.moveTo(triX, triY); ctx.lineTo(triX-5, triY-8); ctx.lineTo(triX+5, triY-8); ctx.closePath(); ctx.fill();
+        }
+        const igNext = Math.max(0, j.intergreen[curIdx][nextIdx]);
+        if(igNext>0){
+          const igStart = RCn + k*Cj;
+          ctx.fillStyle = "rgba(150,150,150,0.35)";
+          ctx.fillRect(left + igStart*pps, y0+6, igNext*pps, rowH-12);
+        }
+      }
+    }
+  });
+
+  const info = document.getElementById('info');
+  if(info) info.textContent = `Hidden T=${T}s · scale=${pps}px/s · canvas ${C.width}×${C.height}`;
+  log('Hidden canvas redrawn (min-green enforced)','info');
+}
+
+
+
 // ---- transfer to visible (no extra logic; just blit a window) ----
+
 
 function transferToVisible(){
   if(!(App.state.validOk && App.state.readyToPlot)){
     alert('Please Validate and Plot first.'); return;
   }
-  const hidden = document.getElementById('hiddenCanvas');
   const visible = document.getElementById('visibleCanvas');
-  const wrap = document.getElementById('tab-visible') || document.getElementById('visibleWrap') || visible.parentElement;
-  const pps = App.state.pxPerSec || 4;
-  const M = App.state.mainCycle;
-  const N = App.state.viewCycles || 2;
-  const left = App.initCfg.plot.leftMargin || 120;
-  const top = App.initCfg.plot.topMargin || 24;
-  const Cj = M; // window cycles are based on main, starting at 1*C .. (1+N)*C
-  const sx = left + 1*Cj*pps; // start at 1*C
-  const sw = N*Cj*pps; // width of N cycles
-  const sy = 0;
-  const sh = hidden.height;
-
-  // Size visible to match the slice, then blit
-  visible.width = sw;
-  visible.height = sh;
-  const vctx = visible.getContext('2d');
-  vctx.clearRect(0,0,visible.width,visible.height);
-  vctx.drawImage(hidden, sx, sy, sw, sh, 0, 0, sw, sh);
-
-  // Overlay cycle-time counter: display (actual - main) = (N-1)*M
-  var delta = (Math.max(0, (N-1)) * M); // seconds
-  vctx.save();
-  vctx.fillStyle = "rgba(0,0,0,0.75)";
-  vctx.fillRect(8, 6, 180, 22);
-  vctx.fillStyle = "#fff";
-  vctx.font = "12px ui-monospace, Consolas, monospace";
-  vctx.textBaseline = "middle";
-  vctx.fillText(`Δ Cycle: ${delta}s (N-1)`, 16, 17);
-  vctx.restore();
-
-  // Full-screen scale to fit
   const panel = document.getElementById('tab-visible') || document.body;
+  // Draw like hidden but with origin shift
+  drawVisibleLikeHidden();
+  // Fit to panel
+  const sw = visible.width, sh = visible.height;
   const availW = panel.clientWidth || window.innerWidth;
   const availH = panel.clientHeight || window.innerHeight;
   const scale = Math.max(0.1, Math.min(availW / sw, availH / sh));
@@ -412,9 +477,8 @@ function transferToVisible(){
     wrapper.style.height = (availH) + 'px';
     wrapper.style.width = (availW) + 'px';
   }
-
-  log(`Transferred window: x=${sx}px w=${sw}px from hidden→visible (cycles 1..${1+N}); ΔCycle=${delta}s`,'info');
 }
+
 
 
 function drawHiddenGate(){

@@ -15,3 +15,10 @@
 - Visible canvas: overlay cycle-time counter now shows (N-1) × mainCycle (i.e., actual window minus one cycle). Clears and redraws per transfer.
 - Full-screen fit: visible canvas auto-scales to fill the entire visible tab (both width and height) using CSS transform scaling, preserving crispness.
 - Tab switch to "Visible canvas" now re-transfers and scales automatically.
+
+## v1.3.0-alpha — 2025-10-15T21:50:38Z UTC
+- Visible canvas now re-renders using the same plotting pipeline as hidden, but with an origin shift of one main cycle:
+  - Grid/labels across the full widened horizon.
+  - Plotting starts from cycle 2 (t ≥ mainCycle). Earlier grid remains visible with muted labels.
+  - Time labels display (t - mainCycle), so 0 aligns with the start of cycle 2.
+- Transfer action now re-renders rather than blitting and scales to the full tab.
