@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Signal Plan Checker v1.0.22</title>
+<title>Signal Plan Checker v1.0.24</title>
 <style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#1b1b1b}
 header{padding:16px 20px;border-bottom:1px solid #eee;background:#fafafa}
@@ -53,11 +53,12 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 .debugLog .err{color:#ffb4b4}.debugLog .warn{color:#ffd27f}.debugLog .info{color:#a5d6ff}
 #bootBanner{position:fixed;inset:auto 12px 12px auto;background:#0d1117;color:#ffd27f;padding:8px 10px;border-radius:8px;
 font-family:ui-monospace,Consolas,Monaco,monospace;font-size:12px;z-index:99999}
+summary{cursor:pointer}
 </style>
 </head>
 <body>
 <header>
-  <h1>Signal Plan Checker <span class="badge">v1.0.22</span></h1>
+  <h1>Signal Plan Checker <span class="badge">v1.0.24</span></h1>
   <div>Single-file build with robust init and triple-buffer renderer.</div>
 </header>
 
@@ -90,7 +91,7 @@ font-family:ui-monospace,Consolas,Monaco,monospace;font-size:12px;z-index:99999}
       <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
       <button type="button" id="forceInitBtn" class="small">Force init</button>
       <button type="button" id="validateBtn">Validate</button>
-      <span class="version">v1.0.22</span>
+      <span class="version">v1.0.24</span>
     </div>
     <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -248,7 +249,7 @@ function renderJunctionList(){
       +'</div>'
       +'<div class="totalsRow" id="tot_'+j.id+'" style="margin-top:6px;font-size:12px;color:#555"></div>';
     container.appendChild(card);
-    var tbody=card.querySelector('#stBody_'+j.id);
+    var tbody=card.querySelector('#stBody_'+j.id+''); 
     for(var i=0;i<j.stages.length;i++){
       var s=j.stages[i], ig=j.intergreens[i].durationSec||0;
       var tr=document.createElement('tr');
@@ -491,6 +492,8 @@ document.addEventListener('DOMContentLoaded', function(){
   setDefaultHorizon();
   $('plotBtn').addEventListener('click', function(){ render(); });
   $('validateBtn').addEventListener('click', updateDataValidation);
+  $('rebuildMatrix').addEventListener('click', function(){ rebuildJourneyMatrix(); });
+  $('resetDefaultsBtn').addEventListener('click', function(){ buildDefaults(); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); renderLegend(); setDefaultHorizon(); render(); updateDataValidation(); });
   var h=$('horizon'); h.addEventListener('blur', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); });
   h.addEventListener('change', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); });
   $('showMainGrid').addEventListener('change', function(){ render(); });
@@ -511,9 +514,9 @@ document.addEventListener('DOMContentLoaded', function(){
   });
   // Export/Import
   $('exportBtn').addEventListener('click', function(){ var payload = JSON.stringify(state, null, 2); var blob=new Blob([payload],{type:'application/json'}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download='signals-config-v1.json'; a.click(); setTimeout(function(){URL.revokeObjectURL(url);},1000); });
-  $('importInput').addEventListener('change', function(e){ var f=e.target.files[0]; if(!f) return; var r=new FileReader(); r.onload=function(){ try{ var obj=JSON.parse(r.result); state.junctions=obj.junctions||state.junctions; state.journeys=obj.journeys||state.journeys; state.horizonSec=obj.horizonSec||state.horizonSec; state.overlays=obj.overlays||state.overlays; state.overrunMode=obj.overrunMode||state.overrunMode; renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); renderLegend(); render(); updateDataValidation(); document.querySelector('[data-tab=\"plotTab\"]').click(); }catch(err){ var out=$('dataValidation'); if(out) out.innerHTML='<div class=\"bad\">Import failed: '+err.message+'</div>'; } }; r.readAsText(f); });
+  $('importInput').addEventListener('change', function(e){ var f=e.target.files[0]; if(!f) return; var r=new FileReader(); r.onload=function(){ try{ var obj=JSON.parse(r.result); state.junctions=obj.junctions||state.junctions; state.journeys=obj.journeys||state.journeys; state.horizonSec=obj.horizonSec||state.horizonSec; state.overlays=obj.overlays||state.overlays; state.overrunMode=obj.overrunMode||state.overrunMode; renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); renderLegend(); render(); updateDataValidation(); document.querySelector('[data-tab="plotTab"]').click(); }catch(err){ var out=$('dataValidation'); if(out) out.innerHTML='<div class="bad">Import failed: '+err.message+'</div>'; } }; r.readAsText(f); });
   $('saveTdBtn').addEventListener('click', function(){ var payload=JSON.stringify(state,null,2); var blob=new Blob([payload],{type:'application/json'}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download='signal-plan-checker.td'; a.click(); setTimeout(function(){URL.revokeObjectURL(url);},1000); });
-  $('loadTdInput').addEventListener('change', function(e){ var f=e.target.files[0]; if(!f) return; var r=new FileReader(); r.onload=function(){ try{ var obj=JSON.parse(r.result); state.junctions=obj.junctions||state.junctions; state.journeys=obj.journeys||state.journeys; state.horizonSec=obj.horizonSec||state.horizonSec; state.overlays=obj.overlays||state.overlays; state.overrunMode=obj.overrunMode||state.overrunMode; renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); renderLegend(); render(); updateDataValidation(); document.querySelector('[data-tab=\"plotTab\"]').click(); }catch(err){ var out=$('dataValidation'); if(out) out.innerHTML='<div class=\"bad\">TD load failed: '+err.message+'</div>'; } }; r.readAsText(f); });
+  $('loadTdInput').addEventListener('change', function(e){ var f=e.target.files[0]; if(!f) return; var r=new FileReader(); r.onload=function(){ try{ var obj=JSON.parse(r.result); state.junctions=obj.junctions||state.junctions; state.journeys=obj.journeys||state.journeys; state.horizonSec=obj.horizonSec||state.horizonSec; state.overlays=obj.overlays||state.overlays; state.overrunMode=obj.overrunMode||state.overrunMode; renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); renderLegend(); render(); updateDataValidation(); document.querySelector('[data-tab="plotTab"]').click(); }catch(err){ var out=$('dataValidation'); if(out) out.innerHTML='<div class="bad">TD load failed: '+err.message+'</div>'; } }; r.readAsText(f); });
   // Force init
   $('forceInitBtn').addEventListener('click', function(){ log('Force init clicked', 'warn'); buildDefaults(); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); renderLegend(); setDefaultHorizon(); render(); updateDataValidation(); });
   // First render

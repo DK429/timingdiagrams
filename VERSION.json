@@ -1,0 +1,9 @@
+{
+  "name": "Signal Plan Checker",
+  "version": "1.0.24",
+  "channel": "stable",
+  "build_date": "2025-10-15T04:10:03Z",
+  "notes": [
+    "Full stable app + docs (single-file HTML app)"
+  ]
+}

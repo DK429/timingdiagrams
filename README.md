@@ -1,9 +1,6 @@
-# Signal Plan Checker — v1.0.4
+# Signal Plan Checker
 
-- Fresh, clean build fixing the 1.0.3 boot error.
-- Default seed: **60s** cycle, offset **0**, stages/intergreens **(15/5, 15/5, 15/5)** for A–D.
-- Horizon: defaults to **max(cycle)+20s**, re-renders on blur/change.
-- Plot button now validates and always renders.
-- Live “Total used” below each junction (updates on every change).
+**Version:** v1.0.24 (stable)  
+**Runtime:** Pure HTML/CSS/JS — no server required. iPad Safari + desktop friendly.
 
-Open `index.html` in your browser.
+See PROMPT.md for the authoritative spec and BUGS.md for the regression checklist.
