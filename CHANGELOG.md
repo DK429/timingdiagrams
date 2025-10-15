@@ -1,13 +1,12 @@
 # Changelog — Signal Plan Checker
 
-## v1.0.24.7 — Extended-domain renderer
+## v1.0.25.0-baseline — Baseline from 1.0.24.2
 **Date:** 2025-10-15 (UTC)
 
 ### Added
-- Absolute-time rendering over hidden extended window with clip-to-visible, preserving stage sequence through horizon wrap.
+- Floating debug dock with error logging.
+- Optional validation button (uses `state.junctions` if available).
+- Docs policy note in the dock.
 
-### Fixed
-- Overlays no longer ignore stage progression at wrap; lines and shading remain consistent.
-
-## v1.0.24.6 — Wrapfix
-- Split lines/bands at wrap for whole-stage overlays.
+### Unchanged
+- Core plotting/drawing logic, data model, wrap handling remain as in v1.0.24.2.

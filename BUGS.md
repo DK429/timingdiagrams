@@ -1,4 +1,3 @@
-# BUGS — v1.0.24.2 delta
-
-- Fixed: Point overlays (stage start/end) incorrectly behaved like full interval overlays. Now they render only the forward path and a small arrival tick at the destination.
-- Guard: Rendering checks `seg.startAbs === seg.endAbs` to treat as point-mode and skip polygon/band.
+# Known Issues — Baseline v1.0.25.0
+- If `state.junctions` is not present, validation is a no-op.
+- Print/copy are intentionally excluded in this baseline.

@@ -365,5 +365,51 @@ document.addEventListener('DOMContentLoaded', function(){
   log('App initialised','info');
 });
 </script>
+
+<!-- Debug dock injected by v1.0.25.0-baseline -->
+<style>
+#spcDebugDock{position:fixed;left:8px;bottom:8px;right:8px;max-height:35vh;background:#0d1117;color:#c9d1d9;
+border:1px solid #30363d;border-radius:8px;padding:8px;font-family:ui-monospace,Consolas,Monaco,monospace;z-index:9999;overflow:auto}
+#spcDockBtns{display:flex;gap:8px;margin-bottom:6px;align-items:center;flex-wrap:wrap}
+.spcBtn{padding:6px 8px;border:1px solid #cfcfcf;background:#f6f6f6;border-radius:6px;cursor:pointer}
+.spcLog .info{color:#a5d6ff} .spcLog .warn{color:#ffd27f} .spcLog .err{color:#ffb4b4}
+#spcDocPolicy{font-size:12px;color:#777;margin-top:4px}
+</style>
+<div id="spcDebugDock">
+  <div id="spcDockBtns">
+    <button class="spcBtn" id="spcClearBtn">Clear</button>
+    <button class="spcBtn" id="spcValidateBtn">Validate</button>
+    <span>Signal Plan Checker — Debug</span>
+  </div>
+  <div class="spcLog" id="spcLog"></div>
+  <div id="spcDocPolicy">Docs policy: Every build must ship PROMPT.md, BUGS.md, CHANGELOG.md with the code.</div>
+</div>
+<script>
+(function(){ 
+  var logBox=document.getElementById('spcLog');
+  function log(msg, level){ var d=document.createElement('div'); d.className=level||'info'; d.textContent='['+new Date().toLocaleTimeString()+'] '+msg; logBox.appendChild(d); logBox.scrollTop=logBox.scrollHeight; }
+  window._spcLog = log;
+  window.addEventListener('error', function(e){ log('ERROR: '+(e.message||e.error),'err'); });
+  window.addEventListener('unhandledrejection', function(e){ log('PROMISE: '+(e.reason&&e.reason.message?e.reason.message:e.reason),'err'); });
+  document.getElementById('spcClearBtn').addEventListener('click', function(){ logBox.textContent=''; });
+  document.getElementById('spcValidateBtn').addEventListener('click', function(){
+    try{ 
+      if(window.state && Array.isArray(state.junctions)){ 
+        var errs=[];
+        state.junctions.forEach(function(j){
+          var totalStages=0, totalIG=0;
+          for(var i=0;i<j.stages.length;i++){ totalStages += (+j.stages[i].durationSec||0); totalIG += (+j.intergreens[i].durationSec||0); }
+          var used = totalStages + totalIG;
+          if(used !== (+j.cycleTimeSec||0)){ errs.push(j.name+': stages+intergreens ('+used+'s) must equal cycle ('+j.cycleTimeSec+'s)'); }
+        });
+        if(errs.length) log('VALIDATION: '+errs.join(' | '), 'warn'); else log('VALIDATION: OK','info');
+      } else {
+        log('VALIDATION: No global state.junctions found (baseline leaves core logic untouched).','warn');
+      }
+    }catch(ex){ log('VALIDATION error: '+(ex.message||ex),'err'); }
+  });
+  log('Debug dock initialised (non-invasive)','info');
+})();
+</script>
 </body>
 </html>
