@@ -1,6 +1,6 @@
-# Known Issues — v1.0.24.5
+# Known Issues — v1.0.24.6
 
-- Overlay wrap split at horizon boundary not yet implemented.
-- Point overlays: arrival ticks/markers not yet drawn.
-- Print/preview scaling not included in this hotfix.
-- Clipboard limitations on iPadOS may still force SVG text fallback.
+- Stage bars themselves are still rendered with a simple tile (no bar-level wrap split). Visually OK but a later pass will unify the technique.
+- Point overlays still lack arrival markers/ticks.
+- Print/preview scaling out of scope for this hotfix.
+- Clipboard on iPadOS may fall back to SVG text.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Signal Plan Checker v1.0.24.5</title>
+<title>Signal Plan Checker v1.0.24.6</title>
 <style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#1b1b1b}
 header{padding:16px 20px;border-bottom:1px solid #eee;background:#fafafa}
@@ -61,8 +61,8 @@ summary{cursor:pointer}
 </head>
 <body>
 <header>
-  <h1>Signal Plan Checker <span class="badge">v1.0.24.5</span></h1>
-  <div>Hotfix: plot renders reliably; doc policy banner.</div>
+  <h1>Signal Plan Checker <span class="badge">v1.0.24.6</span></h1>
+  <div>Hotfix: overlay wrap split (no backwards lines) + destination band split.</div>
 </header>
 
 <main>
@@ -94,7 +94,7 @@ summary{cursor:pointer}
       <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
       <button type="button" id="forceInitBtn" class="small">Force init</button>
       <button type="button" id="validateBtn">Validate</button>
-      <span class="version">v1.0.24.5</span>
+      <span class="version">v1.0.24.6</span>
     </div>
     <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -230,24 +230,17 @@ function setDefaultHorizon(){ var def=Math.max(60, maxCycle()+20); var h=$('hori
 
 function render(){
   var svg=$('diagram'); if(!svg){ log('diagram missing','err'); return; }
-  // Robust width calc even if freshly unhidden
-  var width = svg.clientWidth;
-  if(!width || width<50){
-    var bb = svg.getBoundingClientRect();
-    width = bb.width || 960;
-    log('Width fallback used: '+width+'px','warn');
-  }
+  var width = svg.clientWidth || svg.getBoundingClientRect().width || 960;
   var H = state.horizonSec = num($('horizon').value) || Math.max(60, maxCycle()+20);
   if(!$('horizon').value) $('horizon').value=String(H);
   var order = presentRowOrder();
-
   var MARGIN=60;
-  var usableW = Math.max(300, (width - MARGIN - 10)); // ensure some width
+  var usableW = Math.max(300, (width - MARGIN - 10));
   var HEIGHT = 20 + (order.length-1)*(30+120) + 30 + 80;
   svg.setAttribute('height', String(HEIGHT));
   svg.innerHTML='';
-
   var xScale = function(t){ return MARGIN + (t/H)*usableW; };
+  function mod(t, m){ return ((t % m) + m) % m; }
 
   // Background
   var bg = elNS('rect'); setAttrs(bg,{x:0,y:0,width:width,height:HEIGHT,fill:'#fff'}); svg.appendChild(bg);
@@ -285,7 +278,7 @@ function render(){
     while(t<=H){
       for(var i=0;i<j.stages.length;i++){
         var sDur=j.stages[i].durationSec, ig=j.intergreens[i].durationSec||0;
-        var s0=(t + (t0%C + C)%C)%H, s1=(s0 + sDur)%H;
+        var s0=mod(t + mod(t0,C), H), s1=mod(s0 + sDur, H);
         if(s1 < s0){
           var r1=elNS('rect'); setAttrs(r1,{x:xScale(s0),y:yBandTop,width:xScale(H)-xScale(s0),height:30,fill:'#2e7d32',opacity:.95}); svg.appendChild(r1);
           var r2=elNS('rect'); setAttrs(r2,{x:xScale(0),y:yBandTop,width:xScale(s1)-xScale(0),height:30,fill:'#43a047',opacity:.95}); svg.appendChild(r2);
@@ -293,7 +286,7 @@ function render(){
           var rect=elNS('rect'); setAttrs(rect,{x:xScale(s0),y:yBandTop,width:Math.max(0,xScale(s1)-xScale(s0)),height:30,fill:'#388e3c',opacity:.95}); svg.appendChild(rect);
         }
         // intergreen
-        var ig0 = s1, ig1 = (s1 + ig)%H;
+        var ig0 = s1, ig1 = mod(ig0 + ig, H);
         if(ig>0){
           if(ig1 < ig0){
             var igA=elNS('rect'); setAttrs(igA,{x:xScale(ig0),y:yBandTop,width:xScale(H)-xScale(ig0),height:30,fill:'#c7c7c7',opacity:.5}); svg.appendChild(igA);
@@ -315,51 +308,76 @@ function render(){
     }
   }
 
-  // Overlays (draw minimal)
+  // Overlay helpers with wrap-aware splitting
+  function interp(yA, yB, frac){ return yA + (yB - yA) * frac; }
+  function drawWrappedLine(tA, yA, tB, yB, color, op){
+    var a = mod(tA, H), b = mod(tB, H);
+    var dt = (b - a + H) % H;
+    if(dt === 0){ // vertical-ish wrap; draw small marker
+      var x = xScale(a); var ln=elNS('line'); setAttrs(ln,{x1:x,y1:yA-4,x2:x,y2:yA+4,stroke:color,'stroke-width':2,'marker-end':'url(#arrow)',opacity:op||0.9}); svg.appendChild(ln); return;
+    }
+    if(b >= a){
+      var ln=elNS('line'); setAttrs(ln,{x1:xScale(a),y1:yA,x2:xScale(b),y2:yB,stroke:color,'stroke-width':2,'marker-end':'url(#arrow)',opacity:op||0.9}); svg.appendChild(ln);
+    } else {
+      // split at H: a..H and 0..b
+      var frac = (H - a) / dt;
+      var ySplit = interp(yA, yB, frac);
+      var ln1=elNS('line'); setAttrs(ln1,{x1:xScale(a),y1:yA,x2:xScale(H),y2:ySplit,stroke:color,'stroke-width':2,'marker-end':'url(#arrow)',opacity:op||0.9}); svg.appendChild(ln1);
+      var ln2=elNS('line'); setAttrs(ln2,{x1:xScale(0),y1:ySplit,x2:xScale(b),y2:yB,stroke:color,'stroke-width':2,'marker-end':'url(#arrow)',opacity:op||0.9}); svg.appendChild(ln2);
+    }
+  }
+  function drawWrappedBand(tStartArr, tEndArr, yTop, color){
+    var a = mod(tStartArr, H), b = mod(tEndArr, H);
+    if(b >= a){
+      var r=elNS('rect'); setAttrs(r,{x:xScale(a),y:yTop,width:Math.max(0, xScale(b)-xScale(a)),height:30,fill:color,opacity:.18}); svg.appendChild(r);
+    } else {
+      var r1=elNS('rect'); setAttrs(r1,{x:xScale(a),y:yTop,width:xScale(H)-xScale(a),height:30,fill:color,opacity:.18}); svg.appendChild(r1);
+      var r2=elNS('rect'); setAttrs(r2,{x:xScale(0),y:yTop,width:xScale(b)-xScale(0),height:30,fill:color,opacity:.18}); svg.appendChild(r2);
+    }
+  }
+
+  // Overlays
   function pathTravel(a,b){
     var ids=presentRowOrder(); var ai=ids.indexOf(a), bi=ids.indexOf(b); if(ai===-1||bi===-1) return 0;
     var sum=0; if(ai<bi){ for(var k=ai;k<bi;k++) sum+= (state.journeys[ids[k]+'->'+ids[k+1]]||0); }
                 else if(ai>bi){ for(var k=ai;k>bi;k--) sum+= (state.journeys[ids[k]+'->'+ids[k-1]]||0); }
     return sum;
   }
-  function addLine(x0,y0,x1,y1,color,op){ var ln=elNS('line'); setAttrs(ln,{x1:x0,y1:y0,x2:x1,y2:y1,stroke:color,'stroke-width':2,'marker-end':'url(#arrow)',opacity:op||0.9}); svg.appendChild(ln); }
-  function addBand(xa,xb,yTop,color){ var r=elNS('rect'); setAttrs(r,{x:xa,y:yTop,width:Math.max(0,xb-xa),height:30,fill:color,opacity:.18}); svg.appendChild(r); }
+  function stageOffsets(j){ var arr=[], t=0; for(var i=0;i<j.stages.length;i++){ arr.push(t); t+=j.stages[i].durationSec + (j.intergreens[i].durationSec||0); } return arr; }
 
   for(var oi=0; oi<state.overlays.length; oi++){
     var ov=state.overlays[oi]; var J0=getJ(ov.origin), J1=getJ(ov.dest); if(!J0||!J1) continue;
     var travel=pathTravel(ov.origin, ov.dest);
-    var y0=rowYTops[J0.id]+15, y1=rowYTops[J1.id]+15;
-    var C=J0.cycleTimeSec, off=(J0.startTimeSec||0), Hh=H;
+    var y0=(rowYTops[J0.id]||0)+15, y1=(rowYTops[J1.id]||0)+15;
+    var C=J0.cycleTimeSec, off=(J0.startTimeSec||0);
     var color=ov.color||'#ff5722', op=parseFloat(ov.opacity||'0.8')||0.8;
     var times=[];
     if(ov.kind==='stage'){
       var idx=ov.stageIndex||0; var offs=0; for(var si=0;si<idx;si++) offs+=J0.stages[si].durationSec + (J0.intergreens[si].durationSec||0);
       var sDur=J0.stages[idx].durationSec||0;
-      var kMin=Math.floor((-off - offs)/C)-1;
-      var kMax=Math.ceil((Hh - off - offs)/C)+1;
+      var kMin=Math.floor((-off - offs)/C)-1, kMax=Math.ceil((H - off - offs)/C)+1;
       for(var k=kMin;k<=kMax;k++){
         var tStart=off+offs+k*C, tEnd=tStart+sDur;
-        if(ov.mode==='interval'){ if(ov.repeat || (tStart<=Hh && tEnd>=0)) times.push({tStart,tEnd}); }
+        if(ov.mode==='interval'){ if(ov.repeat || (tStart<=H && tEnd>=0)) times.push({tStart,tEnd}); }
         else if(ov.mode==='point'){ times.push({tStart,tEnd:tStart}); }
         else if(ov.mode==='pointEnd'){ times.push({tStart:tEnd,tEnd:tEnd}); }
       }
     } else if(ov.kind==='custom'){
       var cs = (ov.cStart|0), ce=(ov.cEnd|0), base=off;
-      var kMin=-1, kMax=Math.ceil(Hh/C)+1;
-      for(var k=kMin;k<=kMax;k++){ var tStart=base+cs+k*C, tEnd=base+ce+k*C; if(ov.repeat || (tStart<=Hh && tEnd>=0)) times.push({tStart,tEnd}); }
+      var kMin=-1, kMax=Math.ceil(H/C)+1;
+      for(var k=kMin;k<=kMax;k++){ var tStart=base+cs+k*C, tEnd=base+ce+k*C; if(ov.repeat || (tStart<=H && tEnd>=0)) times.push({tStart,tEnd}); }
     }
     for(var ti=0;ti<times.length;ti++){
-      var e=times[ti]; if(e.tEnd<0 || e.tStart>Hh) continue;
+      var e=times[ti]; if(e.tEnd<0 || e.tStart>H) continue;
       var a0=e.tStart+travel, a1=e.tEnd+travel;
-      var x0=MARGIN+( ( ( (e.tStart%Hh)+Hh)%Hh)/Hh)*usableW;
-      var x1=MARGIN+( ( ( (a0%Hh)+Hh)%Hh)/Hh)*usableW;
-      addLine(x0,y0,x1,y1,color,op);
+      // Front (start) line
+      drawWrappedLine(e.tStart, y0, a0, y1, color, op);
       if(ov.mode==='interval'){
-        var x2=MARGIN+( ( ( (e.tEnd%Hh)+Hh)%Hh)/Hh)*usableW;
-        var x3=MARGIN+( ( ( (a1%Hh)+Hh)%Hh)/Hh)*usableW;
-        addLine(x2,y0,x3,y1,color,op*0.85);
-        var yTop=rowYTops[J1.id];
-        addBand(Math.min(x1,x3), Math.max(x1,x3), yTop, color);
+        // Back (end) line
+        drawWrappedLine(e.tEnd, y0, a1, y1, color, op*0.85);
+        // Destination shading, split if wrapped
+        var yTop=(rowYTops[J1.id]||0);
+        drawWrappedBand(a0, a1, yTop, color);
       }
     }
   }
@@ -453,7 +471,6 @@ function addCustomOverlayFromUI(){
 async function copyPlotToClipboard(){
   log('Copy plot clicked','info');
   var svg=$('diagram'); if(!svg){ log('No diagram to copy','err'); return; }
-  // Try PNG first
   try{
     var bbox=svg.getBoundingClientRect();
     var width=Math.max(1, Math.floor(bbox.width)), height=Math.max(1, Math.floor(bbox.height));
@@ -467,13 +484,11 @@ async function copyPlotToClipboard(){
     if(navigator.clipboard && window.ClipboardItem){ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); $('readout').innerHTML='<div class="good">Plot copied to clipboard as image ✅</div>'; log('Copied as image/png','info'); return; }
     throw new Error('PNG clipboard unsupported');
   }catch(e){ log('PNG copy failed: '+(e.message||e),'warn'); }
-  // SVG image
   try{
     var ser=new XMLSerializer(); var txt=ser.serializeToString(svg);
     if(navigator.clipboard && window.ClipboardItem){ var blob=new Blob([txt],{type:'image/svg+xml'}); await navigator.clipboard.write([new ClipboardItem({'image/svg+xml':blob})]); $('readout').innerHTML='<div class="good">Plot copied to clipboard as SVG ✅</div>'; log('Copied as SVG image','info'); return; }
     throw new Error('SVG image clipboard unsupported');
   }catch(e){ log('SVG image copy failed: '+(e.message||e),'warn'); }
-  // SVG text
   try{
     var ser2=new XMLSerializer(); var txt2=ser2.serializeToString(svg);
     if(navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(txt2); $('readout').innerHTML='<div class="warn">Copied SVG markup as text.</div>'; log('Copied as text/svg','warn'); return; }

@@ -1,17 +1,14 @@
 # Changelog — Signal Plan Checker
 
-## v1.0.24.5 — Plot render hotfix
+## v1.0.24.6 — Wrapfix
 **Date:** 2025-10-15 (UTC)
 
 ### Fixed
-- Plot doesn't appear on some devices: improved width detection, deferred render on tab activation, and background rect.
+- Whole-stage overlays no longer "print backwards" on later occurrences: lines are split at the horizon wrap with correct slope.
+- Destination shaded band is split across the wrap, so the polygon/area is no longer missing beyond the boundary.
 
-### Docs
-- Added docs policy banner in Debug panel.
-- Updated PROMPT/BUGS/CHANGELOG for this release.
+### Notes
+- This is a focused hotfix; broader overlay polygon fill across channels will be handled separately.
 
-## v1.0.24.4 — Overlayfix
-- Restored overlay add/custom handlers; minimal overlay rendering.
-
-## v1.0.24.3 — Clipboard hotfix
-- Restored full index; robust init guards + debug logging.
+## v1.0.24.5 — Plot render hotfix
+- Reliable first render, width fallback, deferred render on tab activation.
