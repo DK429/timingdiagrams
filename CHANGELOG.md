@@ -1,6 +1,6 @@
 # Changelog
-## v1.1.3-alpha — 2025-10-15 UTC
-- Per-junction UTC plan editor (add/delete rows, choose stage, set change times)
-- Hidden extended canvas placed on a full-height panel with zoom + fit
-- Double-cycle tiling across entire horizon
-- Intergreens rendered as gaps; removed fixed stage durations
+## v1.1.4-alpha — 2025-10-15 UTC
+- Gated draw: no canvas updates until Validate (OK) + Plot
+- Buttons highlight when data changes; validation/plot state reset
+- Added stage transition legality check vs intergreen (including wrap)
+- Prevent redraw during error alerts (since redraws are gated)

@@ -1,4 +1,5 @@
-# Signal Plan Checker — v1.1.3-alpha
-This build focuses on the **hidden extended canvas** for plan debugging. You can edit UTC plans per junction,
-toggle double-cycle, and inspect rendering with zoom/fit. Intergreens are respected as non-green gaps; min-green
-enforcement will be added next.
+# Signal Plan Checker — v1.1.4-alpha
+Gated rendering so editing/validation is safe:
+- Editing any data highlights **Validate** and **Plot**, and disables drawing until Validate passes and Plot is pressed.
+- Validation now checks **stage transitions** against the intergreen matrix (wrap-around included).
+- Hidden extended canvas remains the development surface with zoom and Fit.

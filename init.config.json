@@ -7,7 +7,7 @@
         "showOnLoad": true
       },
       "logLevel": "info",
-      "validationOnActions": true,
+      "validationOnActions": false,
       "perfMarkers": true
     }
   },
