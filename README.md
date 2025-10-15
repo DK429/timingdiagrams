@@ -1,11 +1,11 @@
 # Signal Plan Checker
 
-**Version:** v1.0.24.3 (clipboard hotfix)  
-**Runtime:** Pure HTML/CSS/JS — no server required.
+**Version:** v1.0.24.4 (overlayfix)  
+**What’s fixed**
+- Add overlay buttons now work and push overlays into app state.
+- Minimal overlay rendering restored: sloped front/back lines and shaded arrival band at destination row.
+- Clipboard button now logs attempts and tries PNG → SVG image → SVG text → legacy execCommand.
 
-## Fixes
-- Restores full index.html (previous bundle sometimes shipped a stub).
-- Adds robust init guards and global error logging to Debug Log.
-- Keeps v1.0.24.2 features: Copy plot to clipboard (PNG primary, SVG-text fallback).
-
-Open `index.html` directly in a browser (iPad/desktop). Use the **Debug Log** to see init/render messages.
+**Note** (intentional, to keep this a safe step from 1.0.24):
+- No horizon-wrap splitting of overlays yet (that’s a later patch).
+- Point overlays render a single arrival line (no band).

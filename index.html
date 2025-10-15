@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Signal Plan Checker v1.0.24.3</title>
+<title>Signal Plan Checker v1.0.24.4</title>
 <style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#1b1b1b}
 header{padding:16px 20px;border-bottom:1px solid #eee;background:#fafafa}
@@ -43,11 +43,13 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 .stageLabel{font-size:11px;fill:#fff;dominant-baseline:middle;text-anchor:middle}
 .stageTimeLabel{font-size:10px; fill:#444; text-anchor:middle}
 .offsetLabel{font-size:11px; fill:#666}
-.coordLine{stroke:#111;stroke-width:2}
+.coordLine{stroke:#111;stroke-width:2; marker-end:url(#arrow)}
 .coordLine.back{stroke-dasharray:3 3}
-.arrivalHighlight{fill:#ffd54d;opacity:.35}
+.arrivalHighlight{fill:#ffd54d;opacity:.25}
 .channelGrid{stroke:#e9e9e9;stroke-width:1}
 .channelTT{font-size:11px; fill:#333}
+.overlayBand{opacity:0.18}
+.overlayShade{opacity:0.18}
 .debugLog{max-height:220px; overflow:auto; background:#0d1117; color:#c9d1d9; font-family:ui-monospace,Consolas,Monaco,monospace; font-size:12px; padding:8px; border-radius:6px; border:1px solid #30363d}
 .debugLog .err{color:#ffb4b4}.debugLog .warn{color:#ffd27f}.debugLog .info{color:#a5d6ff}
 #bootBanner{position:fixed;inset:auto 12px 12px auto;background:#0d1117;color:#ffd27f;padding:8px 10px;border-radius:8px;
@@ -57,8 +59,8 @@ summary{cursor:pointer}
 </head>
 <body>
 <header>
-  <h1>Signal Plan Checker <span class="badge">v1.0.24.3</span></h1>
-  <div>Clipboard hotfix + robust init guards.</div>
+  <h1>Signal Plan Checker <span class="badge">v1.0.24.4</span></h1>
+  <div>Fix: overlay add + minimal overlay rendering; stronger clipboard logging & fallbacks.</div>
 </header>
 
 <main>
@@ -90,7 +92,7 @@ summary{cursor:pointer}
       <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
       <button type="button" id="forceInitBtn" class="small">Force init</button>
       <button type="button" id="validateBtn">Validate</button>
-      <span class="version">v1.0.24.3</span>
+      <span class="version">v1.0.24.4</span>
     </div>
     <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -120,7 +122,7 @@ summary{cursor:pointer}
         <button type="button" id="copyPlotBtn">Copy plot to clipboard</button>
       </div>
 
-      <details id="overlayPanel">
+      <details id="overlayPanel" open>
         <summary>Overlays</summary>
         <div class="overlayForm" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
           <label>Origin <select id="ovOrigin"></select></label>
@@ -177,14 +179,12 @@ summary{cursor:pointer}
 <script>
 // ===== Utilities =====
 function $(id){ return document.getElementById(id); }
-function elNS(tag){ return document.createElementNS('http://www.w3.org/2000/svg', tag); }
+function elNS(tag){ return document.createElementNS('http://www.w3.org/2008/svg', tag); } // fixed svg ns
 function setAttrs(ele, attrs){ for(var k in attrs) ele.setAttribute(k, attrs[k]); return ele; }
-function num(v){ var s=String(v||'').replace(/[^0-9]/g, ''); var n=Number(s); return isFinite(n)?n:0; }
+function num(v){ var s=String(v||'').replace(/[^0-9\-]/g, ''); var n=Number(s); return isFinite(n)?n:0; }
 function log(msg, level){ try{ var box=$('debugLog'); if(!box) return; var div=document.createElement('div'); div.className=level||'info'; var t=(new Date()).toLocaleTimeString(); div.textContent='['+t+'] '+msg; box.appendChild(div); box.scrollTop=box.scrollHeight; }catch(e){} }
 
 (function(){ var b=$('bootBanner'); if(b){ b.textContent='script: running (pre-DOM)'; } })();
-
-// Global error traps (helps on iPad)
 window.addEventListener('error', function(e){ log('ERROR: '+(e.message||e.error), 'err'); });
 window.addEventListener('unhandledrejection', function(e){ log('PROMISE: '+(e.reason&&e.reason.message?e.reason.message:e.reason), 'err'); });
 
@@ -209,7 +209,7 @@ function initTabs(){
   }
 }
 
-// ===== Defaults =====
+// ===== Defaults & helpers =====
 function buildDefaults(){
   state.junctions = [];
   function makeJ(id){
@@ -219,15 +219,36 @@ function buildDefaults(){
   }
   state.junctions.push(makeJ('A'), makeJ('B'), makeJ('C'), makeJ('D'));
   state.journeys = {'A->B':22,'B->A':24,'B->C':26,'C->B':23,'C->D':28,'D->C':29};
+  state.overlays = []; // clear overlays on reset
   setDefaultHorizon();
   log('Default data created','info');
 }
 function getJ(id){ for(var i=0;i<state.junctions.length;i++){ if(state.junctions[i].id===id) return state.junctions[i]; } return null; }
+function idxOf(id){ var o=presentRowOrder(); for(var i=0;i<o.length;i++) if(o[i]===id) return i; return -1; }
 function alignIntergreens(j){ var n=j.stages.length; while(j.intergreens.length<n) j.intergreens.push({durationSec:0}); if(j.intergreens.length>n) j.intergreens=j.intergreens.slice(0,n); }
 function updateTotalsForJunction(id){
   var j=getJ(id); if(!j) return;
   var st=0,ig=0; for(var i=0;i<j.stages.length;i++){ st+=num(j.stages[i].durationSec); ig+=num(j.intergreens[i].durationSec||0); }
   var el=$('tot_'+id); if(el){ el.textContent='Total used: '+(st+ig)+'s (stages '+st+'s + intergreens '+ig+'s) / cycle '+j.cycleTimeSec+'s'; }
+}
+function presentRowOrder(){ var out=[]; for(var i=0;i<state.rowOrder.length;i++){ if(getJ(state.rowOrder[i])) out.push(state.rowOrder[i]); } return out; }
+function maxCycle(){ var m=0; for(var i=0;i<state.junctions.length;i++) m=Math.max(m, state.junctions[i].cycleTimeSec||0); return m; }
+function setDefaultHorizon(){ var def=Math.max(60, maxCycle()+20); var h=$('horizon'); if(!h) return; if(state.horizonIsDefault || !num(h.value)){ h.value=String(def); state.horizonSec=def; state.horizonIsDefault=true; } }
+function stageFill(idx){ var shades=['#1b5e20','#2e7d32','#388e3c','#43a047','#4caf50','#66bb6a','#7cb342','#8bc34a']; return shades[idx%shades.length]; }
+function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+
+// path: list of adjacent pairs, and total journey time
+function channelPath(a,b){
+  var o=presentRowOrder(); var ai=o.indexOf(a), bi=o.indexOf(b);
+  if(ai===-1||bi===-1) return [];
+  var path=[], step=ai<bi?1:-1;
+  for(var i=ai;i!==bi;i+=step){ var id1=o[i], id2=o[i+step]; var pair=id1+'->'+id2; path.push(pair); }
+  return path;
+}
+function pathTravelSeconds(a,b){
+  var p=channelPath(a,b); var sum=0;
+  for(var i=0;i<p.length;i++){ if(state.journeys[p[i]]!=null) sum+=num(state.journeys[p[i]]); }
+  return sum;
 }
 
 // ===== Data UI =====
@@ -265,7 +286,6 @@ function renderJunctionList(){
       tbody.appendChild(tr);
     }
   }
-  // bindings
   var binds=container.querySelectorAll('input[data-bind]');
   for(var b=0;b<binds.length;b++){ (function(inp){
     function commit(){
@@ -339,16 +359,7 @@ function validate(){
 }
 function updateDataValidation(){ var out=$('dataValidation'); if(!out) return; var errs=validate(); if(errs.length){ out.innerHTML='<div class="bad"><strong>Fix these first:</strong><ul>'+errs.map(function(e){return '<li>'+e+'</li>';}).join('')+'</ul></div>'; } else out.innerHTML='<div class="good">Config looks valid ✔️</div>'; }
 
-// ===== Plot helpers & renderer =====
-function presentRowOrder(){ var out=[]; for(var i=0;i<state.rowOrder.length;i++){ if(getJ(state.rowOrder[i])) out.push(state.rowOrder[i]); } return out; }
-function maxCycle(){ var m=0; for(var i=0;i<state.junctions.length;i++) m=Math.max(m, state.junctions[i].cycleTimeSec||0); return m; }
-function setDefaultHorizon(){ var def=Math.max(60, maxCycle()+20); var h=$('horizon'); if(!h) return; if(state.horizonIsDefault || !num(h.value)){ h.value=String(def); state.horizonSec=def; state.horizonIsDefault=true; } }
-function stageFill(idx){ var shades=['#1b5e20','#2e7d32','#388e3c','#43a047','#4caf50','#66bb6a','#7cb342','#8bc34a']; return shades[idx%shades.length]; }
-function bandsOneCycle(j){ var out=[],t=0; for(var i=0;i<j.stages.length;i++){ var s=j.stages[i]; out.push({type:'stage',label:s.label,start:t,end:t+s.durationSec,index:i}); t+=s.durationSec; var ig=j.intergreens[i].durationSec||0; out.push({type:'intergreen',start:t,end:t+ig,index:i}); t+=ig; } return out; }
-function tileBands(j,h,start,end){ start = (typeof start==='number')? start : 0; end = (typeof end==='number')? end : h; var tiles=[],cycleStart=j.startTimeSec, C=j.cycleTimeSec; while(cycleStart>start) cycleStart-=C; while(cycleStart+C<start) cycleStart+=C; while(cycleStart<end){ var bands=bandsOneCycle(j); for(var b=0;b<bands.length;b++){ var bb=bands[b]; tiles.push({type:bb.type,label:bb.label,index:bb.index,startAbs:cycleStart+bb.start,endAbs:cycleStart+bb.end}); } cycleStart+=C; } return tiles.filter(function(b){return b.endAbs>=start && b.startAbs<=end;}); }
-function channelBox(i){ var yTop = 20 + i*(30+120); var yBandTop = yTop+10, yBandBot=yBandTop+30; var nextTop = 20 + (i+1)*(30+120); return {y0:yBandTop+30+10, y1:nextTop-10, mid: (yBandTop+30+10 + nextTop-10)/2}; }
-function otherEndOf(chId, cur){ var p=chId.split('-'); return cur===p[0]? p[1]:p[0]; }
-function channelPath(a,b){ var o=presentRowOrder(); var ai=o.indexOf(a), bi=o.indexOf(b); if(ai===-1||bi===-1) return []; var path=[], step=ai<bi?1:-1; for(var i=ai;i!==bi;i+=step){ var id1=o[i], id2=o[i+step]; var top=o.indexOf(id1)<o.indexOf(id2)?id1:id2; var bottom=(top===id1)?id2:id1; path.push(top+'-'+bottom); } return path; }
+// ===== Plot =====
 function ensureArrowDefs(s){ if(s.querySelector('defs#arrowDefs')) return; var defs=elNS('defs'); defs.id='arrowDefs'; var m=elNS('marker'); m.setAttribute('id','arrow'); m.setAttribute('viewBox','0 0 10 10'); m.setAttribute('refX','8'); m.setAttribute('refY','5'); m.setAttribute('markerWidth','6'); m.setAttribute('markerHeight','6'); m.setAttribute('orient','auto'); var p=elNS('path'); p.setAttribute('d','M 0 0 L 10 5 L 0 10 z'); p.setAttribute('fill','context-stroke'); m.appendChild(p); defs.appendChild(m); s.appendChild(defs); }
 
 function render(){
@@ -360,7 +371,6 @@ function render(){
   var width = s.clientWidth || 960; var MARGIN=60; var HEIGHT = 20 + (presentRowOrder().length-1)*(30+120) + 30 + 80; s.setAttribute('height', String(HEIGHT));
   var usableW = (width - MARGIN - 10);
   var xScale = function(t){ return MARGIN + (t/H)*usableW; };
-
   ensureArrowDefs(s);
 
   // Global grid
@@ -374,12 +384,14 @@ function render(){
   }
 
   var order = presentRowOrder();
+  var rowYTops = {}; // cache band tops
   for(var r=0;r<order.length;r++){
     var j=getJ(order[r]); if(!j) continue;
     var yTop=20 + r*(30+120); var yBandTop=yTop+10, yBandBot=yBandTop+30;
+    rowYTops[j.id]=yBandTop;
     var lbl=elNS('text'); setAttrs(lbl,{x:10,y:yTop+4,class:'rowLabel'}); lbl.textContent=j.name; s.appendChild(lbl);
     var offlbl=elNS('text'); setAttrs(offlbl,{x:10,y:yTop+16,class:'offsetLabel'}); offlbl.textContent='Offset: '+(j.startTimeSec||0)+'s'; s.appendChild(offlbl);
-    // tick lines
+    // ticks
     for(var t=0;t<=H;t+=1){ var x=xScale(t);
       var l1=elNS('line'); setAttrs(l1,{x1:x,y1:yBandTop-3,x2:x,y2:yBandTop,class:'tick1'}); s.appendChild(l1);
       var l2=elNS('line'); setAttrs(l2,{x1:x,y1:yBandBot,x2:x,y2:yBandBot+3,class:'tick1'}); s.appendChild(l2);
@@ -388,26 +400,25 @@ function render(){
       var L1=elNS('line'); setAttrs(L1,{x1:x5,y1:yBandTop-6,x2:x5,y2:yBandTop,class:'tick5'}); s.appendChild(L1);
       var L2=elNS('line'); setAttrs(L2,{x1:x5,y1:yBandBot,x2:x5,y2:yBandBot+6,class:'tick5'}); s.appendChild(L2);
     }
-    // bands
+    // bands (simple horizon-tiling visual, no wrap splitting)
     var C=j.cycleTimeSec, t0=j.startTimeSec||0, t=0;
     while(t<=H){
       for(var i=0;i<j.stages.length;i++){
         var sDur=j.stages[i].durationSec, ig=j.intergreens[i].durationSec||0;
-        var stStart=t + ((t0)%C + C)%C;
-        var s0=stStart%H, s1=(stStart+sDur)%H;
-        // stage rect(s)
+        var s0=(t + (t0%j.cycleTimeSec + j.cycleTimeSec)%j.cycleTimeSec)%H;
+        var s1=(s0 + sDur)%H;
         if(s1 < s0){
           var r1=elNS('rect'); setAttrs(r1,{x:xScale(s0),y:yBandTop,width:xScale(H)-xScale(s0),height:30,class:'stageRect'}); r1.setAttribute('fill', stageFill(i)); s.appendChild(r1);
           var r2=elNS('rect'); setAttrs(r2,{x:xScale(0),y:yBandTop,width:xScale(s1)-xScale(0),height:30,class:'stageRect'}); r2.setAttribute('fill', stageFill(i)); s.appendChild(r2);
         } else {
           var rect=elNS('rect'); setAttrs(rect,{x:xScale(s0),y:yBandTop,width:Math.max(0,xScale(s1)-xScale(s0)),height:30,class:'stageRect'}); rect.setAttribute('fill', stageFill(i)); s.appendChild(rect);
         }
-        // label
-        if(Math.abs(s1-s0)*usableW/H > 24){
-          var tx=elNS('text'); setAttrs(tx,{x:xScale((s0+s1)%H/2), y:yBandTop+15, class:'stageLabel'}); tx.textContent=j.stages[i].label; s.appendChild(tx);
+        if((s1 - s0 + H)%H * usableW/H > 24){
+          var mid = (s0 + ( (s1>=s0)? (s1-s0)/2 : ((H-s0)+s1)/2 )) % H;
+          var tx=elNS('text'); setAttrs(tx,{x:xScale(mid), y:yBandTop+15, class:'stageLabel'}); tx.textContent=j.stages[i].label; s.appendChild(tx);
         }
         // intergreen
-        var ig0=(stStart+sDur)%H, ig1=(stStart+sDur+ig)%H;
+        var ig0 = s1, ig1 = (s1 + ig)%H;
         if(ig>0){
           if(ig1 < ig0){
             var igA=elNS('rect'); setAttrs(igA,{x:xScale(ig0),y:yBandTop,width:xScale(H)-xScale(ig0),height:30,class:'intergreenRect'}); s.appendChild(igA);
@@ -419,13 +430,14 @@ function render(){
         t += sDur + ig;
       }
     }
-    // cycle markers
+    // cycle markers (at 0..H modulo)
+    var C=j.cycleTimeSec;
     if(C>0){
       for(var tt=0; tt<=H; tt+=C){
-        var xl=xScale(tt); var ln2=elNS('line'); setAttrs(ln2,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,class:'gridLine'});
+        var xl=xScale(tt); var ln2=elNS('line'); setAttrs(ln2,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandTop+30+6,class:'gridLine'});
         ln2.setAttribute('stroke','#e53935'); ln2.setAttribute('stroke-width','2'); s.appendChild(ln2);
       }
-      var yBottomLbl=yBandBot+16;
+      var yBottomLbl=yBandTop+30+16;
       for(var ttt=0; ttt<=H; ttt+=5){
         var tx3=elNS('text'); setAttrs(tx3,{x:xScale(ttt)+2,y:yBottomLbl,class:'axisLabel'}); tx3.textContent=String(ttt%C)+'s'; s.appendChild(tx3);
       }
@@ -434,14 +446,89 @@ function render(){
 
   // channel grids (0..H)
   if($('showMainGrid') && $('showMainGrid').checked){
-    for(var i=0;i<order.length-1;i++){ var ch=channelBox(i); for(var t=0;t<=H;t+=10){ var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:ch.y0,x2:xScale(t),y2:ch.y1,class:'channelGrid'}); s.appendChild(ln);} }
+    for(var i=0;i<order.length-1;i++){ var chTop=rowYTops[order[i]]+30+10, chBot=rowYTops[order[i+1]]-10; for(var t=0;t<=H;t+=10){ var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:chTop,x2:xScale(t),y2:chBot,class:'channelGrid'}); s.appendChild(ln);} }
+  }
+
+  // ===== Overlays (minimal baseline rendering) =====
+  function addLine(x0,y0,x1,y1,color,op){ var ln=elNS('line'); setAttrs(ln,{x1:x0,y1:y0,x2:x1,y2:y1,stroke:color,'stroke-width':2,opacity:op||0.9,class:'coordLine'}); s.appendChild(ln); }
+  function addRect(x0,y0,w,h,color,op){ var r=elNS('rect'); setAttrs(r,{x:x0,y:y0,width:Math.max(0,w),height:Math.max(0,h),fill:color,opacity:op||0.18,class:'overlayShade'}); s.appendChild(r); }
+  function stageOffsets(j){ var arr=[]; var t=0; for(var i=0;i<j.stages.length;i++){ arr.push(t); t+=j.stages[i].durationSec + (j.intergreens[i].durationSec||0); } return arr; }
+
+  for(var oi=0; oi<state.overlays.length; oi++){
+    var ov = state.overlays[oi];
+    var J0 = getJ(ov.origin), J1 = getJ(ov.dest);
+    if(!J0 || !J1) continue;
+    var travel = pathTravelSeconds(ov.origin, ov.dest); // total travel seconds across path
+    var y0 = rowYTops[J0.id] + 15; var y1 = rowYTops[J1.id] + 15;
+    var color = ov.color||'#ff5722'; var op = ov.opacity||0.8;
+    // determine event times at origin
+    var C = J0.cycleTimeSec;
+    var off = (J0.startTimeSec||0);
+    var times = []; // list of {tStart,tEnd}
+    if(ov.kind==='stage'){
+      var idx = ov.stageIndex||0;
+      var offs = stageOffsets(J0)[idx]||0;
+      var sDur = J0.stages[idx].durationSec||0;
+      // cycles to inspect
+      var kMin = Math.floor((-off - offs)/C) - 1;
+      var kMax = Math.ceil((state.horizonSec - off - offs)/C) + 1;
+      for(var k=kMin; k<=kMax; k++){
+        var tStart = off + offs + k*C;
+        var tEnd = tStart + sDur;
+        if(ov.mode==='interval'){
+          if(ov.repeat || (tStart<=state.horizonSec && tEnd>=0)){
+            times.push({tStart:tStart, tEnd:tEnd});
+          }
+        } else if(ov.mode==='point'){
+          times.push({tStart:tStart, tEnd:tStart});
+        } else if(ov.mode==='pointEnd'){
+          times.push({tStart:tEnd, tEnd:tEnd});
+        }
+      }
+    } else if(ov.kind==='custom'){
+      var cs = num(ov.cStart)||0, ce = num(ov.cEnd)||0;
+      var base = off; // align to origin cycle zero
+      var kMin = -1, kMax = Math.ceil((state.horizonSec)/C)+1;
+      for(var k=kMin; k<=kMax; k++){
+        var tStart = base + cs + k*C;
+        var tEnd = base + ce + k*C;
+        if(ov.repeat || (tStart<=state.horizonSec && tEnd>=0)){
+          times.push({tStart:tStart, tEnd:tEnd});
+        }
+      }
+    }
+
+    // draw each occurrence within horizon (clip)
+    for(var ti=0; ti<times.length; ti++){
+      var e = times[ti];
+      var a0 = e.tStart + travel;
+      var a1 = e.tEnd + travel;
+      // Clip to [0,H]
+      if(e.tEnd < 0 || e.tStart > state.horizonSec) continue; // origin outside
+      // map to modulo H for x
+      var x0 = xScale( ((e.tStart%H)+H)%H );
+      var x1 = xScale( ((a0%H)+H)%H );
+      var x2 = xScale( ((e.tEnd%H)+H)%H );
+      var x3 = xScale( ((a1%H)+H)%H );
+      // draw lines (front/back)
+      addLine(x0, y0, x1, y1, color, op);
+      if(ov.mode==='interval'){
+        addLine(x2, y0, x3, y1, color, op*0.85);
+        // shade arrival band at destination across the stage duration
+        var yTopDest = rowYTops[J1.id];
+        var yBotDest = yTopDest + 30;
+        // naive: assume no wrap; if wrap, two rects would be needed (baseline keeps simple)
+        var xa = Math.min(x1,x3), xb = Math.max(x1,x3);
+        addRect(xa, yTopDest, xb-xa, 30, color, 0.18);
+      }
+    }
   }
 
   updateDataValidation();
   log('Plot rendered (H='+H+'s)','info');
 }
 
-// ===== Overlay pickers =====
+// ===== Overlay pickers & handlers =====
 function refreshOverlayPickers(){
   var o=$('ovOrigin'), d=$('ovDest'), s=$('ovStage'), coO=$('coOrigin'), coD=$('coDest');
   function fillSel(sel){
@@ -460,10 +547,32 @@ function refreshOverlayPickers(){
   if(o && !o._hasStageSync){ o.addEventListener('change', fillStages); o._hasStageSync=true; }
 }
 
+function addOverlayFromUI(){
+  var originSel=$('ovOrigin'), destSel=$('ovDest'), stageSel=$('ovStage'), modeSel=$('ovMode');
+  var col=$('ovColor').value, op=parseFloat($('ovOpacity').value||'0.8');
+  if(!originSel||!destSel||!stageSel||!modeSel){ log('Overlay form missing controls','err'); return; }
+  var origin = originSel.value, dest = destSel.value, idx = parseInt(stageSel.value||'0',10);
+  state.overlays.push({ kind:'stage', origin:origin, dest:dest, stageIndex:idx, mode:modeSel.value, color:col, opacity:op, repeat: $('ovRepeat').checked });
+  log('Overlay added: '+origin+' '+(getJ(origin).stages[idx].label)+' → '+dest+' ('+modeSel.value+')','info');
+  render();
+}
+function addCustomOverlayFromUI(){
+  var originSel=$('coOrigin'), destSel=$('coDest');
+  if(!originSel||!destSel){ log('Custom overlay form missing controls','err'); return; }
+  var col=$('coColor').value, op=parseFloat($('coOpacity').value||'0.8');
+  var cs = num($('coStart').value||0), ce = num($('coEnd').value||0);
+  var origin=originSel.value, dest=destSel.value;
+  state.overlays.push({ kind:'custom', origin:origin, dest:dest, cStart:cs, cEnd:ce, color:col, opacity:op, repeat: $('coRepeat').checked });
+  log('Custom overlay added: '+origin+' ['+cs+','+ce+'] → '+dest,'info');
+  render();
+}
+
 // ===== Clipboard =====
 async function copyPlotToClipboard(){
+  log('Copy plot clicked','info');
+  var svg = $('diagram'); if(!svg){ log('No diagram SVG','err'); alert('No diagram to copy.'); return; }
+  // Try PNG
   try{
-    var svg = $('diagram'); if(!svg){ alert('No diagram to copy.'); return; }
     var bbox = svg.getBoundingClientRect();
     var clone = svg.cloneNode(true);
     var width = Math.max(1, Math.floor(bbox.width));
@@ -494,16 +603,38 @@ async function copyPlotToClipboard(){
     }
     throw new Error('Image clipboard not supported');
   } catch(err){
-    try{
-      var svg = $('diagram'); if(!svg) return;
-      var ser = new XMLSerializer(); var txt = ser.serializeToString(svg);
-      await navigator.clipboard.writeText(txt);
-      log('Copied plot as SVG text to clipboard','warn');
-      $('readout').innerHTML = '<div class="warn">Image copy not supported — copied SVG markup as text.</div>';
-    } catch(e2){
-      log('Clipboard copy failed: '+(e2.message||e2),'err');
-      $('readout').innerHTML = '<div class="bad">Clipboard not available. Try long-press → Copy, or take a screenshot.</div>';
+    log('PNG copy failed: '+(err.message||err),'warn');
+  }
+  // Try SVG directly
+  try{
+    var ser = new XMLSerializer(); var txt = ser.serializeToString(svg);
+    if(navigator.clipboard && window.ClipboardItem){
+      var blob = new Blob([txt], {type:'image/svg+xml'});
+      await navigator.clipboard.write([new ClipboardItem({'image/svg+xml': blob})]);
+      log('Copied plot as image/svg+xml to clipboard','info');
+      $('readout').innerHTML = '<div class="good">Plot copied to clipboard as SVG ✅</div>';
+      return;
     }
+    throw new Error('SVG image clipboard not supported');
+  } catch(err2){
+    log('SVG image copy failed: '+(err2.message||err2),'warn');
+  }
+  // Fallback: copy SVG markup as text
+  try{
+    var ser = new XMLSerializer(); var txt = ser.serializeToString(svg);
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(txt);
+      log('Copied SVG markup as text to clipboard','warn');
+      $('readout').innerHTML = '<div class="warn">Your browser blocked image copy — pasted SVG markup as text instead.</div>';
+      return;
+    }
+    // Legacy execCommand
+    var ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); var ok=document.execCommand('copy'); document.body.removeChild(ta);
+    if(ok){ log('Copied SVG markup via execCommand','warn'); $('readout').innerHTML = '<div class="warn">Copied SVG text (legacy)</div>'; return; }
+    throw new Error('execCommand copy failed');
+  } catch(err3){
+    log('Clipboard copy failed completely: '+(err3.message||err3),'err');
+    $('readout').innerHTML = '<div class="bad">Clipboard not available. Try a screenshot or long-press to save.</div>';
   }
 }
 
@@ -523,6 +654,8 @@ function bootstrap(){
     var h=$('horizon'); if(h){ h.addEventListener('blur', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); }); h.addEventListener('change', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); }); }
     if($('showMainGrid')) $('showMainGrid').addEventListener('change', function(){ render(); });
     if($('copyPlotBtn')) $('copyPlotBtn').addEventListener('click', function(){ copyPlotToClipboard(); });
+    if($('addOverlayBtn')) $('addOverlayBtn').addEventListener('click', addOverlayFromUI);
+    if($('addCustomOverlayBtn')) $('addCustomOverlayBtn').addEventListener('click', addCustomOverlayFromUI);
     if($('forceInitBtn')) $('forceInitBtn').addEventListener('click', function(){ log('Force init clicked','warn'); try{ bootstrap(); }catch(e){ log('Force init error: '+e.message,'err'); } });
     render();
     log('App initialised','info');
