@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Signal Plan Checker v1.1.1-alpha</title>
+<title>Signal Plan Checker v1.1.2-alpha</title>
 <style>
 :root{--bg:#ffffff;--card:#f8f9fb;--line:#e8e8e8;--ink:#222;--muted:#666;--brand:#0a66ff}
 *{box-sizing:border-box}
@@ -39,14 +39,14 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
 </head>
 <body>
 <header>
-  <h1>Signal Plan Checker <small class="muted">v1.1.1-alpha</small></h1>
-  <div class="sr">Loads bundled init · Creates default junctions A–C · Two-stage UTC plan (S1@0, S2@30) · Visible hidden canvas (5×M)</div>
+  <h1>Signal Plan Checker <small class="muted">1.1.2-alpha</small></h1>
+  <div class="sr">No durations · Intergreens respected · Double-cycle fills horizon</div>
 </header>
 
 <main>
   <section class="card">
     <div id="controls">
-      <span class="badge">Init auto-loaded (no upload UI)</span>
+      <span class="badge">Init auto-loaded</span>
       <label>Main cycle (s)
         <input id="mainCycle" type="number" min="1" max="240" value="60"/>
       </label>
@@ -75,7 +75,7 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
     <div id="hiddenWrap">
       <canvas id="hiddenCanvas" width="800" height="300"></canvas>
     </div>
-    <div id="plot" class="sr">Visible window will be implemented after we validate extended rendering</div>
+    <div id="plot" class="sr">Visible window will come after extended rendering is verified</div>
   </section>
 </main>
 
@@ -107,25 +107,19 @@ async function loadBundledInit(){
   }
 }
 function hardDefaults(){
-  return {"appName": "Signal Plan Checker", "ui": {"debug": {"enabled": true, "dock": {"showOnLoad": true}, "logLevel": "info", "validationOnActions": true, "perfMarkers": true}}, "mainCycleTime": {"default": 60, "min": 1, "max": 240, "mustBeEvenWhenAnyDouble": true}, "junctionCount": {"default": 3, "min": 2, "max": 5}, "doubleCycle": {"allowed": true, "requireAtLeastOneMainCycle": true}, "stageCount": {"default": 2, "min": 2}, "stage": {"minGreen": {"default": 7, "min": 1}, "duration": {"min": 1}}, "intergreen": {"diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": {"offDiagonal": 5}, "domain": {"min": 0, "max": 60}}, "journeyTime": {"default": 20, "min": 0, "max": 60}, "utcPlan": {"requireAtLeastOneChange": true, "markRequestsBlue": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [{"to": "S1", "at": 0}, {"to": "S2", "at": 30}]}, "plot": {"hiddenWindowMultiplier": 5, "viewCycles": {"options": [1, 2, 3], "default": 2}, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4}, "overlays": {"adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true}, "packaging": {"includeDocs": true}};
+  return {"appName": "Signal Plan Checker", "ui": {"debug": {"enabled": true, "dock": {"showOnLoad": true}, "logLevel": "info", "validationOnActions": true, "perfMarkers": true}}, "mainCycleTime": {"default": 60, "min": 1, "max": 240, "mustBeEvenWhenAnyDouble": true}, "junctionCount": {"default": 3, "min": 2, "max": 5}, "doubleCycle": {"allowed": true, "requireAtLeastOneMainCycle": true}, "stageCount": {"default": 2, "min": 2}, "stage": {"minGreen": {"default": 7, "min": 1}}, "intergreen": {"diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": {"offDiagonal": 5}, "domain": {"min": 0, "max": 60}}, "journeyTime": {"default": 20, "min": 0, "max": 60}, "utcPlan": {"requireAtLeastOneChange": true, "markRequestsBlue": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [{"to": "S1", "at": 0}, {"to": "S2", "at": 30}]}, "plot": {"hiddenWindowMultiplier": 5, "viewCycles": {"options": [1, 2, 3], "default": 2}, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4}, "overlays": {"adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true}, "packaging": {"includeDocs": true}};
 }
 
-function mkDefaultUTCPlan(){ return (App.initCfg.utcPlan && Array.isArray(App.initCfg.utcPlan.defaults)) ? JSON.parse(JSON.stringify(App.initCfg.utcPlan.defaults)) : [{to:'S1',at:0},{to:'S2',at:30}]; }
+function mkDefaultUTCPlan(){
+  return (App.initCfg.utcPlan && Array.isArray(App.initCfg.utcPlan.defaults)) ? JSON.parse(JSON.stringify(App.initCfg.utcPlan.defaults)) : [{to:'S1',at:0},{to:'S2',at:30}];
+}
 
 function mkJunction(id, cfg){
   const nStages = Math.max(cfg.stageCount.min, cfg.stageCount.default);
   const stages = []; const minG = cfg.stage.minGreen.default;
-  for(let i=0;i<nStages;i++){
-    stages.push({ label: 'S'+(i+1), minGreenSec: minG, durationSec: Math.max(cfg.stage.duration.min, minG) });
-  }
+  for(let i=0;i<nStages;i++){ stages.push({ label: 'S'+(i+1), minGreenSec: minG }); }
   const N = nStages; const ig = [];
-  for(let r=0;r<N;r++){
-    const row=[];
-    for(let c=0;c<N;c++){
-      row.push(r===c ? cfg.intergreen.diagonalLockedValue : cfg.intergreen.defaults.offDiagonal);
-    }
-    ig.push(row);
-  }
+  for(let r=0;r<N;r++){ const row=[]; for(let c=0;c<N;c++){ row.push(r===c ? cfg.intergreen.diagonalLockedValue : cfg.intergreen.defaults.offDiagonal); } ig.push(row); }
   return {
     id, name: 'Junction '+id,
     doubleCycle: false,
@@ -155,7 +149,6 @@ function rebuildTabs(){
     t.addEventListener('click', ()=>{ document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active')); t.classList.add('active');
       document.querySelectorAll('.tabpanel').forEach(p=>p.classList.remove('active')); document.getElementById('tp_'+j.id).classList.add('active'); });
     tabs.appendChild(t);
-
     const tp=document.createElement('div'); tp.id='tp_'+j.id; tp.className='tabpanel'+(idx===0?' active':'');
     tp.innerHTML = renderJunctionPanel(j);
     panels.appendChild(tp);
@@ -167,38 +160,28 @@ function renderJunctionPanel(j){
   const cfg = App.initCfg;
   const N = j.stages.length;
   let rows = '';
-  for(let i=0;i<N;i++){
-    rows += `<tr>
+  for(let i=0;i<N;i++){ rows += `<tr>
       <td><input data-t="stageLabel" data-id="${j.id}" data-idx="${i}" value="${j.stages[i].label}"></td>
       <td><input type="number" min="${cfg.stage.minGreen.min}" value="${j.stages[i].minGreenSec}" data-t="minGreen" data-id="${j.id}" data-idx="${i}"></td>
-      <td><input type="number" min="${cfg.stage.duration.min}" value="${j.stages[i].durationSec}" data-t="duration" data-id="${j.id}" data-idx="${i}"></td>
-    </tr>`;
-  }
-  let ig = '<table class="grid"><thead><tr><th>From \\ To</th>';
+    </tr>`; }
+  let ig = '<table class="grid"><thead><tr><th>From \ To</th>';
   for(let c=0;c<N;c++){ ig += `<th>${j.stages[c].label}</th>`; }
   ig += '</tr></thead><tbody>';
-  for(let r=0;r<N;r++){
-    ig += `<tr><th>${j.stages[r].label}</th>`;
-    for(let c=0;c<N;c++){
-      if(r===c){ ig += `<td><input value="${cfg.intergreen.diagonalLockedValue}" disabled></td>`; }
-      else{ ig += `<td><input type="number" step="1" min="-1" max="${cfg.intergreen.domain.max}" value="${j.intergreen[r][c]}" data-t="ig" data-id="${j.id}" data-r="${r}" data-c="${c}"></td>`; }
-    }
-    ig += '</tr>';
-  }
+  for(let r=0;r<N;r++){ ig += `<tr><th>${j.stages[r].label}</th>`;
+    for(let c=0;c<N;c++){ if(r===c) ig += `<td><input value="${cfg.intergreen.diagonalLockedValue}" disabled></td>`;
+      else ig += `<td><input type="number" step="1" min="-1" max="${cfg.intergreen.domain.max}" value="${j.intergreen[r][c]}" data-t="ig" data-id="${j.id}" data-r="${r}" data-c="${c}"></td>`; }
+    ig += '</tr>'; }
   ig += '</tbody></table>';
-
-  const upLbl = `To previous (↑)`;
-  const dnLbl = `To next (↓)`;
   return `
     <div class="row">
       <label>Double cycle <input type="checkbox" data-t="double" data-id="${j.id}" ${j.doubleCycle?'checked':''}></label>
-      <label>${upLbl}<input type="number" min="${App.initCfg.journeyTime.min}" max="${App.initCfg.journeyTime.max}" value="${j.travelPrev}" data-t="travelPrev" data-id="${j.id}"></label>
-      <label>${dnLbl}<input type="number" min="${App.initCfg.journeyTime.min}" max="${App.initCfg.journeyTime.max}" value="${j.travelNext}" data-t="travelNext" data-id="${j.id}"></label>
+      <label>To previous (↑)<input type="number" min="${App.initCfg.journeyTime.min}" max="${App.initCfg.journeyTime.max}" value="${j.travelPrev}" data-t="travelPrev" data-id="${j.id}"></label>
+      <label>To next (↓)<input type="number" min="${App.initCfg.journeyTime.min}" max="${App.initCfg.journeyTime.max}" value="${j.travelNext}" data-t="travelNext" data-id="${j.id}"></label>
       <label>Stage count<input type="number" min="${App.initCfg.stageCount.min}" max="8" value="${j.stages.length}" data-t="stageCount" data-id="${j.id}"></label>
     </div>
     <h4>Stages</h4>
     <table class="grid">
-      <thead><tr><th>Label</th><th>Min green (s)</th><th>Duration (s)</th></tr></thead>
+      <thead><tr><th>Label</th><th>Min green (s)</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <h4>Intergreen matrix (leading intergreen; -1 = not permitted)</h4>
@@ -221,64 +204,38 @@ function onPanelChange(e){
   if(t==='double'){ j.doubleCycle = e.target.checked; }
   if(t==='travelPrev'){ j.travelPrev = clampInt(e.target.value, App.initCfg.journeyTime.min, App.initCfg.journeyTime.max); e.target.value=j.travelPrev; }
   if(t==='travelNext'){ j.travelNext = clampInt(e.target.value, App.initCfg.journeyTime.min, App.initCfg.journeyTime.max); e.target.value=j.travelNext; }
-  if(t==='stageCount'){
-    const n = Math.max(App.initCfg.stageCount.min, Math.min(8, parseInt(e.target.value||2,10)));
-    resizeStages(j, n);
-    rebuildTabs();
-  }
+  if(t==='stageCount'){ const n = Math.max(App.initCfg.stageCount.min, Math.min(8, parseInt(e.target.value||2,10))); resizeStages(j, n); rebuildTabs(); }
   if(t==='stageLabel'){ const idx=parseInt(e.target.getAttribute('data-idx'),10); j.stages[idx].label = e.target.value|| ('S'+(idx+1)); rebuildTabs(); }
   if(t==='minGreen'){ const idx=parseInt(e.target.getAttribute('data-idx'),10); j.stages[idx].minGreenSec = Math.max(App.initCfg.stage.minGreen.min, parseInt(e.target.value||App.initCfg.stage.minGreen.default,10)); e.target.value=j.stages[idx].minGreenSec; }
-  if(t==='duration'){ const idx=parseInt(e.target.getAttribute('data-idx'),10); j.stages[idx].durationSec = Math.max(App.initCfg.stage.duration.min, parseInt(e.target.value||App.initCfg.stage.minGreen.default,10)); e.target.value=j.stages[idx].durationSec; }
   if(t==='ig'){ const r=parseInt(e.target.getAttribute('data-r'),10), c=parseInt(e.target.getAttribute('data-c'),10);
     let v = parseInt(e.target.value||0,10); if(v!==-1) v = Math.max(App.initCfg.intergreen.domain.min, Math.min(App.initCfg.intergreen.domain.max, v));
     j.intergreen[r][c] = v; e.target.value = v; }
-  if(App.initCfg.ui.debug.validationOnActions){ runValidation(); }
+  if(App.initCfg.ui.debug.validationOnActions){ runValidation(); drawHidden(); }
 }
 
 function resizeStages(j, n){
   const minG = App.initCfg.stage.minGreen.default;
-  while(j.stages.length < n){ j.stages.push({label: 'S'+(j.stages.length+1), minGreenSec: minG, durationSec: Math.max(App.initCfg.stage.duration.min, minG)}); }
+  while(j.stages.length < n){ j.stages.push({label:'S'+(j.stages.length+1), minGreenSec:minG}); }
   while(j.stages.length > n){ j.stages.pop(); }
   const N = j.stages.length;
   const igNew = [];
-  for(let r=0;r<N;r++){
-    const row=[];
-    for(let c=0;c<N;c++){
-      if(r===c) row.push(App.initCfg.intergreen.diagonalLockedValue);
-      else{
-        const prev = (App.state && App.state._igBackup && App.state._igBackup[j.id] && App.state._igBackup[j.id][r] && typeof App.state._igBackup[j.id][r][c]==='number') ? App.state._igBackup[j.id][r][c] : App.initCfg.intergreen.defaults.offDiagonal;
-        row.push(prev);
-      }
-    }
-    igNew.push(row);
-  }
+  for(let r=0;r<N;r++){ const row=[]; for(let c=0;c<N;c++){ row.push(r===c ? App.initCfg.intergreen.diagonalLockedValue : (j.intergreen[r] && typeof j.intergreen[r][c]==='number' ? j.intergreen[r][c] : App.initCfg.intergreen.defaults.offDiagonal)); } igNew.push(row); }
   j.intergreen = igNew;
 }
 
 function clampInt(v, lo, hi){ v=parseInt(v||0,10); if(isNaN(v)) v=0; return Math.max(lo, Math.min(hi, v)); }
-
 function effectiveCycle(j){ return j.doubleCycle ? (App.state.mainCycle/2) : App.state.mainCycle; }
 
 function validateJunction(j){
   const errs=[];
-  j.stages.forEach((s)=>{
-    if(!(Number.isInteger(s.minGreenSec) || typeof s.minGreenSec==='number')) errs.push(`${j.name}: Stage ${s.label} minGreen not a number`);
-    if(!(Number.isInteger(s.durationSec) || typeof s.durationSec==='number')) errs.push(`${j.name}: Stage ${s.label} duration not a number`);
-    if(s.minGreenSec < App.initCfg.stage.minGreen.min) errs.push(`${j.name}: Stage ${s.label} minGreen < ${App.initCfg.stage.minGreen.min}`);
-    if(s.durationSec < s.minGreenSec) errs.push(`${j.name}: Stage ${s.label} duration (${s.durationSec}) < minGreen (${s.minGreenSec})`);
-  });
+  j.stages.forEach((s)=>{ if(!(Number.isInteger(s.minGreenSec) || typeof s.minGreenSec==='number')) errs.push(`${j.name}: Stage ${s.label} minGreen not a number`);
+                           if(s.minGreenSec < App.initCfg.stage.minGreen.min) errs.push(`${j.name}: Stage ${s.label} minGreen < ${App.initCfg.stage.minGreen.min}`); });
   const N=j.stages.length;
-  for(let r=0;r<N;r++){
-    for(let c=0;c<N;c++){
-      const v = j.intergreen[r][c];
-      if(r===c && v!==App.initCfg.intergreen.diagonalLockedValue) errs.push(`${j.name}: IG ${j.stages[r].label}→${j.stages[c].label} diagonal must be ${App.initCfg.intergreen.diagonalLockedValue}`);
-      if(r!==c){
-        if(!Number.isInteger(v)) errs.push(`${j.name}: IG ${j.stages[r].label}→${j.stages[c].label} must be integer or -1`);
-        if(v<-1) errs.push(`${j.name}: IG ${j.stages[r].label}→${j.stages[c].label} < -1 invalid`);
-        if(v>App.initCfg.intergreen.domain.max) errs.push(`${j.name}: IG ${j.stages[r].label}→${j.stages[c].label} > max ${App.initCfg.intergreen.domain.max}`);
-      }
-    }
-  }
+  for(let r=0;r<N;r++){ for(let c=0;c<N;c++){ const v=j.intergreen[r][c];
+    if(r===c && v!==App.initCfg.intergreen.diagonalLockedValue) errs.push(`${j.name}: IG ${j.stages[r].label}→${j.stages[c].label} diagonal must be ${App.initCfg.intergreen.diagonalLockedValue}`);
+    if(r!==c){ if(!Number.isInteger(v)) errs.push(`${j.name}: IG ${j.stages[r].label}→${j.stages[c].label} must be integer or -1`);
+               if(v<-1) errs.push(`${j.name}: IG ${j.stages[r].label}→${j.stages[c].label} < -1 invalid`);
+               if(v>App.initCfg.intergreen.domain.max) errs.push(`${j.name}: IG ${j.stages[r].label}→${j.stages[c].label} > max ${App.initCfg.intergreen.domain.max}`); } } }
   if(j.travelPrev<App.initCfg.journeyTime.min || j.travelPrev>App.initCfg.journeyTime.max) errs.push(`${j.name}: Travel ↑ out of range (0..${App.initCfg.journeyTime.max})`);
   if(j.travelNext<App.initCfg.journeyTime.min || j.travelNext>App.initCfg.journeyTime.max) errs.push(`${j.name}: Travel ↓ out of range (0..${App.initCfg.journeyTime.max})`);
   return errs;
@@ -287,9 +244,9 @@ function validateJunction(j){
 function runValidation(){
   const errs=[];
   const anyDouble = App.state.junctions.some(j=>j.doubleCycle);
-  if(anyDouble && (App.state.mainCycle % 2 !== 0)){ errs.push(`Main cycle must be even when any junction is double-cycling.`); }
+  if(anyDouble && (App.state.mainCycle % 2 !== 0)) errs.push(`Main cycle must be even when any junction is double-cycling.`);
   const anyMain = App.state.junctions.some(j=>!j.doubleCycle);
-  if(!anyMain){ errs.push(`At least one junction must run the main cycle (not double).`); }
+  if(!anyMain) errs.push(`At least one junction must run the main cycle (not double).`);
   App.state.junctions.forEach(j=>errs.push(...validateJunction(j)));
   const ok = errs.length===0;
   log(ok? 'VALIDATION OK' : ('VALIDATION: '+errs.join(' | ')), ok?'info':'warn');
@@ -297,13 +254,15 @@ function runValidation(){
   return ok;
 }
 
-// --- Basic hidden-canvas renderer (dev)
+function stageIndex(j, label){ const idx = j.stages.findIndex(s=>s.label===label); return (idx>=0? idx : 0); }
+
+// Renderer: UTC plan + intergreens as gaps
 function drawHidden(){
   const C = document.getElementById('hiddenCanvas');
   const ctx = C.getContext('2d');
   const M = App.state.mainCycle;
   const mult = App.initCfg.plot.hiddenWindowMultiplier || 5;
-  const T = M*mult; // total seconds in hidden domain
+  const T = M*mult;
   const pps = App.initCfg.plot.pxPerSec || 4;
   const left = App.initCfg.plot.leftMargin || 120;
   const top = App.initCfg.plot.topMargin || 24;
@@ -312,50 +271,57 @@ function drawHidden(){
   const width = left + T*pps + 20;
   const height = top + App.state.junctions.length*(rowH+gap) + 20;
   C.width = width; C.height = height;
-
   // bg
-  ctx.fillStyle = "#ffffff"; ctx.fillRect(0,0,width,height);
-  // timeline grid every 10s
-  ctx.strokeStyle = "#eeeeee"; ctx.lineWidth = 1;
-  for(let t=0;t<=T;t+=10){
-    const x = left + t*pps;
-    ctx.beginPath(); ctx.moveTo(x, top-8); ctx.lineTo(x, height-10); ctx.stroke();
-    ctx.fillStyle="#999"; ctx.font="10px system-ui"; ctx.fillText(String(t)+"s", x-8, top-12);
-  }
-  // junction rows
+  ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,width,height);
+  // grid 10s
+  if(App.initCfg.plot.grid10s){ ctx.strokeStyle="#eeeeee"; ctx.lineWidth=1;
+    for(let t=0;t<=T;t+=10){ const x=left+t*pps; ctx.beginPath(); ctx.moveTo(x, top-8); ctx.lineTo(x, height-10); ctx.stroke();
+      ctx.fillStyle="#999"; ctx.font="10px system-ui"; ctx.fillText(String(t)+'s', x-8, top-12); } }
+  // rows
+  const greens = ["rgba(60,180,75,0.9)","rgba(90,205,105,0.9)","rgba(120,220,135,0.9)","rgba(150,235,165,0.9)"];
   App.state.junctions.forEach((j, idx)=>{
     const y0 = top + idx*(rowH+gap);
-    // labels
-    ctx.fillStyle="#111"; ctx.font="12px system-ui";
-    ctx.fillText(j.name, 12, y0 + rowH*0.5);
-    // row guide
+    ctx.fillStyle="#111"; ctx.font="12px system-ui"; ctx.fillText(j.name, 12, y0 + rowH*0.6);
+    const Cj = effectiveCycle(j);
+    const cycles = Math.ceil(T / Cj);
     ctx.strokeStyle="#ddd"; ctx.strokeRect(left, y0, T*pps, rowH);
-    // placeholder stage bands per their durations (just repeating by durations; real UTC realisation next step)
-    let cycle = App.state.mainCycle; if(j.doubleCycle) cycle = cycle/2;
-    // simple 2-stage default: alternate halves of cycle for this placeholder
-    const s1 = 0; const s2 = cycle/2;
-    for(let k=0;k<mult;k++){
-      const base = k*cycle;
-      // stage 1 bar
-      ctx.fillStyle = "rgba(60,180,75,0.9)";
-      ctx.fillRect(left + (base + s1)*pps, y0+6, (s2 - s1)*pps, rowH-12);
-      // stage 2 bar
-      ctx.fillStyle = "rgba(80,200,100,0.9)";
-      ctx.fillRect(left + (base + s2)*pps, y0+6, (cycle - (s2 - s1))*pps, rowH-12);
-    }
-    // mark UTC requests (S1@0, S2@30) each cycle (for M=60 default)
-    ctx.strokeStyle="#4aa1ff"; ctx.lineWidth=2;
-    const reqs = j.utcPlan||[];
-    for(let k=0;k<mult;k++){
-      const base = k*cycle;
-      reqs.forEach(r=>{
-        const x = left + (base + r.at)*pps;
-        ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0+rowH); ctx.stroke();
-      });
+    const reqs = (j.utcPlan||[]).slice().sort((a,b)=>a.at-b.at);
+    if(reqs.length===0) return;
+    const reqIdx = reqs.map(r=>({toIdx: stageIndex(j,r.to), at:r.at}));
+    for(let k=0;k<cycles;k++){ const base = k*Cj;
+      // request lines
+      if(App.initCfg.utcPlan.markRequestsBlue){ ctx.strokeStyle="#4aa1ff"; ctx.lineWidth=2;
+        reqIdx.forEach(r=>{ const x= left + (base + r.at)*pps; ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y0+rowH); ctx.stroke(); }); }
+      // starting stage = last 'to' of previous (wrap)
+      let curIdx = reqIdx[(reqIdx.length-1)].toIdx;
+      // first IG cur -> first.to
+      const first = reqIdx[0];
+      let igStart = base + first.at;
+      let igLen = j.intergreen[curIdx][first.toIdx]; if(igLen<0) igLen=0;
+      let curStart = igStart + igLen; // realised start of first.to
+      // iterate each request to draw green until next request then IG gap
+      for(let i=0;i<reqIdx.length;i++){ const r = reqIdx[i]; const next = reqIdx[(i+1)%reqIdx.length];
+        const stageIdx = r.toIdx;
+        // realised start for this 'r' is previous change at prev.at + IG(prev.to -> r.to)
+        const prev = reqIdx[(i-1+reqIdx.length)%reqIdx.length];
+        const realiseStart = base + r.at + Math.max(0, j.intergreen[prev.toIdx][r.toIdx]);
+        const greenStart = realiseStart;
+        const greenEnd = base + next.at;
+        const color = greens[stageIdx % greens.length];
+        if(greenEnd>greenStart){ ctx.fillStyle=color; ctx.fillRect(left + greenStart*pps, y0+6, (greenEnd-greenStart)*pps, rowH-12); }
+        // IG after r -> next
+        const ig2 = j.intergreen[stageIdx][next.toIdx];
+        if(ig2>0){ ctx.fillStyle="rgba(150,150,150,0.35)"; ctx.fillRect(left + greenEnd*pps, y0+6, ig2*pps, rowH-12); }
+      }
+      // tail from last to end of cycle
+      const last = reqIdx[reqIdx.length-1];
+      const tailStart = base + last.at + Math.max(0, j.intergreen[last.toIdx][first.toIdx]);
+      const tailEnd = base + Cj;
+      const colorTail = greens[last.toIdx % greens.length];
+      if(tailEnd>tailStart){ ctx.fillStyle=colorTail; ctx.fillRect(left + tailStart*pps, y0+6, (tailEnd-tailStart)*pps, rowH-12); }
     }
   });
-
-  log(`Hidden canvas drawn (T=${T}s, pps=${pps}, size=${C.width}x${C.height})`,'info');
+  log('Hidden canvas: UTC+IG rendered; double cycles fill to T','info');
 }
 
 async function boot(){
@@ -364,45 +330,25 @@ async function boot(){
   const dock = document.getElementById('debugDock');
   dock.style.display = (App.initCfg.ui && App.initCfg.ui.debug && App.initCfg.ui.debug.enabled && App.initCfg.ui.debug.dock.showOnLoad) ? 'block' : 'none';
   document.getElementById('dbgClear').addEventListener('click', ()=>{ document.getElementById('log').textContent=''; });
-
   App.state = buildState(App.initCfg);
   document.getElementById('mainCycle').value = App.state.mainCycle;
   document.getElementById('jCount').value = App.state.junctions.length;
   document.getElementById('viewCycles').value = String(App.state.viewCycles);
-
   rebuildTabs();
   log('Init complete: default junctions created and tabs rendered','info');
   drawHidden();
-
-  document.getElementById('mainCycle').addEventListener('change', (e)=>{
-    const v = parseInt(e.target.value||60,10);
-    const clamped = Math.max(App.initCfg.mainCycleTime.min, Math.min(App.initCfg.mainCycleTime.max, v));
-    App.state.mainCycle = clamped; e.target.value=clamped;
-    if(App.initCfg.ui.debug.validationOnActions) runValidation();
-    drawHidden();
-  });
-  document.getElementById('jCount').addEventListener('change', (e)=>{
-    const v = parseInt(e.target.value||3,10);
-    const c = Math.max(App.initCfg.junctionCount.min, Math.min(App.initCfg.junctionCount.max, v));
-    const cur = App.state.junctions.length;
-    const ids=['A','B','C','D','E'];
-    if(c>cur){ for(let i=cur;i<c;i++){ App.state.junctions.push(mkJunction(ids[i], App.initCfg)); } }
+  document.getElementById('mainCycle').addEventListener('change', (e)=>{ const v=parseInt(e.target.value||60,10);
+    const clamped = Math.max(App.initCfg.mainCycleTime.min, Math.min(App.initCfg.mainCycleTime.max, v)); App.state.mainCycle=clamped; e.target.value=clamped;
+    if(App.initCfg.ui.debug.validationOnActions) runValidation(); drawHidden(); });
+  document.getElementById('jCount').addEventListener('change', (e)=>{ const v=parseInt(e.target.value||3,10);
+    const c=Math.max(App.initCfg.junctionCount.min, Math.min(App.initCfg.junctionCount.max, v)); const cur=App.state.junctions.length; const ids=['A','B','C','D','E'];
+    if(c>cur){ for(let i=cur;i<c;i++) App.state.junctions.push(mkJunction(ids[i], App.initCfg)); }
     else if(c<cur){ App.state.junctions.splice(c); }
-    e.target.value=c;
-    rebuildTabs();
-    if(App.initCfg.ui.debug.validationOnActions) runValidation();
-    drawHidden();
-  });
-  document.getElementById('viewCycles').addEventListener('change', (e)=>{ App.state.viewCycles = parseInt(e.target.value||2,10); drawHidden(); });
-
+    e.target.value=c; rebuildTabs(); if(App.initCfg.ui.debug.validationOnActions) runValidation(); drawHidden(); });
+  document.getElementById('viewCycles').addEventListener('change', (e)=>{ App.state.viewCycles=parseInt(e.target.value||2,10); drawHidden(); });
   document.getElementById('validateBtn').addEventListener('click', runValidation);
-  document.getElementById('plotBtn').addEventListener('click', ()=>{
-    if(!runValidation()) return;
-    drawHidden();
-    log('Plot requested — hidden canvas redrawn (dev view)','info');
-  });
+  document.getElementById('plotBtn').addEventListener('click', ()=>{ if(!runValidation()) return; drawHidden(); log('Plot requested — redrawn','info'); });
 }
-
 boot();
 </script>
 </body>

@@ -34,9 +34,6 @@
     "minGreen": {
       "default": 7,
       "min": 1
-    },
-    "duration": {
-      "min": 1
     }
   },
   "intergreen": {

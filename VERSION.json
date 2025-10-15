@@ -1,12 +1,1 @@
-{
-  "name": "Signal Plan Checker",
-  "version": "1.1.1-alpha",
-  "channel": "alpha",
-  "build_date": "2025-10-15T17:36:44Z",
-  "notes": [
-    "Init auto-load",
-    "Default junctions A\u2013C",
-    "UTC default plan S1@0,S2@30",
-    "Hidden canvas visible"
-  ]
-}
+{"version": "1.1.2-alpha"}
