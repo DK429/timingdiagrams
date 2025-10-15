@@ -1,10 +1,10 @@
 {
   "name": "Signal Plan Checker",
-  "version": "1.0.25",
+  "version": "1.0.24.2",
   "channel": "stable",
-  "build_date": "2025-10-15T04:54:03Z",
+  "build_date": "2025-10-15T05:21:40Z",
   "notes": [
-    "Overlay wrap fix with horizon splitting",
-    "Print preview (new tab) with paper and orientation controls"
+    "Add: Copy plot to clipboard (PNG with SVG-text fallback)",
+    "Base: v1.0.24.1 stage selector refresh"
   ]
 }
