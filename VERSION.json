@@ -1,9 +1,10 @@
 {
   "name": "Signal Plan Checker",
-  "version": "1.0.24",
+  "version": "1.0.24.7",
   "channel": "stable",
-  "build_date": "2025-10-15T04:10:03Z",
+  "build_date": "2025-10-15T08:31:17Z",
   "notes": [
-    "Full stable app + docs (single-file HTML app)"
+    "Extended-domain absolute-time renderer + clipping",
+    "Prevents wrap artefacts without per-shape splitting"
   ]
 }
