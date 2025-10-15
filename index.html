@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Signal Plan Checker 1.1.5.1-alpha</title>
+<title>Signal Plan Checker 1.1.5.2-alpha</title>
 <style>
 :root{--bg:#ffffff;--card:#f8f9fb;--line:#e8e8e8;--ink:#222;--muted:#666;--accent:#0a66ff}
 *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;height:100%}
@@ -35,8 +35,8 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
 </head>
 <body>
 <header>
-  <h1>Signal Plan Checker <small class="muted">1.1.5.1-alpha</small></h1>
-  <div class="row"><span class="badge">UTC plan editor</span><span class="badge">Hidden canvas zoom+scroll</span><span class="badge">Wrapped segment ends</span></div>
+  <h1>Signal Plan Checker <small class="muted">1.1.5.2-alpha</small></h1>
+  <div class="row"><span class="badge">UTC plan editor</span><span class="badge">Hidden canvas zoom+scroll</span><span class="badge">Gated render</span></div>
 </header>
 
 <main>
@@ -109,12 +109,12 @@ async function loadBundledInit(){
     if(!res.ok) throw new Error('init.config.json not found');
     return await res.json();
   }catch(e){
-    return {"appName": "Signal Plan Checker", "ui": {"debug": {"enabled": true, "dock": {"showOnLoad": true}, "logLevel": "info", "validationOnActions": false, "perfMarkers": true}}, "mainCycleTime": {"default": 60, "min": 1, "max": 240, "mustBeEvenWhenAnyDouble": true}, "junctionCount": {"default": 3, "min": 2, "max": 5}, "doubleCycle": {"allowed": true, "requireAtLeastOneMainCycle": true}, "stageCount": {"default": 2, "min": 2}, "stage": {"minGreen": {"default": 7, "min": 1}}, "intergreen": {"diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": {"offDiagonal": 5}, "domain": {"min": 0, "max": 60}}, "journeyTime": {"default": 20, "min": 0, "max": 60}, "utcPlan": {"requireAtLeastOneChange": true, "markRequestsBlue": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [{"to": "S1", "at": 10}, {"to": "S2", "at": 50}]}, "plot": {"hiddenWindowMultiplier": 5, "viewCycles": {"options": [1, 2, 3], "default": 2}, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4}, "overlays": {"adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true}, "packaging": {"includeDocs": true}};
+    return {"appName": "Signal Plan Checker", "ui": {"debug": {"enabled": true, "dock": {"showOnLoad": true}, "logLevel": "info", "validationOnActions": false, "perfMarkers": true}}, "mainCycleTime": {"default": 60, "min": 1, "max": 240, "mustBeEvenWhenAnyDouble": true}, "junctionCount": {"default": 3, "min": 2, "max": 5}, "doubleCycle": {"allowed": true, "requireAtLeastOneMainCycle": true}, "stageCount": {"default": 2, "min": 2}, "stage": {"minGreen": {"default": 7, "min": 1}}, "intergreen": {"diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": {"offDiagonal": 5}, "domain": {"min": 0, "max": 60}}, "journeyTime": {"default": 20, "min": 0, "max": 60}, "utcPlan": {"requireAtLeastOneChange": true, "markRequestsBlue": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [{"to": "S1", "at": 0}, {"to": "S2", "at": 30}]}, "plot": {"hiddenWindowMultiplier": 5, "viewCycles": {"options": [1, 2, 3], "default": 2}, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4}, "overlays": {"adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true}, "packaging": {"includeDocs": true}};
   }
 }
 
 function mkDefaultUTCPlan(cfg){
-  return (cfg.utcPlan && Array.isArray(cfg.utcPlan.defaults)) ? JSON.parse(JSON.stringify(cfg.utcPlan.defaults)) : [{to:'S1',at:10},{to:'S2',at:50}];
+  return (cfg.utcPlan && Array.isArray(cfg.utcPlan.defaults)) ? JSON.parse(JSON.stringify(cfg.utcPlan.defaults)) : [{to:'S1',at:0},{to:'S2',at:30}];
 }
 
 function mkJunction(id, cfg){
@@ -179,6 +179,7 @@ function validateJunction(j){
 }
 
 function runValidation(){
+  log('Validate clicked','info');
   const errs=[];
   const anyDouble = App.state.junctions.some(j=>j.doubleCycle);
   if(anyDouble && (App.state.mainCycle % 2 !== 0)) errs.push(`Main cycle must be even when any junction is double-cycling.`);
@@ -187,15 +188,18 @@ function runValidation(){
   App.state.junctions.forEach(j=>errs.push(...validateJunction(j)));
   const ok = errs.length===0;
   if(ok){
-    App.state.validOk = true; // set validation flag when no errors
+    App.state.validOk = true;
     const v=document.getElementById('validateBtn'); if(v) v.classList.remove('dirty');
     const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Validated ✔ — press Plot to render';
+    log('VALIDATION OK','info');
   }else{
     App.state.validOk = false;
-    alert('Fix these first:\n - '+errs.join('\n - '));
+    alert('Fix these first:
+ - '+errs.join('
+ - '));
     const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Validation failed — see alerts';
+    log('VALIDATION FAIL: '+errs.join(' | '),'warn');
   }
-  log(ok? 'VALIDATION OK' : ('VALIDATION: '+errs.join(' | ')), ok?'info':'warn');
   return ok;
 }
 
@@ -223,7 +227,7 @@ function renderJunctionPanel(j){
       <td><input type="number" min="${cfg.stage.minGreen.min}" value="${j.stages[i].minGreenSec}" data-t="minGreen" data-id="${j.id}" data-idx="${i}"></td>
     </tr>`;
   }
-  let ig = '<table class="grid"><thead><tr><th>From \\ To</th>';
+  let ig = '<table class="grid"><thead><tr><th>From \ To</th>';
   for(let c=0;c<N;c++){ ig += `<th>${j.stages[c].label}</th>`; }
   ig += '</tr></thead><tbody>';
   for(let r=0;r<N;r++){
@@ -266,6 +270,7 @@ function rebuildTabs(){
     panels.appendChild(tp);
   });
   wirePanelInputs();
+  log('Junction tabs rendered','info');
 }
 
 function wirePanelInputs(){
@@ -347,24 +352,19 @@ function drawHidden(){
 
     for(let k=0;k<cycles;k++){
       const base = k*Cj;
-      // blue request lines
       if(App.initCfg.utcPlan.markRequestsBlue){
         ctx.strokeStyle="#4aa1ff"; ctx.lineWidth=2;
         planIdx.forEach(r=>{ const x= left + (base + r.at)*pps; ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y0+rowH); ctx.stroke(); });
       }
-      // draw greens and IG gaps with wrap-aware end
       for(let i=0;i<planIdx.length;i++){
         const r = planIdx[i], next = planIdx[(i+1)%planIdx.length], prev = planIdx[(i-1+planIdx.length)%planIdx.length];
         let igPrev = j.intergreen[prev.toIdx][r.toIdx]; if(igPrev<0) igPrev=0;
         const start = base + r.at + igPrev;
-        // wrap-aware end
-        let end = base + next.at;
-        if(next.at <= r.at) end += Cj;
+        let end = base + next.at; if(next.at <= r.at) end += Cj;
         if(end > start){
           ctx.fillStyle = greens[r.toIdx % greens.length];
           ctx.fillRect(left + start*pps, y0+6, (end-start)*pps, rowH-12);
         }
-        // intergreen after r -> next at wrapped end position
         let igNext = j.intergreen[r.toIdx][next.toIdx];
         if(igNext>0){
           ctx.fillStyle = "rgba(150,150,150,0.35)";
@@ -392,6 +392,7 @@ async function boot(){
   document.getElementById('viewCycles').value = String(App.state.viewCycles);
   rebuildTabs();
   setDirty(); // force validation before any plot
+  log('App booted — waiting for Validate…','info');
 
   document.getElementById('mainCycle').addEventListener('change', (e)=>{
     const v=parseInt(e.target.value||60,10);
@@ -409,10 +410,7 @@ async function boot(){
   document.getElementById('viewCycles').addEventListener('change', (e)=>{ App.state.viewCycles=parseInt(e.target.value||2,10); setDirty(); });
 
   document.getElementById('validateBtn').addEventListener('click', ()=>{
-    if(runValidation()){
-      const v=document.getElementById('validateBtn'); if(v) v.classList.remove('dirty');
-      const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Validated ✔ — press Plot to render';
-    }
+    const ok = runValidation();
   });
   document.getElementById('plotBtn').addEventListener('click', ()=>{
     if(!App.state.validOk){
@@ -421,6 +419,7 @@ async function boot(){
     App.state.readyToPlot = true;
     const p=document.getElementById('plotBtn'); if(p) p.classList.remove('dirty');
     const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Plotted ✓';
+    log('Plot clicked — drawing','info');
     drawHidden();
   });
 

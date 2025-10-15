@@ -1,3 +1,3 @@
-# Signal Plan Checker — v1.1.5.1-alpha
-Patch-only update to resolve a JavaScript syntax error (Python-style `#` comment that broke parsing).
-Includes the wrap-around segment logic from v1.1.5 and gated rendering from v1.1.4.
+# Signal Plan Checker — v1.1.5.2-alpha
+Restores original default plan (S1@0, S2@30) and adds explicit debug logs when Validate/Plot are clicked.
+Rendering remains gated; hidden canvas stays full-screen with zoom + Fit.
