@@ -1,10 +1,10 @@
 {
   "name": "Signal Plan Checker",
-  "version": "1.0.24.6",
+  "version": "1.0.24.7",
   "channel": "stable",
-  "build_date": "2025-10-15T06:35:11Z",
+  "build_date": "2025-10-15T08:31:17Z",
   "notes": [
-    "Overlay lines split at horizon wrap (no backwards slopes)",
-    "Destination band split across wrap"
+    "Extended-domain absolute-time renderer + clipping",
+    "Prevents wrap artefacts without per-shape splitting"
   ]
 }
