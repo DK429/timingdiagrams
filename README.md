@@ -1,6 +1,11 @@
 # Signal Plan Checker
 
-**Version:** v1.0.24.7 (extended-domain renderer)  
-**Runtime:** Pure HTML/CSS/JS — no server required.
+**Version:** v1.0.24.4 (overlayfix)  
+**What’s fixed**
+- Add overlay buttons now work and push overlays into app state.
+- Minimal overlay rendering restored: sloped front/back lines and shaded arrival band at destination row.
+- Clipboard button now logs attempts and tries PNG → SVG image → SVG text → legacy execCommand.
 
-This patch draws the diagram over a hidden wider time window and clips to the chosen horizon, keeping stage sequence intact at wrap boundaries.
+**Note** (intentional, to keep this a safe step from 1.0.24):
+- No horizon-wrap splitting of overlays yet (that’s a later patch).
+- Point overlays render a single arrival line (no band).
