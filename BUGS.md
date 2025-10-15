@@ -1,4 +1,5 @@
-# BUGS — v1.0.24.2 delta
+# BUGS — v1.0.25 delta
 
-- Fixed: Point overlays (stage start/end) incorrectly behaved like full interval overlays. Now they render only the forward path and a small arrival tick at the destination.
-- Guard: Rendering checks `seg.startAbs === seg.endAbs` to treat as point-mode and skip polygon/band.
+- Fixed: Overlay polygons skew/double-draw at horizon: intervals are now split at [0,H] when needed.
+- Added: Debug logs when overlays split at the horizon.
+- Added: Print preview in a new tab with A4/A3 and orientation control.

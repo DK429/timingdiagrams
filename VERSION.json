@@ -1,10 +1,10 @@
 {
   "name": "Signal Plan Checker",
-  "version": "1.0.24.2",
+  "version": "1.0.25",
   "channel": "stable",
-  "build_date": "2025-10-15T04:30:00Z",
+  "build_date": "2025-10-15T04:54:03Z",
   "notes": [
-    "Fix: Point/PointEnd overlays render as single lines without bands",
-    "Base: v1.0.24.1"
+    "Overlay wrap fix with horizon splitting",
+    "Print preview (new tab) with paper and orientation controls"
   ]
 }
