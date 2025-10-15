@@ -1,15 +1,17 @@
 # Changelog — Signal Plan Checker
 
-## v1.0.24.3 — Clipboard hotfix
+## v1.0.24.5 — Plot render hotfix
 **Date:** 2025-10-15 (UTC)
-- Fixed packaging issue where a stub index could be included.
-- Added robust initialisation guards, global error logging, and Force init.
 
-## v1.0.24.2 — Clipboard
-- Added Copy plot to clipboard (PNG, with SVG-text fallback).
+### Fixed
+- Plot doesn't appear on some devices: improved width detection, deferred render on tab activation, and background rect.
 
-## v1.0.24.1 — Stage picker refresh
-- Overlay stage dropdown updates when origin junction changes.
+### Docs
+- Added docs policy banner in Debug panel.
+- Updated PROMPT/BUGS/CHANGELOG for this release.
 
-## v1.0.24 — Baseline
-- Data tab for junctions and journeys; Plot tab with stage bars, intergreens, cycle markers; overlays; validation; TD import/export.
+## v1.0.24.4 — Overlayfix
+- Restored overlay add/custom handlers; minimal overlay rendering.
+
+## v1.0.24.3 — Clipboard hotfix
+- Restored full index; robust init guards + debug logging.

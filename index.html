@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Signal Plan Checker v1.0.24.4</title>
+<title>Signal Plan Checker v1.0.24.5</title>
 <style>
 *{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#1b1b1b}
 header{padding:16px 20px;border-bottom:1px solid #eee;background:#fafafa}
@@ -29,7 +29,8 @@ button.secondary{background:#eef3ff;border-color:#c2d4ff}
 .stageBtns{display:flex;gap:6px}
 .readout{margin-top:8px;padding:8px;border:1px dashed #ddd;border-radius:6px;background:#fcfcfc;font-family:ui-monospace,Consolas,Monaco,monospace}
 .diagramHeader{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
-svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
+#plotHolder{min-height:320px}
+svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff;display:block;width:100%}
 .legend{margin-top:8px;display:flex;flex-wrap:wrap;gap:10px;font-size:13px}
 .legend .item{display:flex;align-items:center;gap:6px}
 .legend .swatch{width:12px;height:12px;border-radius:3px;border:1px solid #999}
@@ -55,12 +56,13 @@ svg{border:1px solid #e6e6e6;border-radius:6px;background:#fff}
 #bootBanner{position:fixed;inset:auto 12px 12px auto;background:#0d1117;color:#ffd27f;padding:8px 10px;border-radius:8px;
 font-family:ui-monospace,Consolas,Monaco,monospace;font-size:12px;z-index:99999}
 summary{cursor:pointer}
+.docPolicy{margin:6px 0 0 0; font-size:12px; color:#777}
 </style>
 </head>
 <body>
 <header>
-  <h1>Signal Plan Checker <span class="badge">v1.0.24.4</span></h1>
-  <div>Fix: overlay add + minimal overlay rendering; stronger clipboard logging & fallbacks.</div>
+  <h1>Signal Plan Checker <span class="badge">v1.0.24.5</span></h1>
+  <div>Hotfix: plot renders reliably; doc policy banner.</div>
 </header>
 
 <main>
@@ -92,7 +94,7 @@ summary{cursor:pointer}
       <button type="button" id="resetDefaultsBtn" class="secondary">Reset to defaults</button>
       <button type="button" id="forceInitBtn" class="small">Force init</button>
       <button type="button" id="validateBtn">Validate</button>
-      <span class="version">v1.0.24.4</span>
+      <span class="version">v1.0.24.5</span>
     </div>
     <div id="dataValidation" class="readout" style="margin-left:0;margin-top:10px"></div>
 
@@ -166,6 +168,7 @@ summary{cursor:pointer}
     <details id="debugDetails" open>
       <summary>Debug Log</summary>
       <div id="debugLog" class="debugLog"></div>
+      <div class="docPolicy">Docs policy: Every release must update & ship PROMPT.md, BUGS.md, CHANGELOG.md with the code.</div>
       <div style="margin-top:6px; display:flex; gap:8px; align-items:center">
         <button type="button" id="clearDebugBtn" class="small">Clear log</button>
         <span class="axisLabel">Init/Render steps appear here.</span>
@@ -177,22 +180,18 @@ summary{cursor:pointer}
 <div id="bootBanner">script: loading…</div>
 
 <script>
-// ===== Utilities =====
 function $(id){ return document.getElementById(id); }
-function elNS(tag){ return document.createElementNS('http://www.w3.org/2008/svg', tag); } // fixed svg ns
+function elNS(tag){ return document.createElementNS('http://www.w3.org/2000/svg', tag); }
 function setAttrs(ele, attrs){ for(var k in attrs) ele.setAttribute(k, attrs[k]); return ele; }
-function num(v){ var s=String(v||'').replace(/[^0-9\-]/g, ''); var n=Number(s); return isFinite(n)?n:0; }
+function num(v){ var s=String(v||'').replace(/[^0-9\\-]/g, ''); var n=Number(s); return isFinite(n)?n:0; }
 function log(msg, level){ try{ var box=$('debugLog'); if(!box) return; var div=document.createElement('div'); div.className=level||'info'; var t=(new Date()).toLocaleTimeString(); div.textContent='['+t+'] '+msg; box.appendChild(div); box.scrollTop=box.scrollHeight; }catch(e){} }
-
 (function(){ var b=$('bootBanner'); if(b){ b.textContent='script: running (pre-DOM)'; } })();
 window.addEventListener('error', function(e){ log('ERROR: '+(e.message||e.error), 'err'); });
 window.addEventListener('unhandledrejection', function(e){ log('PROMISE: '+(e.reason&&e.reason.message?e.reason.message:e.reason), 'err'); });
 
-// ===== State =====
 var state = { junctions: [], journeys: {}, horizonSec: 0, horizonIsDefault: true, overlays: [],
   rowOrder: ['A','B','C','D'], showMainGrid: true, overrunMode: 'clip' };
 
-// ===== Tabs =====
 function initTabs(){
   var tabs=document.querySelectorAll('.tab');
   for(var i=0;i<tabs.length;i++){
@@ -203,13 +202,12 @@ function initTabs(){
         btn.classList.add('active');
         var id=btn.getAttribute('data-tab'); var panel=$(id);
         if(panel) panel.classList.add('active');
-        if(id==='plotTab') render();
+        if(id==='plotTab'){ setTimeout(render,0); } // ensure layout applied before render
       });
     })(tabs[i]);
   }
 }
 
-// ===== Defaults & helpers =====
 function buildDefaults(){
   state.junctions = [];
   function makeJ(id){
@@ -219,44 +217,161 @@ function buildDefaults(){
   }
   state.junctions.push(makeJ('A'), makeJ('B'), makeJ('C'), makeJ('D'));
   state.journeys = {'A->B':22,'B->A':24,'B->C':26,'C->B':23,'C->D':28,'D->C':29};
-  state.overlays = []; // clear overlays on reset
+  state.overlays = [];
   setDefaultHorizon();
   log('Default data created','info');
 }
+
 function getJ(id){ for(var i=0;i<state.junctions.length;i++){ if(state.junctions[i].id===id) return state.junctions[i]; } return null; }
-function idxOf(id){ var o=presentRowOrder(); for(var i=0;i<o.length;i++) if(o[i]===id) return i; return -1; }
 function alignIntergreens(j){ var n=j.stages.length; while(j.intergreens.length<n) j.intergreens.push({durationSec:0}); if(j.intergreens.length>n) j.intergreens=j.intergreens.slice(0,n); }
-function updateTotalsForJunction(id){
-  var j=getJ(id); if(!j) return;
-  var st=0,ig=0; for(var i=0;i<j.stages.length;i++){ st+=num(j.stages[i].durationSec); ig+=num(j.intergreens[i].durationSec||0); }
-  var el=$('tot_'+id); if(el){ el.textContent='Total used: '+(st+ig)+'s (stages '+st+'s + intergreens '+ig+'s) / cycle '+j.cycleTimeSec+'s'; }
-}
 function presentRowOrder(){ var out=[]; for(var i=0;i<state.rowOrder.length;i++){ if(getJ(state.rowOrder[i])) out.push(state.rowOrder[i]); } return out; }
 function maxCycle(){ var m=0; for(var i=0;i<state.junctions.length;i++) m=Math.max(m, state.junctions[i].cycleTimeSec||0); return m; }
-function setDefaultHorizon(){ var def=Math.max(60, maxCycle()+20); var h=$('horizon'); if(!h) return; if(state.horizonIsDefault || !num(h.value)){ h.value=String(def); state.horizonSec=def; state.horizonIsDefault=true; } }
-function stageFill(idx){ var shades=['#1b5e20','#2e7d32','#388e3c','#43a047','#4caf50','#66bb6a','#7cb342','#8bc34a']; return shades[idx%shades.length]; }
-function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+function setDefaultHorizon(){ var def=Math.max(60, maxCycle()+20); var h=$('horizon'); if(state.horizonIsDefault || !num(h.value)){ h.value=String(def); state.horizonSec=def; state.horizonIsDefault=true; } }
 
-// path: list of adjacent pairs, and total journey time
-function channelPath(a,b){
-  var o=presentRowOrder(); var ai=o.indexOf(a), bi=o.indexOf(b);
-  if(ai===-1||bi===-1) return [];
-  var path=[], step=ai<bi?1:-1;
-  for(var i=ai;i!==bi;i+=step){ var id1=o[i], id2=o[i+step]; var pair=id1+'->'+id2; path.push(pair); }
-  return path;
-}
-function pathTravelSeconds(a,b){
-  var p=channelPath(a,b); var sum=0;
-  for(var i=0;i<p.length;i++){ if(state.journeys[p[i]]!=null) sum+=num(state.journeys[p[i]]); }
-  return sum;
+function render(){
+  var svg=$('diagram'); if(!svg){ log('diagram missing','err'); return; }
+  // Robust width calc even if freshly unhidden
+  var width = svg.clientWidth;
+  if(!width || width<50){
+    var bb = svg.getBoundingClientRect();
+    width = bb.width || 960;
+    log('Width fallback used: '+width+'px','warn');
+  }
+  var H = state.horizonSec = num($('horizon').value) || Math.max(60, maxCycle()+20);
+  if(!$('horizon').value) $('horizon').value=String(H);
+  var order = presentRowOrder();
+
+  var MARGIN=60;
+  var usableW = Math.max(300, (width - MARGIN - 10)); // ensure some width
+  var HEIGHT = 20 + (order.length-1)*(30+120) + 30 + 80;
+  svg.setAttribute('height', String(HEIGHT));
+  svg.innerHTML='';
+
+  var xScale = function(t){ return MARGIN + (t/H)*usableW; };
+
+  // Background
+  var bg = elNS('rect'); setAttrs(bg,{x:0,y:0,width:width,height:HEIGHT,fill:'#fff'}); svg.appendChild(bg);
+
+  // Arrow defs
+  var defs=elNS('defs'); defs.id='arrowDefs'; var m=elNS('marker'); m.setAttribute('id','arrow'); m.setAttribute('viewBox','0 0 10 10'); m.setAttribute('refX','8'); m.setAttribute('refY','5'); m.setAttribute('markerWidth','6'); m.setAttribute('markerHeight','6'); m.setAttribute('orient','auto'); var p=elNS('path'); p.setAttribute('d','M 0 0 L 10 5 L 0 10 z'); p.setAttribute('fill','context-stroke'); m.appendChild(p); defs.appendChild(m); svg.appendChild(defs);
+
+  // Grid
+  for(var t=0;t<=H;t+=10){
+    var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:8,x2:xScale(t),y2:HEIGHT-8,stroke:'#e9e9e9','stroke-width':1}); svg.appendChild(ln);
+    if(t%30===0){ var tx=elNS('text'); setAttrs(tx,{x:xScale(t)+2,y:12,fill:'#777','font-size':'10px'}); tx.textContent=t+'s'; svg.appendChild(tx); }
+  }
+
+  // Rows
+  var rowYTops={};
+  for(var r=0;r<order.length;r++){
+    var j=getJ(order[r]); if(!j) continue;
+    var yTop=20 + r*(30+120); var yBandTop=yTop+10, yBandBot=yBandTop+30;
+    rowYTops[j.id]=yBandTop;
+    var lbl=elNS('text'); setAttrs(lbl,{x:10,y:yTop+4,fill:'#333','font-size':'12px'}); lbl.textContent=j.name; svg.appendChild(lbl);
+    var offlbl=elNS('text'); setAttrs(offlbl,{x:10,y:yTop+16,fill:'#666','font-size':'11px'}); offlbl.textContent='Offset: '+(j.startTimeSec||0)+'s'; svg.appendChild(offlbl);
+    // ticks
+    for(var t1=0;t1<=H;t1+=1){
+      var x=xScale(t1);
+      var l1=elNS('line'); setAttrs(l1,{x1:x,y1:yBandTop-3,x2:x,y2:yBandTop,stroke:'#000','stroke-width':1,opacity:.85}); svg.appendChild(l1);
+      var l2=elNS('line'); setAttrs(l2,{x1:x,y1:yBandBot,x2:x,y2:yBandBot+3,stroke:'#000','stroke-width':1,opacity:.85}); svg.appendChild(l2);
+    }
+    for(var t5=0;t5<=H;t5+=5){
+      var x5=xScale(t5);
+      var L1=elNS('line'); setAttrs(L1,{x1:x5,y1:yBandTop-6,x2:x5,y2:yBandTop,stroke:'#000','stroke-width':1}); svg.appendChild(L1);
+      var L2=elNS('line'); setAttrs(L2,{x1:x5,y1:yBandBot,x2:x5,y2:yBandBot+6,stroke:'#000','stroke-width':1}); svg.appendChild(L2);
+    }
+    // Simple bars (no wrap split in this hotfix)
+    var C=j.cycleTimeSec, t=0, t0=j.startTimeSec||0;
+    while(t<=H){
+      for(var i=0;i<j.stages.length;i++){
+        var sDur=j.stages[i].durationSec, ig=j.intergreens[i].durationSec||0;
+        var s0=(t + (t0%C + C)%C)%H, s1=(s0 + sDur)%H;
+        if(s1 < s0){
+          var r1=elNS('rect'); setAttrs(r1,{x:xScale(s0),y:yBandTop,width:xScale(H)-xScale(s0),height:30,fill:'#2e7d32',opacity:.95}); svg.appendChild(r1);
+          var r2=elNS('rect'); setAttrs(r2,{x:xScale(0),y:yBandTop,width:xScale(s1)-xScale(0),height:30,fill:'#43a047',opacity:.95}); svg.appendChild(r2);
+        } else {
+          var rect=elNS('rect'); setAttrs(rect,{x:xScale(s0),y:yBandTop,width:Math.max(0,xScale(s1)-xScale(s0)),height:30,fill:'#388e3c',opacity:.95}); svg.appendChild(rect);
+        }
+        // intergreen
+        var ig0 = s1, ig1 = (s1 + ig)%H;
+        if(ig>0){
+          if(ig1 < ig0){
+            var igA=elNS('rect'); setAttrs(igA,{x:xScale(ig0),y:yBandTop,width:xScale(H)-xScale(ig0),height:30,fill:'#c7c7c7',opacity:.5}); svg.appendChild(igA);
+            var igB=elNS('rect'); setAttrs(igB,{x:xScale(0),y:yBandTop,width:xScale(ig1)-xScale(0),height:30,fill:'#c7c7c7',opacity:.5}); svg.appendChild(igB);
+          } else {
+            var igR=elNS('rect'); setAttrs(igR,{x:xScale(ig0),y:yBandTop,width:Math.max(0,xScale(ig1)-xScale(ig0)),height:30,fill:'#c7c7c7',opacity:.5}); svg.appendChild(igR);
+          }
+        }
+        t += sDur + ig;
+      }
+    }
+    // Cycle markers
+    for(var tt=0; tt<=H; tt+=C){
+      var xl=xScale(tt); var ln2=elNS('line'); setAttrs(ln2,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandBot+6,stroke:'#e53935','stroke-width':'2'}); svg.appendChild(ln2);
+    }
+    var yBottomLbl=yBandBot+16;
+    for(var ttt=0; ttt<=H; ttt+=5){
+      var tx3=elNS('text'); setAttrs(tx3,{x:xScale(ttt)+2,y:yBottomLbl,fill:'#777','font-size':'10px'}); tx3.textContent=String(ttt%C)+'s'; svg.appendChild(tx3);
+    }
+  }
+
+  // Overlays (draw minimal)
+  function pathTravel(a,b){
+    var ids=presentRowOrder(); var ai=ids.indexOf(a), bi=ids.indexOf(b); if(ai===-1||bi===-1) return 0;
+    var sum=0; if(ai<bi){ for(var k=ai;k<bi;k++) sum+= (state.journeys[ids[k]+'->'+ids[k+1]]||0); }
+                else if(ai>bi){ for(var k=ai;k>bi;k--) sum+= (state.journeys[ids[k]+'->'+ids[k-1]]||0); }
+    return sum;
+  }
+  function addLine(x0,y0,x1,y1,color,op){ var ln=elNS('line'); setAttrs(ln,{x1:x0,y1:y0,x2:x1,y2:y1,stroke:color,'stroke-width':2,'marker-end':'url(#arrow)',opacity:op||0.9}); svg.appendChild(ln); }
+  function addBand(xa,xb,yTop,color){ var r=elNS('rect'); setAttrs(r,{x:xa,y:yTop,width:Math.max(0,xb-xa),height:30,fill:color,opacity:.18}); svg.appendChild(r); }
+
+  for(var oi=0; oi<state.overlays.length; oi++){
+    var ov=state.overlays[oi]; var J0=getJ(ov.origin), J1=getJ(ov.dest); if(!J0||!J1) continue;
+    var travel=pathTravel(ov.origin, ov.dest);
+    var y0=rowYTops[J0.id]+15, y1=rowYTops[J1.id]+15;
+    var C=J0.cycleTimeSec, off=(J0.startTimeSec||0), Hh=H;
+    var color=ov.color||'#ff5722', op=parseFloat(ov.opacity||'0.8')||0.8;
+    var times=[];
+    if(ov.kind==='stage'){
+      var idx=ov.stageIndex||0; var offs=0; for(var si=0;si<idx;si++) offs+=J0.stages[si].durationSec + (J0.intergreens[si].durationSec||0);
+      var sDur=J0.stages[idx].durationSec||0;
+      var kMin=Math.floor((-off - offs)/C)-1;
+      var kMax=Math.ceil((Hh - off - offs)/C)+1;
+      for(var k=kMin;k<=kMax;k++){
+        var tStart=off+offs+k*C, tEnd=tStart+sDur;
+        if(ov.mode==='interval'){ if(ov.repeat || (tStart<=Hh && tEnd>=0)) times.push({tStart,tEnd}); }
+        else if(ov.mode==='point'){ times.push({tStart,tEnd:tStart}); }
+        else if(ov.mode==='pointEnd'){ times.push({tStart:tEnd,tEnd:tEnd}); }
+      }
+    } else if(ov.kind==='custom'){
+      var cs = (ov.cStart|0), ce=(ov.cEnd|0), base=off;
+      var kMin=-1, kMax=Math.ceil(Hh/C)+1;
+      for(var k=kMin;k<=kMax;k++){ var tStart=base+cs+k*C, tEnd=base+ce+k*C; if(ov.repeat || (tStart<=Hh && tEnd>=0)) times.push({tStart,tEnd}); }
+    }
+    for(var ti=0;ti<times.length;ti++){
+      var e=times[ti]; if(e.tEnd<0 || e.tStart>Hh) continue;
+      var a0=e.tStart+travel, a1=e.tEnd+travel;
+      var x0=MARGIN+( ( ( (e.tStart%Hh)+Hh)%Hh)/Hh)*usableW;
+      var x1=MARGIN+( ( ( (a0%Hh)+Hh)%Hh)/Hh)*usableW;
+      addLine(x0,y0,x1,y1,color,op);
+      if(ov.mode==='interval'){
+        var x2=MARGIN+( ( ( (e.tEnd%Hh)+Hh)%Hh)/Hh)*usableW;
+        var x3=MARGIN+( ( ( (a1%Hh)+Hh)%Hh)/Hh)*usableW;
+        addLine(x2,y0,x3,y1,color,op*0.85);
+        var yTop=rowYTops[J1.id];
+        addBand(Math.min(x1,x3), Math.max(x1,x3), yTop, color);
+      }
+    }
+  }
+
+  log('Plot rendered (W='+width+' H='+H+'s)','info');
 }
 
-// ===== Data UI =====
 function renderJunctionList(){
-  var container=$('junctionList'); if(!container){ log('junctionList missing','err'); return; }
-  container.innerHTML='';
-  for(var ji=0; ji<state.junctions.length; ji++){
-    var j=state.junctions[ji]; alignIntergreens(j);
+  var container=$('junctionList'); container.innerHTML='';
+  function alignIntergreens(j){ var n=j.stages.length; while(j.intergreens.length<n) j.intergreens.push({durationSec:0}); if(j.intergreens.length>n) j.intergreens=j.intergreens.slice(0,n); }
+  for(var i=0;i<state.junctions.length;i++){
+    var j=state.junctions[i]; alignIntergreens(j);
     var card=document.createElement('div'); card.className='junctionCard';
     card.innerHTML=''
       +'<div class="junctionRow">'
@@ -269,20 +384,15 @@ function renderJunctionList(){
       +'</div>'
       +'<h4>Stages</h4>'
       +'<table class="stagesTable"><thead><tr><th>Label</th><th>Duration (s)</th><th>Intergreen after (s)</th><th></th></tr></thead>'
-      +'<tbody id="stBody_'+j.id+'"></tbody></table>'
-      +'<div class="stageBtns"><button type="button" class="small" data-add-stage="'+j.id+'">+ Add stage</button>'
-      +(state.junctions.length>2? '<button type="button" class="small" data-remove-j="'+j.id+'">Remove junction</button>':'')
-      +'</div>'
-      +'<div class="totalsRow" id="tot_'+j.id+'" style="margin-top:6px;font-size:12px;color:#555"></div>';
+      +'<tbody id="stBody_'+j.id+'"></tbody></table>';
     container.appendChild(card);
     var tbody=card.querySelector('#stBody_'+j.id+'');
-    for(var i=0;i<j.stages.length;i++){
-      var s=j.stages[i], ig=j.intergreens[i].durationSec||0;
+    for(var k=0;k<j.stages.length;k++){
+      var s=j.stages[k], ig=j.intergreens[k].durationSec||0;
       var tr=document.createElement('tr');
-      tr.innerHTML='<td><input data-st="label" data-id="'+j.id+'" data-idx="'+i+'" value="'+s.label+'"></td>'
-        +'<td><input type="text" inputmode="numeric" pattern="[0-9]*" data-st="dur" data-id="'+j.id+'" data-idx="'+i+'" value="'+s.durationSec+'"></td>'
-        +'<td><input type="text" inputmode="numeric" pattern="[0-9]*" data-st="ig" data-id="'+j.id+'" data-idx="'+i+'" value="'+ig+'"></td>'
-        +'<td><button type="button" class="small" data-del-stage="'+j.id+'" data-idx="'+i+'">✕</button></td>';
+      tr.innerHTML='<td><input data-st="label" data-id="'+j.id+'" data-idx="'+k+'" value="'+s.label+'"></td>'
+        +'<td><input type="text" inputmode="numeric" pattern="[0-9]*" data-st="dur" data-id="'+j.id+'" data-idx="'+k+'" value="'+s.durationSec+'"></td>'
+        +'<td><input type="text" inputmode="numeric" pattern="[0-9]*" data-st="ig" data-id="'+j.id+'" data-idx="'+k+'" value="'+ig+'"></td>';
       tbody.appendChild(tr);
     }
   }
@@ -294,7 +404,7 @@ function renderJunctionList(){
       if(bind==='name') j.name=inp.value;
       if(bind==='start') j.startTimeSec=num(inp.value);
       if(bind==='cycle'){ j.cycleTimeSec=num(inp.value); if(state.horizonIsDefault){ setDefaultHorizon(); } }
-      rebuildJourneyMatrix(); refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id);
+      render();
     }
     inp.addEventListener('blur', commit); inp.addEventListener('change', commit);
   })(binds[b]); }
@@ -305,367 +415,93 @@ function renderJunctionList(){
       if(inp.getAttribute('data-st')==='label') j.stages[idx].label = inp.value;
       if(inp.getAttribute('data-st')==='dur') j.stages[idx].durationSec = num(inp.value);
       if(inp.getAttribute('data-st')==='ig') j.intergreens[idx].durationSec = num(inp.value);
-      refreshOverlayPickers(); render(); updateDataValidation(); updateTotalsForJunction(j.id);
+      render();
     }
     inp.addEventListener('blur', commit); inp.addEventListener('change', commit);
   })(stInputs[si]); }
-  var addBtns=container.querySelectorAll('[data-add-stage]');
-  for(var ai=0; ai<addBtns.length; ai++){ addBtns[ai].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-add-stage'); var j=getJ(id); var n=j.stages.length+1; j.stages.push({label:id+n,durationSec:10}); j.intergreens.push({durationSec:2}); renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); }); }
-  var delBtns=container.querySelectorAll('[data-del-stage]');
-  for(var di=0; di<delBtns.length; di++){ delBtns[di].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-del-stage'); var idx=Number(ev.currentTarget.getAttribute('data-idx')); var j=getJ(id); j.stages.splice(idx,1); j.intergreens.splice(idx,1); renderJunctionList(); refreshOverlayPickers(); render(); updateDataValidation(); }); }
-  var remBtns=container.querySelectorAll('[data-remove-j]');
-  for(var ri=0; ri<remBtns.length; ri++){ remBtns[ri].addEventListener('click', function(ev){ var id=ev.currentTarget.getAttribute('data-remove-j'); state.junctions = state.junctions.filter(function(x){return x.id!==id;}); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render(); updateDataValidation(); }); }
-  for(var t=0;t<state.junctions.length;t++) updateTotalsForJunction(state.junctions[t].id);
-  refreshOverlayPickers();
   log('Junction list rendered','info');
 }
 
-function rebuildJourneyMatrix(){
-  var cont=$('journeyMatrix'); if(!cont){ log('journeyMatrix missing','err'); return; }
-  cont.innerHTML='';
-  var n=state.junctions.length; if(n<2){ cont.textContent='Add at least two junctions.'; return; }
-  var table=document.createElement('table'); table.className='stagesTable';
-  var thead=document.createElement('thead'); var hrow='<tr><th>From \\\\ To</th>'; for(var i=0;i<n;i++) hrow+='<th>'+state.junctions[i].name+'</th>'; hrow+='</tr>'; thead.innerHTML=hrow; table.appendChild(thead);
-  var tbody=document.createElement('tbody');
-  for(var r=0;r<n;r++){
-    var fromJ=state.junctions[r]; var row='<td><strong>'+fromJ.name+'</strong></td>';
-    for(var c=0;c<n;c++){
-      var toJ=state.junctions[c];
-      if(fromJ.id===toJ.id){ row+='<td style="text-align:center;color:#888">—</td>'; }
-      else{ var key=fromJ.id+'->'+toJ.id; var val= state.journeys[key]!=null? state.journeys[key] : 20;
-        row+='<td><input data-journey="'+key+'" type="text" inputmode="numeric" pattern="[0-9]*" value="'+val+'"></td>'; }
-    }
-    var tr=document.createElement('tr'); tr.innerHTML=row; tbody.appendChild(tr);
-  }
-  table.appendChild(tbody); cont.appendChild(table);
-  var inps = cont.querySelectorAll('input[data-journey]');
-  for(var i=0;i<inps.length;i++){ (function(inp){ function commit(){ state.journeys[inp.getAttribute('data-journey')] = num(inp.value); render(); } inp.addEventListener('blur', commit); inp.addEventListener('change', commit); })(inps[i]); }
-  log('Journey matrix rendered','info');
-}
-
-// ===== Validation =====
-function validate(){
-  var errors=[];
-  if(state.junctions.length<2) errors.push('Add at least two junctions.');
-  for(var i=0;i<state.junctions.length;i++){
-    var j=state.junctions[i]; alignIntergreens(j);
-    if(j.stages.length===0) errors.push(j.name+': add at least one stage.');
-    if(j.intergreens.length!==j.stages.length) errors.push(j.name+': intergreens count must match stages count.');
-    if(j.cycleTimeSec<=0) errors.push(j.name+': cycle time must be > 0.');
-    var st=0, ig=0; for(var k=0;k<j.stages.length;k++){ st+=num(j.stages[k].durationSec); ig+=num(j.intergreens[k].durationSec||0); }
-    if((st+ig)!==j.cycleTimeSec){ errors.push(j.name+': stages + intergreens ('+(st+ig)+'s = '+st+'s + '+ig+'s) must equal cycle ('+j.cycleTimeSec+'s).'); }
-  }
-  return errors;
-}
-function updateDataValidation(){ var out=$('dataValidation'); if(!out) return; var errs=validate(); if(errs.length){ out.innerHTML='<div class="bad"><strong>Fix these first:</strong><ul>'+errs.map(function(e){return '<li>'+e+'</li>';}).join('')+'</ul></div>'; } else out.innerHTML='<div class="good">Config looks valid ✔️</div>'; }
-
-// ===== Plot =====
-function ensureArrowDefs(s){ if(s.querySelector('defs#arrowDefs')) return; var defs=elNS('defs'); defs.id='arrowDefs'; var m=elNS('marker'); m.setAttribute('id','arrow'); m.setAttribute('viewBox','0 0 10 10'); m.setAttribute('refX','8'); m.setAttribute('refY','5'); m.setAttribute('markerWidth','6'); m.setAttribute('markerHeight','6'); m.setAttribute('orient','auto'); var p=elNS('path'); p.setAttribute('d','M 0 0 L 10 5 L 0 10 z'); p.setAttribute('fill','context-stroke'); m.appendChild(p); defs.appendChild(m); s.appendChild(defs); }
-
-function render(){
-  var s=$('diagram'); if(!s){ log('diagram SVG missing','err'); return; }
-  s.innerHTML='';
-  var H = state.horizonSec = num($('horizon').value) || Math.max(60, maxCycle()+20);
-  if(!$('horizon').value) $('horizon').value=String(H);
-  var showMainGrid = state.showMainGrid = $('showMainGrid') ? $('showMainGrid').checked : true;
-  var width = s.clientWidth || 960; var MARGIN=60; var HEIGHT = 20 + (presentRowOrder().length-1)*(30+120) + 30 + 80; s.setAttribute('height', String(HEIGHT));
-  var usableW = (width - MARGIN - 10);
-  var xScale = function(t){ return MARGIN + (t/H)*usableW; };
-  ensureArrowDefs(s);
-
-  // Global grid
-  if(showMainGrid){
-    for(var t=0;t<=H;t+=10){
-      var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:8,x2:xScale(t),y2:HEIGHT-8,class:'gridLine'}); s.appendChild(ln);
-      if(t%30===0){ var tx=elNS('text'); setAttrs(tx,{x:xScale(t)+2,y:12,class:'axisLabel'}); tx.textContent=t+'s'; s.appendChild(tx); }
-    }
-  } else {
-    for(var t2=0;t2<=H;t2+=30){ var tx2=elNS('text'); setAttrs(tx2,{x:xScale(t2)+2,y:12,class:'axisLabel'}); tx2.textContent=t2+'s'; s.appendChild(tx2); }
-  }
-
-  var order = presentRowOrder();
-  var rowYTops = {}; // cache band tops
-  for(var r=0;r<order.length;r++){
-    var j=getJ(order[r]); if(!j) continue;
-    var yTop=20 + r*(30+120); var yBandTop=yTop+10, yBandBot=yBandTop+30;
-    rowYTops[j.id]=yBandTop;
-    var lbl=elNS('text'); setAttrs(lbl,{x:10,y:yTop+4,class:'rowLabel'}); lbl.textContent=j.name; s.appendChild(lbl);
-    var offlbl=elNS('text'); setAttrs(offlbl,{x:10,y:yTop+16,class:'offsetLabel'}); offlbl.textContent='Offset: '+(j.startTimeSec||0)+'s'; s.appendChild(offlbl);
-    // ticks
-    for(var t=0;t<=H;t+=1){ var x=xScale(t);
-      var l1=elNS('line'); setAttrs(l1,{x1:x,y1:yBandTop-3,x2:x,y2:yBandTop,class:'tick1'}); s.appendChild(l1);
-      var l2=elNS('line'); setAttrs(l2,{x1:x,y1:yBandBot,x2:x,y2:yBandBot+3,class:'tick1'}); s.appendChild(l2);
-    }
-    for(var t5=0;t5<=H;t5+=5){ var x5=xScale(t5);
-      var L1=elNS('line'); setAttrs(L1,{x1:x5,y1:yBandTop-6,x2:x5,y2:yBandTop,class:'tick5'}); s.appendChild(L1);
-      var L2=elNS('line'); setAttrs(L2,{x1:x5,y1:yBandBot,x2:x5,y2:yBandBot+6,class:'tick5'}); s.appendChild(L2);
-    }
-    // bands (simple horizon-tiling visual, no wrap splitting)
-    var C=j.cycleTimeSec, t0=j.startTimeSec||0, t=0;
-    while(t<=H){
-      for(var i=0;i<j.stages.length;i++){
-        var sDur=j.stages[i].durationSec, ig=j.intergreens[i].durationSec||0;
-        var s0=(t + (t0%j.cycleTimeSec + j.cycleTimeSec)%j.cycleTimeSec)%H;
-        var s1=(s0 + sDur)%H;
-        if(s1 < s0){
-          var r1=elNS('rect'); setAttrs(r1,{x:xScale(s0),y:yBandTop,width:xScale(H)-xScale(s0),height:30,class:'stageRect'}); r1.setAttribute('fill', stageFill(i)); s.appendChild(r1);
-          var r2=elNS('rect'); setAttrs(r2,{x:xScale(0),y:yBandTop,width:xScale(s1)-xScale(0),height:30,class:'stageRect'}); r2.setAttribute('fill', stageFill(i)); s.appendChild(r2);
-        } else {
-          var rect=elNS('rect'); setAttrs(rect,{x:xScale(s0),y:yBandTop,width:Math.max(0,xScale(s1)-xScale(s0)),height:30,class:'stageRect'}); rect.setAttribute('fill', stageFill(i)); s.appendChild(rect);
-        }
-        if((s1 - s0 + H)%H * usableW/H > 24){
-          var mid = (s0 + ( (s1>=s0)? (s1-s0)/2 : ((H-s0)+s1)/2 )) % H;
-          var tx=elNS('text'); setAttrs(tx,{x:xScale(mid), y:yBandTop+15, class:'stageLabel'}); tx.textContent=j.stages[i].label; s.appendChild(tx);
-        }
-        // intergreen
-        var ig0 = s1, ig1 = (s1 + ig)%H;
-        if(ig>0){
-          if(ig1 < ig0){
-            var igA=elNS('rect'); setAttrs(igA,{x:xScale(ig0),y:yBandTop,width:xScale(H)-xScale(ig0),height:30,class:'intergreenRect'}); s.appendChild(igA);
-            var igB=elNS('rect'); setAttrs(igB,{x:xScale(0),y:yBandTop,width:xScale(ig1)-xScale(0),height:30,class:'intergreenRect'}); s.appendChild(igB);
-          } else {
-            var igR=elNS('rect'); setAttrs(igR,{x:xScale(ig0),y:yBandTop,width:Math.max(0,xScale(ig1)-xScale(ig0)),height:30,class:'intergreenRect'}); s.appendChild(igR);
-          }
-        }
-        t += sDur + ig;
-      }
-    }
-    // cycle markers (at 0..H modulo)
-    var C=j.cycleTimeSec;
-    if(C>0){
-      for(var tt=0; tt<=H; tt+=C){
-        var xl=xScale(tt); var ln2=elNS('line'); setAttrs(ln2,{x1:xl,y1:yBandTop-6,x2:xl,y2:yBandTop+30+6,class:'gridLine'});
-        ln2.setAttribute('stroke','#e53935'); ln2.setAttribute('stroke-width','2'); s.appendChild(ln2);
-      }
-      var yBottomLbl=yBandTop+30+16;
-      for(var ttt=0; ttt<=H; ttt+=5){
-        var tx3=elNS('text'); setAttrs(tx3,{x:xScale(ttt)+2,y:yBottomLbl,class:'axisLabel'}); tx3.textContent=String(ttt%C)+'s'; s.appendChild(tx3);
-      }
-    }
-  }
-
-  // channel grids (0..H)
-  if($('showMainGrid') && $('showMainGrid').checked){
-    for(var i=0;i<order.length-1;i++){ var chTop=rowYTops[order[i]]+30+10, chBot=rowYTops[order[i+1]]-10; for(var t=0;t<=H;t+=10){ var ln=elNS('line'); setAttrs(ln,{x1:xScale(t),y1:chTop,x2:xScale(t),y2:chBot,class:'channelGrid'}); s.appendChild(ln);} }
-  }
-
-  // ===== Overlays (minimal baseline rendering) =====
-  function addLine(x0,y0,x1,y1,color,op){ var ln=elNS('line'); setAttrs(ln,{x1:x0,y1:y0,x2:x1,y2:y1,stroke:color,'stroke-width':2,opacity:op||0.9,class:'coordLine'}); s.appendChild(ln); }
-  function addRect(x0,y0,w,h,color,op){ var r=elNS('rect'); setAttrs(r,{x:x0,y:y0,width:Math.max(0,w),height:Math.max(0,h),fill:color,opacity:op||0.18,class:'overlayShade'}); s.appendChild(r); }
-  function stageOffsets(j){ var arr=[]; var t=0; for(var i=0;i<j.stages.length;i++){ arr.push(t); t+=j.stages[i].durationSec + (j.intergreens[i].durationSec||0); } return arr; }
-
-  for(var oi=0; oi<state.overlays.length; oi++){
-    var ov = state.overlays[oi];
-    var J0 = getJ(ov.origin), J1 = getJ(ov.dest);
-    if(!J0 || !J1) continue;
-    var travel = pathTravelSeconds(ov.origin, ov.dest); // total travel seconds across path
-    var y0 = rowYTops[J0.id] + 15; var y1 = rowYTops[J1.id] + 15;
-    var color = ov.color||'#ff5722'; var op = ov.opacity||0.8;
-    // determine event times at origin
-    var C = J0.cycleTimeSec;
-    var off = (J0.startTimeSec||0);
-    var times = []; // list of {tStart,tEnd}
-    if(ov.kind==='stage'){
-      var idx = ov.stageIndex||0;
-      var offs = stageOffsets(J0)[idx]||0;
-      var sDur = J0.stages[idx].durationSec||0;
-      // cycles to inspect
-      var kMin = Math.floor((-off - offs)/C) - 1;
-      var kMax = Math.ceil((state.horizonSec - off - offs)/C) + 1;
-      for(var k=kMin; k<=kMax; k++){
-        var tStart = off + offs + k*C;
-        var tEnd = tStart + sDur;
-        if(ov.mode==='interval'){
-          if(ov.repeat || (tStart<=state.horizonSec && tEnd>=0)){
-            times.push({tStart:tStart, tEnd:tEnd});
-          }
-        } else if(ov.mode==='point'){
-          times.push({tStart:tStart, tEnd:tStart});
-        } else if(ov.mode==='pointEnd'){
-          times.push({tStart:tEnd, tEnd:tEnd});
-        }
-      }
-    } else if(ov.kind==='custom'){
-      var cs = num(ov.cStart)||0, ce = num(ov.cEnd)||0;
-      var base = off; // align to origin cycle zero
-      var kMin = -1, kMax = Math.ceil((state.horizonSec)/C)+1;
-      for(var k=kMin; k<=kMax; k++){
-        var tStart = base + cs + k*C;
-        var tEnd = base + ce + k*C;
-        if(ov.repeat || (tStart<=state.horizonSec && tEnd>=0)){
-          times.push({tStart:tStart, tEnd:tEnd});
-        }
-      }
-    }
-
-    // draw each occurrence within horizon (clip)
-    for(var ti=0; ti<times.length; ti++){
-      var e = times[ti];
-      var a0 = e.tStart + travel;
-      var a1 = e.tEnd + travel;
-      // Clip to [0,H]
-      if(e.tEnd < 0 || e.tStart > state.horizonSec) continue; // origin outside
-      // map to modulo H for x
-      var x0 = xScale( ((e.tStart%H)+H)%H );
-      var x1 = xScale( ((a0%H)+H)%H );
-      var x2 = xScale( ((e.tEnd%H)+H)%H );
-      var x3 = xScale( ((a1%H)+H)%H );
-      // draw lines (front/back)
-      addLine(x0, y0, x1, y1, color, op);
-      if(ov.mode==='interval'){
-        addLine(x2, y0, x3, y1, color, op*0.85);
-        // shade arrival band at destination across the stage duration
-        var yTopDest = rowYTops[J1.id];
-        var yBotDest = yTopDest + 30;
-        // naive: assume no wrap; if wrap, two rects would be needed (baseline keeps simple)
-        var xa = Math.min(x1,x3), xb = Math.max(x1,x3);
-        addRect(xa, yTopDest, xb-xa, 30, color, 0.18);
-      }
-    }
-  }
-
-  updateDataValidation();
-  log('Plot rendered (H='+H+'s)','info');
-}
-
-// ===== Overlay pickers & handlers =====
 function refreshOverlayPickers(){
-  var o=$('ovOrigin'), d=$('ovDest'), s=$('ovStage'), coO=$('coOrigin'), coD=$('coDest');
   function fillSel(sel){
     if(!sel) return;
     var cur=sel.value; sel.innerHTML='';
     for(var i=0;i<state.rowOrder.length;i++){ var id=state.rowOrder[i]; var j=getJ(id); if(j){ var opt=document.createElement('option'); opt.value=id; opt.textContent=j.name; sel.appendChild(opt);} }
     if(cur && getJ(cur)) sel.value=cur;
   }
-  fillSel(o); fillSel(d); fillSel(coO); fillSel(coD);
-  function fillStages(){
-    if(!s) return; s.innerHTML='';
-    var originId = o && o.value ? o.value : (presentRowOrder()[0]||null);
-    if(originId){ var j=getJ(originId); if(j){ for(var i=0;i<j.stages.length;i++){ var op=document.createElement('option'); op.value=String(i); op.textContent=j.stages[i].label; s.appendChild(op);} } }
-  }
-  fillStages();
-  if(o && !o._hasStageSync){ o.addEventListener('change', fillStages); o._hasStageSync=true; }
+  fillSel($('ovOrigin')); fillSel($('ovDest')); fillSel($('coOrigin')); fillSel($('coDest'));
+  function fillStages(){ var s=$('ovStage'); s.innerHTML=''; var o=$('ovOrigin').value; var j=getJ(o); if(j){ for(var i=0;i<j.stages.length;i++){ var op=document.createElement('option'); op.value=String(i); op.textContent=j.stages[i].label; s.appendChild(op);} } }
+  fillStages(); if(!$('ovOrigin')._wired){ $('ovOrigin').addEventListener('change', fillStages); $('ovOrigin')._wired=true; }
 }
 
 function addOverlayFromUI(){
-  var originSel=$('ovOrigin'), destSel=$('ovDest'), stageSel=$('ovStage'), modeSel=$('ovMode');
-  var col=$('ovColor').value, op=parseFloat($('ovOpacity').value||'0.8');
-  if(!originSel||!destSel||!stageSel||!modeSel){ log('Overlay form missing controls','err'); return; }
-  var origin = originSel.value, dest = destSel.value, idx = parseInt(stageSel.value||'0',10);
-  state.overlays.push({ kind:'stage', origin:origin, dest:dest, stageIndex:idx, mode:modeSel.value, color:col, opacity:op, repeat: $('ovRepeat').checked });
-  log('Overlay added: '+origin+' '+(getJ(origin).stages[idx].label)+' → '+dest+' ('+modeSel.value+')','info');
+  var origin=$('ovOrigin').value, dest=$('ovDest').value, idx=parseInt($('ovStage').value||'0',10), mode=$('ovMode').value;
+  var col=$('ovColor').value, op=parseFloat($('ovOpacity').value||'0.8'); var rpt=$('ovRepeat').checked;
+  state.overlays.push({kind:'stage', origin:origin, dest:dest, stageIndex:idx, mode:mode, color:col, opacity:op, repeat:rpt});
+  log('Overlay added: '+origin+' '+getJ(origin).stages[idx].label+' → '+dest+' ('+mode+')','info');
   render();
 }
 function addCustomOverlayFromUI(){
-  var originSel=$('coOrigin'), destSel=$('coDest');
-  if(!originSel||!destSel){ log('Custom overlay form missing controls','err'); return; }
-  var col=$('coColor').value, op=parseFloat($('coOpacity').value||'0.8');
-  var cs = num($('coStart').value||0), ce = num($('coEnd').value||0);
-  var origin=originSel.value, dest=destSel.value;
-  state.overlays.push({ kind:'custom', origin:origin, dest:dest, cStart:cs, cEnd:ce, color:col, opacity:op, repeat: $('coRepeat').checked });
+  var origin=$('coOrigin').value, dest=$('coDest').value;
+  var cs=num($('coStart').value||0), ce=num($('coEnd').value||0);
+  var col=$('coColor').value, op=parseFloat($('coOpacity').value||'0.8'); var rpt=$('coRepeat').checked;
+  state.overlays.push({kind:'custom', origin:origin, dest:dest, cStart:cs, cEnd:ce, color:col, opacity:op, repeat:rpt});
   log('Custom overlay added: '+origin+' ['+cs+','+ce+'] → '+dest,'info');
   render();
 }
 
-// ===== Clipboard =====
 async function copyPlotToClipboard(){
   log('Copy plot clicked','info');
-  var svg = $('diagram'); if(!svg){ log('No diagram SVG','err'); alert('No diagram to copy.'); return; }
-  // Try PNG
+  var svg=$('diagram'); if(!svg){ log('No diagram to copy','err'); return; }
+  // Try PNG first
   try{
-    var bbox = svg.getBoundingClientRect();
-    var clone = svg.cloneNode(true);
-    var width = Math.max(1, Math.floor(bbox.width));
-    var height = Math.max(1, Math.floor(bbox.height));
-    clone.setAttribute('width', width);
-    clone.setAttribute('height', height);
-    var ser = new XMLSerializer();
-    var svgStr = ser.serializeToString(clone);
-    var svgBlob = new Blob([svgStr], {type:'image/svg+xml;charset=utf-8'});
-    var url = URL.createObjectURL(svgBlob);
-    var img = new Image();
-    var scale = 2;
-    var canvas = document.createElement('canvas');
-    canvas.width = width * scale;
-    canvas.height = height * scale;
-    var ctx = canvas.getContext('2d');
-    await new Promise(function(resolve, reject){
-      img.onload = function(){ try{ ctx.setTransform(scale,0,0,scale,0,0); ctx.drawImage(img,0,0,width,height); resolve(); } catch(e){ reject(e); } finally { URL.revokeObjectURL(url); } };
-      img.onerror = function(e){ reject(e); };
-      img.src = url;
-    });
-    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
-    if(navigator.clipboard && window.ClipboardItem){
-      await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
-      log('Copied plot as image/png to clipboard','info');
-      $('readout').innerHTML = '<div class="good">Plot copied to clipboard as image ✅</div>';
-      return;
-    }
-    throw new Error('Image clipboard not supported');
-  } catch(err){
-    log('PNG copy failed: '+(err.message||err),'warn');
-  }
-  // Try SVG directly
+    var bbox=svg.getBoundingClientRect();
+    var width=Math.max(1, Math.floor(bbox.width)), height=Math.max(1, Math.floor(bbox.height));
+    var clone=svg.cloneNode(true); clone.setAttribute('width', width); clone.setAttribute('height', height);
+    var ser=new XMLSerializer(); var svgStr=ser.serializeToString(clone);
+    var svgBlob=new Blob([svgStr],{type:'image/svg+xml;charset=utf-8'});
+    var url=URL.createObjectURL(svgBlob); var img=new Image();
+    var scale=2; var canvas=document.createElement('canvas'); canvas.width=width*scale; canvas.height=height*scale; var ctx=canvas.getContext('2d');
+    await new Promise(function(res,rej){ img.onload=function(){ try{ ctx.setTransform(scale,0,0,scale,0,0); ctx.drawImage(img,0,0,width,height); res(); }catch(e){ rej(e);} finally{ URL.revokeObjectURL(url);} }; img.onerror=rej; img.src=url; });
+    const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+    if(navigator.clipboard && window.ClipboardItem){ await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); $('readout').innerHTML='<div class="good">Plot copied to clipboard as image ✅</div>'; log('Copied as image/png','info'); return; }
+    throw new Error('PNG clipboard unsupported');
+  }catch(e){ log('PNG copy failed: '+(e.message||e),'warn'); }
+  // SVG image
   try{
-    var ser = new XMLSerializer(); var txt = ser.serializeToString(svg);
-    if(navigator.clipboard && window.ClipboardItem){
-      var blob = new Blob([txt], {type:'image/svg+xml'});
-      await navigator.clipboard.write([new ClipboardItem({'image/svg+xml': blob})]);
-      log('Copied plot as image/svg+xml to clipboard','info');
-      $('readout').innerHTML = '<div class="good">Plot copied to clipboard as SVG ✅</div>';
-      return;
-    }
-    throw new Error('SVG image clipboard not supported');
-  } catch(err2){
-    log('SVG image copy failed: '+(err2.message||err2),'warn');
-  }
-  // Fallback: copy SVG markup as text
+    var ser=new XMLSerializer(); var txt=ser.serializeToString(svg);
+    if(navigator.clipboard && window.ClipboardItem){ var blob=new Blob([txt],{type:'image/svg+xml'}); await navigator.clipboard.write([new ClipboardItem({'image/svg+xml':blob})]); $('readout').innerHTML='<div class="good">Plot copied to clipboard as SVG ✅</div>'; log('Copied as SVG image','info'); return; }
+    throw new Error('SVG image clipboard unsupported');
+  }catch(e){ log('SVG image copy failed: '+(e.message||e),'warn'); }
+  // SVG text
   try{
-    var ser = new XMLSerializer(); var txt = ser.serializeToString(svg);
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      await navigator.clipboard.writeText(txt);
-      log('Copied SVG markup as text to clipboard','warn');
-      $('readout').innerHTML = '<div class="warn">Your browser blocked image copy — pasted SVG markup as text instead.</div>';
-      return;
-    }
-    // Legacy execCommand
-    var ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); var ok=document.execCommand('copy'); document.body.removeChild(ta);
-    if(ok){ log('Copied SVG markup via execCommand','warn'); $('readout').innerHTML = '<div class="warn">Copied SVG text (legacy)</div>'; return; }
-    throw new Error('execCommand copy failed');
-  } catch(err3){
-    log('Clipboard copy failed completely: '+(err3.message||err3),'err');
-    $('readout').innerHTML = '<div class="bad">Clipboard not available. Try a screenshot or long-press to save.</div>';
-  }
+    var ser2=new XMLSerializer(); var txt2=ser2.serializeToString(svg);
+    if(navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(txt2); $('readout').innerHTML='<div class="warn">Copied SVG markup as text.</div>'; log('Copied as text/svg','warn'); return; }
+    var ta=document.createElement('textarea'); ta.value=txt2; document.body.appendChild(ta); ta.select(); var ok=document.execCommand('copy'); document.body.removeChild(ta); if(ok){ $('readout').innerHTML='<div class="warn">Copied SVG text (legacy)</div>'; log('Copied via execCommand','warn'); return; }
+    throw new Error('execCommand failed');
+  }catch(e){ $('readout').innerHTML='<div class="bad">Clipboard not available. Try a screenshot.</div>'; log('Clipboard copy failed completely: '+(e.message||e),'err'); }
 }
 
-// ===== App bootstrap =====
 function bootstrap(){
   try{
     initTabs();
     buildDefaults();
     renderJunctionList();
-    rebuildJourneyMatrix();
     refreshOverlayPickers();
     setDefaultHorizon();
-    if($('plotBtn')) $('plotBtn').addEventListener('click', function(){ render(); });
-    if($('validateBtn')) $('validateBtn').addEventListener('click', updateDataValidation);
-    if($('rebuildMatrix')) $('rebuildMatrix').addEventListener('click', function(){ rebuildJourneyMatrix(); });
-    if($('resetDefaultsBtn')) $('resetDefaultsBtn').addEventListener('click', function(){ buildDefaults(); renderJunctionList(); rebuildJourneyMatrix(); refreshOverlayPickers(); setDefaultHorizon(); render(); updateDataValidation(); });
-    var h=$('horizon'); if(h){ h.addEventListener('blur', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); }); h.addEventListener('change', function(){ state.horizonIsDefault=false; state.horizonSec=num(h.value)||Math.max(60,maxCycle()+20); render(); }); }
-    if($('showMainGrid')) $('showMainGrid').addEventListener('change', function(){ render(); });
-    if($('copyPlotBtn')) $('copyPlotBtn').addEventListener('click', function(){ copyPlotToClipboard(); });
-    if($('addOverlayBtn')) $('addOverlayBtn').addEventListener('click', addOverlayFromUI);
-    if($('addCustomOverlayBtn')) $('addCustomOverlayBtn').addEventListener('click', addCustomOverlayFromUI);
-    if($('forceInitBtn')) $('forceInitBtn').addEventListener('click', function(){ log('Force init clicked','warn'); try{ bootstrap(); }catch(e){ log('Force init error: '+e.message,'err'); } });
-    render();
+    $('plotBtn').addEventListener('click', render);
+    $('copyPlotBtn').addEventListener('click', copyPlotToClipboard);
+    $('addOverlayBtn').addEventListener('click', addOverlayFromUI);
+    $('addCustomOverlayBtn').addEventListener('click', addCustomOverlayFromUI);
+    $('horizon').addEventListener('blur', function(){ state.horizonIsDefault=false; state.horizonSec=num(this.value)||Math.max(60,maxCycle()+20); render(); });
+    $('horizon').addEventListener('change', function(){ state.horizonIsDefault=false; state.horizonSec=num(this.value)||Math.max(60,maxCycle()+20); render(); });
     log('App initialised','info');
-  } catch(e){
-    log('Bootstrap error: '+(e.message||e), 'err');
-  } finally {
-    var b=$('bootBanner'); if(b){ b.textContent='script: DOM ready'; setTimeout(function(){ if(b && b.parentNode) b.parentNode.removeChild(b); }, 2000); }
+  }catch(e){
+    log('Bootstrap error: '+(e.message||e),'err');
+  }finally{
+    var b=$('bootBanner'); if(b){ b.textContent='script: DOM ready'; setTimeout(function(){ if(b&&b.parentNode) b.parentNode.removeChild(b); }, 2000); }
   }
 }
-
 document.addEventListener('DOMContentLoaded', bootstrap);
 </script>
 </body>
