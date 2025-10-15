@@ -1,10 +1,10 @@
 {
   "name": "Signal Plan Checker",
-  "version": "1.0.24.7",
+  "version": "1.0.24.2",
   "channel": "stable",
-  "build_date": "2025-10-15T08:31:17Z",
+  "build_date": "2025-10-15T04:30:00Z",
   "notes": [
-    "Extended-domain absolute-time renderer + clipping",
-    "Prevents wrap artefacts without per-shape splitting"
+    "Fix: Point/PointEnd overlays render as single lines without bands",
+    "Base: v1.0.24.1"
   ]
 }

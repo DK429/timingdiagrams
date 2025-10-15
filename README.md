@@ -1,11 +1,9 @@
 # Signal Plan Checker
 
-**Version:** v1.0.24.4 (overlayfix)  
-**What’s fixed**
-- Add overlay buttons now work and push overlays into app state.
-- Minimal overlay rendering restored: sloped front/back lines and shaded arrival band at destination row.
-- Clipboard button now logs attempts and tries PNG → SVG image → SVG text → legacy execCommand.
+**Version:** v1.0.24.2 (overlay point-mode fix)  
+**Runtime:** Pure HTML/CSS/JS — no server required.
 
-**Note** (intentional, to keep this a safe step from 1.0.24):
-- No horizon-wrap splitting of overlays yet (that’s a later patch).
-- Point overlays render a single arrival line (no band).
+### What's fixed
+- **Add Overlay → Mode: Point / Point (end)** now draws a **single arrival line** to the destination (no full-stage band). Interval (whole stage) continues to draw the sloped front/back lines, polygon, and shaded band at the destination.
+
+All other functionality matches v1.0.24.1.
