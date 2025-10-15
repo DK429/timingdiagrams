@@ -103,6 +103,7 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
 </div>
 
 <script>
+const APP_VERSION = "1.1.7-alpha";
 const App = { initCfg:null, state:{ validOk:false, readyToPlot:false, pxPerSec:4 } };
 
 function setDirty(){
@@ -196,7 +197,7 @@ function computeRealisedCycle(j){
     const realisedNext = Math.max(nextReq, earliestMG);
     if(realisedNext >= nextNextReq){
       const a = j.stages[curIdx].label, b=j.stages[nextIdx].label;
-      return {ok:false, err:[`${j.name}: Stage ${a} change point missed — request not achievable`]}
+      return {ok:false, err:[`${j.name}: Stage change not achievable ${a} → ${b} before next request at t=${nextNextReq%Cj}s`]}
     }
     RC[i+1] = realisedNext;
     details.push({i, rqCur:Rq[i], rqNext:nextReq, rqNext2:nextNextReq, igPrev, mgCur, stageStart, earliestMG, realisedNext, delay: realisedNext - nextReq, curStage:j.stages[curIdx].label, nextStage:j.stages[nextIdx].label});
@@ -236,7 +237,7 @@ function runValidation({silent}={silent:false}){
   if(ok){
     App.state.validOk = true;
     const v=document.getElementById('validateBtn'); if(v) v.classList.remove('dirty');
-    const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Validated ✔ — press Plot to render';
+    const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Validated ✔ — press Plot to render · v ${APP_VERSION}';
     const plot=document.getElementById('plotBtn'); if(plot) plot.disabled=false;
     const x=document.getElementById('transferBtn'); if(x) x.disabled=false;
     if(!silent) log('VALIDATION OK','info');
@@ -286,45 +287,9 @@ function drawHidden(){
 
     const rc = computeRealisedCycle(j);
     if(!rc.ok){
-      
-    // On-plot alert badge (missed change / validation)
-    (function(){
-      const msg = "⚠ " + rc.err.join(' | ');
-      const pad = 8;
-      const badgeH = 22;
-      const tx = left + 8;
-      const ty = y0 + Math.max(16, Math.floor((rowH)/2));
-      // draw pill background
-      ctx.save();
-      ctx.font = "12px ui-monospace, Consolas, monospace";
-      const tw = ctx.measureText(msg).width;
-      const bw = tw + 2*pad;
-      const bx = tx - pad;
-      const by = ty - badgeH/2;
-      // rounded rect
-      const r = 8;
-      ctx.fillStyle = "rgba(176,0,32,0.9)";
-      ctx.beginPath();
-      ctx.moveTo(bx+r, by);
-      ctx.lineTo(bx+bw-r, by);
-      ctx.quadraticCurveTo(bx+bw, by, bx+bw, by+r);
-      ctx.lineTo(bx+bw, by+badgeH-r);
-      ctx.quadraticCurveTo(bx+bw, by+badgeH, bx+bw-r, by+badgeH);
-      ctx.lineTo(bx+r, by+badgeH);
-      ctx.quadraticCurveTo(bx, by+badgeH, bx, by+badgeH-r);
-      ctx.lineTo(bx, by+r);
-      ctx.quadraticCurveTo(bx, by, bx+r, by);
-      ctx.closePath();
-      ctx.fill();
-      // text
-      ctx.fillStyle = "#fff";
-      ctx.textBaseline = "middle";
-      ctx.fillText(msg, tx, ty);
-      ctx.restore();
-    })();
-    log(`DRAW SKIP ${j.name}: `+rc.err.join(' | '),'warn');
-    return;
-
+      ctx.fillStyle="#b00020"; ctx.fillText("ERR: "+rc.err.join(' | '), left+8, y0+14);
+      log(`DRAW SKIP ${j.name}: `+rc.err.join(' | '),'warn');
+      return;
     }
     rc.details.forEach(d=>{
       log(`${j.name} i=${d.i} rq=${Math.round(d.rqNext)} stage=${d.curStage}->${d.nextStage} start=${Math.round(d.stageStart)} MG=${d.mgCur} RC=${Math.round(d.realisedNext)} delay=${Math.round(d.delay)}`,'info');
@@ -355,94 +320,13 @@ function drawHidden(){
         if(segEnd > segStart){
           ctx.fillStyle = greens[curIdx % greens.length];
           ctx.fillRect(left + segStart*pps, y0+6, (segEnd-segStart)*pps, rowH-12);
-        
-        
-        // Stage label overlay (adaptive)
-        (function(){
-          const segW = (segEnd - segStart) * pps;
-          if(segW <= 14) return; // too narrow to render text
-          const padX = 4, padY = 2;
-          const cx = left + segStart*pps;
-          const cy = y0+6;
-          const h = rowH-12;
-          ctx.save();
-          ctx.fillStyle = "#ffffff";
-          ctx.textBaseline = "middle";
-          // choose font size that fits bar height nicely
-          const fsize = Math.max(10, Math.min(14, Math.floor(h*0.5)));
-          ctx.font = `${fsize}px ui-monospace, Consolas, monospace`;
-
-          const full = j.stages[curIdx].label ?? (`S${curIdx+1}`);
-          const shortS = `S${curIdx+1}`;
-          const shortN = `${curIdx+1}`;
-
-          function fits(t){ return ctx.measureText(t).width + 2*padX <= segW; }
-
-          let textLabel = full;
-          if(!fits(textLabel)) textLabel = shortS;
-          if(!fits(textLabel)) textLabel = shortN;
-          if(!fits(textLabel)) { ctx.restore(); return; }
-
-          // center horizontally if space, else left-pad
-          const tw = ctx.measureText(textLabel).width;
-          const tx = (tw + 2*padX <= segW) ? (cx + (segW - tw)/2) : (cx + padX);
-          const ty = cy + h/2;
-          // subtle shadow for readability
-          ctx.shadowColor = "rgba(0,0,0,0.25)";
-          ctx.shadowBlur = 2;
-          ctx.fillText(textLabel, tx, ty);
-          ctx.restore();
-        })();
-    // Stage label overlay (adaptive)
-        (function(){
-          const segW = (segEnd - segStart) * pps;
-          if(segW <= 14) return; // too narrow to render text
-          const padX = 4, padY = 2;
-          const cx = left + segStart*pps;
-          const cy = y0+6;
-          const h = rowH-12;
-          ctx.save();
-          ctx.fillStyle = "#ffffff";
-          ctx.textBaseline = "middle";
-          // choose font size that fits bar height nicely
-          const fsize = Math.max(10, Math.min(14, Math.floor(h*0.5)));
-          ctx.font = `${fsize}px ui-monospace, Consolas, monospace`;
-
-          const full = j.stages[curIdx].label ?? (`S${curIdx+1}`);
-          const shortS = `S${curIdx+1}`;
-          const shortN = `${curIdx+1}`;
-
-          function fits(t){ return ctx.measureText(t).width + 2*padX <= segW; }
-
-          let textLabel = full;
-          if(!fits(textLabel)) textLabel = shortS;
-          if(!fits(textLabel)) textLabel = shortN;
-          if(!fits(textLabel)) { ctx.restore(); return; }
-
-          // center horizontally if space, else left-pad
-          const tw = ctx.measureText(textLabel).width;
-          const tx = (tw + 2*padX <= segW) ? (cx + (segW - tw)/2) : (cx + padX);
-          const ty = cy + h/2;
-          // subtle shadow for readability
-          ctx.shadowColor = "rgba(0,0,0,0.25)";
-          ctx.shadowBlur = 2;
-          ctx.fillText(textLabel, tx, ty);
-          ctx.restore();
-        })();
-    }
-        // ensure local vars exist for queued calculations
-        const _rqNext = (rc.details[i] && rc.details[i].rqNext) ?? 0;
-        const _delay = (rc.details[i] && rc.details[i].delay) ?? 0;
-
-        
-        if(App.initCfg.utcPlan.warnOnDelay && _delay>0){
-          log(`${j.name}: queued change — requested at t=${Math.round((_rqNext)%Cj)}s, realised at t=${Math.round((RCn)%Cj)}s (delay=${Math.round(_delay)}s)`, 'warn');
         }
-
-        if(App.initCfg.utcPlan.showQueuedChangeMarkers && _delay>0){
+        const nextReq = rc.details[i].rqNext;
+        const delay = rc.details[i].delay;
+        if(App.initCfg.utcPlan.showQueuedChangeMarkers && delay>0){
           ctx.strokeStyle="rgba(74,161,255,0.7)";
           ctx.setLineDash([4,3]);
-          const x1 = left + (_rqNext + k*Cj)*pps;
+          const x1 = left + (nextReq + k*Cj)*pps;
           const x2 = left + (RCn + k*Cj)*pps;
           ctx.beginPath(); ctx.moveTo(x1, y0+4); ctx.lineTo(x2, y0+4); ctx.stroke();
           ctx.setLineDash([]);
@@ -497,7 +381,7 @@ function drawHiddenGate(){
   App.state.readyToPlot = true;
   const p=document.getElementById('plotBtn'); if(p) p.classList.remove('dirty');
   const x=document.getElementById('transferBtn'); if(x) x.disabled=false;
-  const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Plotted ✓';
+  const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Plotted ✓ · v ${APP_VERSION}';
   log('Plot clicked — drawing (min-green enforced)','info');
   drawHidden();
 }
@@ -657,7 +541,7 @@ async function boot(){
     App.state.readyToPlot = true;
     const p=document.getElementById('plotBtn'); if(p) p.classList.remove('dirty');
     const x=document.getElementById('transferBtn'); if(x) x.disabled=false;
-    const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Plotted ✓';
+    const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Plotted ✓ · v ${APP_VERSION}';
     log('Plot clicked — drawing (hidden)','info');
     drawHidden();
   });

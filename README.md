@@ -6,7 +6,3 @@ Adds a **Transfer to Visible** button that mirrors a window of the hidden canvas
 2) Click **Transfer to Visible** — the window covering cycles **1..(1+viewCycles)** is copied at 1:1 scale.
 
 No changes to defaults, validation, or min-green logic.
-
-
-### Queued indicators
-When a request is early (min-green/intergreen), a dashed blue line shows the queued window; a small triangle marks the realised change.
