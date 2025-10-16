@@ -104,6 +104,7 @@ input[type=number], select{padding:6px 8px;border:1px solid #d6d6d6;border-radiu
       <label>Zoom (px/s)<input type="range" id="zoom" min="1" max="12" step="1" value="4"/></label>
       <button id="fitBtn">Fit</button>
       <button id="overlayBtn">Overlays…</button>
+      <button id="adjustBtn">Adjust…</button>
       <span id="info" class="badge">—</span>
       <button id="copyBtn" style="margin-left:auto" title="Copy TD Diagram as image">Copy</button>
     </div>
@@ -132,7 +133,7 @@ input[type=number], select{padding:6px 8px;border:1px solid #d6d6d6;border-radiu
 
 
 <script>
-const App = { initCfg:null, state:{ validOk:false, readyToPlot:false, pxPerSec:8, viewStartSec:0, didAutoFit:false } };
+const App = { initCfg:null, state:{ validOk:false, readyToPlot:false, pxPerSec:8, viewStartSec:0, didAutoFit:false, temp:{ offsets:{}, boundary:{}} } };
 
 function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
 
@@ -216,12 +217,27 @@ window.addEventListener('error', e=>log('ERROR: '+(e.message||e.error),'err'));
 window.addEventListener('unhandledrejection', e=>log('PROMISE: '+(e.reason&&e.reason.message?e.reason.message:e.reason),'err'));
 
 async function loadBundledInit(){
+  const DEFAULT_CFG = {"appName":"Signal Plan Checker","ui":{"debug":{"enabled":true,"dock":{"showOnLoad":true},"logLevel":"info","validationOnActions":false,"perfMarkers":true}},"mainCycleTime":{"default":60,"min":1,"max":240,"mustBeEvenWhenAnyDouble":true},"junctionCount":{"default":3,"min":2,"max":5},"doubleCycle":{"allowed":true,"requireAtLeastOneMainCycle":true},"stageCount":{"default":2,"min":2},"stage":{"minGreen":{"default":7,"min":1}},"intergreen":{"diagonalLockedValue":-1,"allowNotPermittedValue":-1,"defaults":{"offDiagonal":5},"domain":{"min":0,"max":60}},"journeyTime":{"default":20,"min":0,"max":60},"utcPlan":{"requireAtLeastOneChange":true,"markRequestsBlue":true,"showQueuedChangeMarkers":true,"warnOnDelay":true,"alertOnMissedChange":true,"defaults":[{"to":"S1","at":0},{"to":"S2","at":30}]},"plot":{"hiddenWindowMultiplier":5,"viewCycles":{"options":[1,2,3],"default":2},"grid10s":true,"ticks1s":true,"ticks5s":true,"rowHeight":48,"rowGap":18,"leftMargin":120,"topMargin":24,"pxPerSec":4},"overlays":{"adjacentOnly":true,"defaultOpacity":0.8,"shadeAlpha":0.15,"repeatByCycle":true,"allowCustomIntervals":true},"packaging":{"includeDocs":true}};
   try{
-    const res = await fetch('init.config.json',{cache:'no-store'});
-    if(!res.ok) throw new Error('init.config.json not found');
-    return await res.json();
+    // If running from file://, avoid fetch() CORS and use inline JSON if provided
+    if (location && location.protocol === 'file:'){
+      const node = document.getElementById('initCfg');
+      if(node && node.textContent){
+        try { return JSON.parse(node.textContent); } catch(_) { /* fall through to default */ }
+      }
+      return DEFAULT_CFG;
+    }
+    // Normal case when served over http/https
+    const res = await fetch('init.config.json', { cache: 'no-store' });
+    if(res.ok){ return await res.json(); }
+    // As a fallback, try inline JSON if present
+    const node = document.getElementById('initCfg');
+    if(node && node.textContent){
+      try { return JSON.parse(node.textContent); } catch(_) { /* fall through */ }
+    }
+    return DEFAULT_CFG;
   }catch(e){
-    return {"appName": "Signal Plan Checker", "ui": {"debug": {"enabled": true, "dock": {"showOnLoad": true}, "logLevel": "info", "validationOnActions": false, "perfMarkers": true}}, "mainCycleTime": {"default": 60, "min": 1, "max": 240, "mustBeEvenWhenAnyDouble": true}, "junctionCount": {"default": 3, "min": 2, "max": 5}, "doubleCycle": {"allowed": true, "requireAtLeastOneMainCycle": true}, "stageCount": {"default": 2, "min": 2}, "stage": {"minGreen": {"default": 7, "min": 1}}, "intergreen": {"diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": {"offDiagonal": 5}, "domain": {"min": 0, "max": 60}}, "journeyTime": {"default": 20, "min": 0, "max": 60}, "utcPlan": {"requireAtLeastOneChange": true, "markRequestsBlue": true, "showQueuedChangeMarkers": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [{"to": "S1", "at": 0}, {"to": "S2", "at": 30}]}, "plot": {"hiddenWindowMultiplier": 5, "viewCycles": {"options": [1, 2, 3], "default": 2}, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4}, "overlays": {"adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true}, "packaging": {"includeDocs": true}};
+    return DEFAULT_CFG;
   }
 }
 
@@ -249,6 +265,35 @@ function effectiveCycle(j){ return j.doubleCycle ? (App.state.mainCycle/2) : App
 function stageIndex(j, label){ const idx = j.stages.findIndex(s=>s.label===label); return (idx>=0? idx : 0); }
 function clampInt(v, lo, hi){ v=parseInt(v||0,10); if(isNaN(v)) v=0; return Math.max(lo, Math.min(hi, v)); }
 
+// --- Adjusted plan helpers (global) ---
+function getAdjustedPlan(j){
+  const Cj = effectiveCycle(j);
+  const base = (j.utcPlan||[]).slice().sort((a,b)=>a.at-b.at).map(r=>({to:r.to, at:r.at}));
+  const off = (App.state.temp && App.state.temp.offsets && App.state.temp.offsets[j.id]) || 0;
+  // apply offset (wrap into [0,Cj))
+  if(off){
+    for(let i=0;i<base.length;i++){
+      let t = base[i].at + off; t %= Cj; if(t<0) t += Cj; base[i].at = t;
+    }
+    base.sort((a,b)=>a.at-b.at);
+  }
+  // apply boundary nudges (delta seconds to the change between stage i and i+1)
+  const bmap = (App.state.temp && App.state.temp.boundary && App.state.temp.boundary[j.id]) || {};
+  Object.keys(bmap).forEach(k=>{
+    const idx = parseInt(k,10); if(!isFinite(idx)) return;
+    let t = (base[idx] && base[idx].at) || 0;
+    t += bmap[k];
+    t %= Cj; if(t<0) t += Cj;
+    if(base[idx]) base[idx].at = t;
+  });
+  base.sort((a,b)=>a.at-b.at);
+  return base;
+}
+function computeRealisedCycleAdj(j){
+  const jClone = JSON.parse(JSON.stringify(j));
+  jClone.utcPlan = getAdjustedPlan(j);
+  return computeRealisedCycle(jClone);
+}
 // ---- min-green realised times (from v1.1.6-alpha) ----
 function computeRealisedCycle(j){
   const Cj = effectiveCycle(j);
@@ -544,7 +589,7 @@ function drawHidden(){
     const y0 = top + idx*(rowH+gap);
     ctx.strokeStyle = '#ddd'; ctx.strokeRect(0, y0, viewportPx, rowH);
 
-    const rc = computeRealisedCycle(j);
+    const rc = computeRealisedCycleAdj(j);
     if(!rc.ok){ ctx.fillStyle = '#b00020'; ctx.fillText('ERR: '+rc.err.join(' | '), 8, y0+14); return; }
 
     const Cj = rc.Cj; const N = rc.plan.length; const cycles = Math.ceil(T / Cj);
@@ -624,7 +669,7 @@ function drawHidden(){
       const fromIdx = ovl.from, toIdx = ovl.to;
       if(fromIdx==null || toIdx==null) return;
       const Jfrom = App.state.junctions[fromIdx];
-      const rcFrom = computeRealisedCycle(Jfrom);
+      const rcFrom = computeRealisedCycleAdj(Jfrom);
       if(!rcFrom.ok) return;
       const travel = travelTimeBetween(fromIdx, toIdx);
 
@@ -1082,30 +1127,127 @@ drawLabels();
     }, {passive:false});
   }
 
+  // --- Adjust modal wiring ---
+  (function(){
+    const btn = document.getElementById('adjustBtn');
+
+    let wired = false; // modal wired after first open
+    // element refs
+    let modal, closeBtn, applyBtn, clearBtn, selJ, off;
+
+    function getBoxB(){ return document.getElementById('adjBoundaries'); }
+
+    function fillJ(){
+      selJ = document.getElementById('adjJunc');
+      if(!selJ) return;
+      const juncs = App.state.junctions||[]; selJ.innerHTML='';
+      juncs.forEach((j)=>{ const o=document.createElement('option'); o.value=j.id; o.textContent=j.name; selJ.appendChild(o); });
+    }
+    function renderB(){
+      const boxB = getBoxB(); if(!boxB) return;
+      const sel = document.getElementById('adjJunc');
+      const j = (App.state.junctions||[]).find(x=>x.id=== (sel && sel.value));
+      if(!j){ boxB.innerHTML=''; return; }
+      const plan = getAdjustedPlan(j);
+      const list = plan.map(p=>p.to);
+      const bmap = (App.state.temp.boundary[j.id]||{});
+      let html = '<table class="grid"><thead><tr><th>Boundary</th><th>Δ (s)</th></tr></thead><tbody>';
+      for(let i=0;i<list.length;i++){
+        const cur = list[i]; const nxt = list[(i+1)%list.length];
+        const key = String(i);
+        const val = (typeof bmap[key]==='number') ? bmap[key] : 0;
+        html += `<tr><td>${cur} → ${nxt}</td><td><input type="number" step="1" value="${val}" data-bidx="${key}"></td></tr>`;
+      }
+      html += '</tbody></table>';
+      boxB.innerHTML = html;
+    }
+    function wireModalElements(){
+      modal    = document.getElementById('adjModal');
+      closeBtn = document.getElementById('adjCloseBtn');
+      applyBtn = document.getElementById('adjApply');
+      clearBtn = document.getElementById('adjClear');
+      selJ     = document.getElementById('adjJunc');
+      off      = document.getElementById('adjOffset');
+      if(!modal || wired) return !!modal;
+
+      if(closeBtn) closeBtn.addEventListener('click', close);
+      if(modal) modal.addEventListener('click', (e)=>{ if(e.target===modal) close(); });
+      if(selJ) selJ.addEventListener('change', ()=>{
+        const id = selJ.value; const v = (App.state.temp.offsets[id]||0); const offInp = document.getElementById('adjOffset'); if(offInp) offInp.value=String(v);
+        renderB();
+      });
+      if(applyBtn) applyBtn.addEventListener('click', ()=>{
+        const id = (document.getElementById('adjJunc')||{}).value; if(!id) return;
+        const offInp = document.getElementById('adjOffset');
+        App.state.temp.offsets[id] = parseInt(offInp && offInp.value || 0,10) || 0;
+        const boxB = getBoxB(); if(boxB){
+          App.state.temp.boundary[id] = App.state.temp.boundary[id] || {};
+          boxB.querySelectorAll('input[data-bidx]').forEach(inp=>{
+            const k = inp.getAttribute('data-bidx');
+            const v = parseInt(inp.value||0,10) || 0;
+            App.state.temp.boundary[id][k] = v;
+          });
+        }
+        if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
+        close();
+      });
+      if(clearBtn) clearBtn.addEventListener('click', ()=>{
+        const id = (document.getElementById('adjJunc')||{}).value; if(!id) return;
+        if(App.state.temp.offsets) delete App.state.temp.offsets[id];
+        if(App.state.temp.boundary) delete App.state.temp.boundary[id];
+        const offInp = document.getElementById('adjOffset'); if(offInp) offInp.value='0';
+        renderB();
+        if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
+      });
+      wired = true;
+      return true;
+    }
+
+    function open(){
+      if(!wireModalElements()) return;
+      fillJ();
+      if(selJ && !selJ.value && selJ.options.length){ selJ.value = selJ.options[0].value; }
+      const id = selJ ? selJ.value : null;
+      const offInp = document.getElementById('adjOffset');
+      if(offInp) offInp.value = String((id && App.state.temp.offsets[id]) || 0);
+      renderB();
+      const m = document.getElementById('adjModal');
+      if(m){ m.classList.add('show'); m.setAttribute('aria-hidden','false'); }
+    }
+    function close(){ const m=document.getElementById('adjModal'); if(m){ m.classList.remove('show'); m.setAttribute('aria-hidden','true'); } }
+
+    if(btn) btn.addEventListener('click', open);
+  })();
   // --- Overlays modal wiring ---
   (function(){
     const btn = document.getElementById('overlayBtn');
-    const modal = document.getElementById('ovlModal');
-    const closeBtn = document.getElementById('ovlCloseBtn');
-    const cancelBtn = document.getElementById('ovlCancel');
-    const saveBtn = document.getElementById('ovlSave');
-    const selFrom = document.getElementById('ovlFrom');
-    const selTo   = document.getElementById('ovlTo');
-    const modeSel = document.getElementById('ovlMode');
-    const s = document.getElementById('ovlStart');
-    const e = document.getElementById('ovlEnd');
-    const col = document.getElementById('ovlColor');
-    const a = document.getElementById('ovlAlpha');
-    const selStage = document.getElementById('ovlStage');
-    const stageGroup = document.getElementById('stageGroup');
-    const timeGroup  = document.getElementById('timeGroup');
 
+    // Modal-scoped refs are lazily assigned when the modal is first opened
+    let modalWired = false;
     let editingIndex = -1; // -1 => creating, >=0 => editing existing overlay
 
+    // element refs (assigned in wireModalElements)
+    let modal, closeBtn, cancelBtn, saveBtn, selFrom, selTo, modeSel, s, e, col, a, selStage, stageGroup, timeGroup, listBox;
+
     function updateModeVisibility(){
+      if(!modeSel || !stageGroup || !timeGroup) return;
       const m = (modeSel && modeSel.value) || 'stage';
-      if(stageGroup) stageGroup.style.display = (m==='stage') ? '' : 'none';
-      if(timeGroup)  timeGroup.style.display  = (m==='time')  ? '' : 'none';
+      stageGroup.style.display = (m==='stage') ? '' : 'none';
+      timeGroup.style.display  = (m==='time')  ? '' : 'none';
+    }
+
+    function populateStages(){
+      if(!selStage || !selFrom) return;
+      selStage.innerHTML='';
+      const fromIdx = parseInt(selFrom && selFrom.value || '0',10) || 0;
+      const J = (App.state.junctions||[])[fromIdx];
+      const stages = (J && Array.isArray(J.stages)) ? J.stages : [];
+      stages.forEach(st=>{
+        const opt=document.createElement('option');
+        opt.value = st.label;       // value is stage label
+        opt.textContent = st.label; // display label
+        selStage.appendChild(opt);
+      });
     }
 
     function populateJunctions(){
@@ -1127,142 +1269,25 @@ drawLabels();
       updateModeVisibility();
     }
 
-    function populateStages(){
-      if(!selStage) return;
-      selStage.innerHTML='';
-      const fromIdx = parseInt(selFrom && selFrom.value || '0',10) || 0;
-      const J = (App.state.junctions||[])[fromIdx];
-      const stages = (J && Array.isArray(J.stages)) ? J.stages : [];
-      stages.forEach(st=>{
-        const opt=document.createElement('option');
-        opt.value = st.label;       // value is stage label
-        opt.textContent = st.label; // display label
-        selStage.appendChild(opt);
-      });
-    }
-
-    // Helper to prefill the overlay form from an overlay object
     function prefillOverlayForm(ovl){
       try{
         if(!ovl) return;
-        // set From/To first to drive stage population
         if(selFrom){ selFrom.value = String(ovl.from||0); }
         if(selTo){   selTo.value   = String(ovl.to||0); }
         populateStages();
-        // mode and visibility
         if(modeSel){ modeSel.value = ovl.mode || 'stage'; }
         updateModeVisibility();
-        // stage vs time
         if((ovl.mode||'stage') === 'stage'){
           if(selStage && ovl.stage){ selStage.value = ovl.stage; }
         }else{
           if(s){ s.value = String(Math.max(0, ovl.start||0)); }
           if(e){ e.value = String(Math.max(0, ovl.end||0)); }
         }
-        // color/alpha
         if(col){ col.value = ovl.color || '#ffa500'; }
         if(a){ a.value = String(typeof ovl.alpha==='number' ? ovl.alpha : 0.3); }
       }catch(_){/* ignore */}
     }
 
-    function openModal(){
-      editingIndex = -1; // default to creating a new overlay
-      if(saveBtn) saveBtn.textContent = 'Save overlay';
-      populateJunctions();
-      renderOverlayList();
-      modal.classList.add('show');
-      modal.setAttribute('aria-hidden','false');
-    }
-    function closeModal(){
-      editingIndex = -1;
-      if(saveBtn) saveBtn.textContent = 'Save overlay';
-      modal.classList.remove('show');
-      modal.setAttribute('aria-hidden','true');
-    }
-
-    if(btn){ btn.addEventListener('click', openModal); }
-    if(closeBtn){ closeBtn.addEventListener('click', closeModal); }
-    if(cancelBtn){ cancelBtn.addEventListener('click', closeModal); }
-    if(modal){ modal.addEventListener('click', (ev)=>{ if(ev.target===modal) closeModal(); }); }
-    document.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape' && modal.classList.contains('show')) closeModal(); });
-    if(modeSel){ modeSel.addEventListener('change', updateModeVisibility); }
-
-    // Handle edit/delete/clear-all in the overlay list
-    const listBox = document.getElementById('ovlList');
-    if(listBox){
-      listBox.addEventListener('click', (ev)=>{
-        const editIdx = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-edit-ovl');
-        if(editIdx!=null){
-          const i = parseInt(editIdx,10);
-          if(Array.isArray(App.state._overlays) && i>=0 && i < App.state._overlays.length){
-            editingIndex = i;
-            if(saveBtn) saveBtn.textContent = 'Update overlay';
-            // open modal and prefill
-            if(!modal.classList.contains('show')){
-              modal.classList.add('show');
-              modal.setAttribute('aria-hidden','false');
-            }
-            populateJunctions();
-            prefillOverlayForm(App.state._overlays[i]);
-          }
-          return; // don't fall through to delete
-        }
-        const delIdx = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-del-ovl');
-        if(delIdx!=null){
-          const i = parseInt(delIdx,10);
-          if(Array.isArray(App.state._overlays) && i>=0 && i < App.state._overlays.length){
-            App.state._overlays.splice(i,1);
-            renderOverlayList();
-            if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
-          }
-        }
-        if(ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-clear-all')){
-          if(Array.isArray(App.state._overlays) && App.state._overlays.length){
-            App.state._overlays.length = 0;
-            renderOverlayList();
-            if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
-          }
-        }
-      });
-    }
-
-    if(selFrom){ selFrom.addEventListener('change', populateStages); }
-
-    if(saveBtn){
-      saveBtn.addEventListener('click', ()=>{
-        // Lazy in-memory store for now
-        App.state._overlays = App.state._overlays || [];
-
-        const mode = (modeSel && modeSel.value) || 'stage';
-        const base = {
-          from: parseInt(selFrom.value||'0',10),
-          to:   parseInt(selTo.value||'0',10),
-          mode,
-          color: col.value||'#ffa500',
-          alpha: Math.max(0, Math.min(1, parseFloat(a.value||'0.3')||0.3))
-        };
-        if(mode==='stage'){
-          base.stage = (selStage && selStage.value) || null;
-        }else{ // time-based
-          base.start = Math.max(0, parseFloat(s && s.value || '0')||0);
-          base.end   = Math.max(base.start, parseFloat(e && e.value || '0')||0);
-        }
-        if(editingIndex>=0){
-          // update existing
-          App.state._overlays[editingIndex] = base;
-          log('Overlay updated: '+JSON.stringify(base), 'info');
-        } else {
-          // create new
-          App.state._overlays.push(base);
-          log('Overlay saved (new): '+JSON.stringify(base), 'info');
-        }
-        renderOverlayList();
-        if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
-        closeModal();
-      });
-    }
-
-    // Insert renderOverlayList at IIFE scope after populateStages
     function renderOverlayList(){
       const box = document.getElementById('ovlList');
       if(!box) return;
@@ -1291,6 +1316,125 @@ drawLabels();
       box.innerHTML = `<table class="grid"><thead><tr><th>Route</th><th>Mode</th><th>Stage / Time</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>
         <div style="margin-top:8px;display:flex;justify-content:flex-end"><button data-clear-all>Clear all</button></div>`;
     }
+
+    function wireModalElements(){
+      if(modalWired) return true;
+      // query elements now that modal exists in DOM
+      modal     = document.getElementById('ovlModal');
+      closeBtn  = document.getElementById('ovlCloseBtn');
+      cancelBtn = document.getElementById('ovlCancel');
+      saveBtn   = document.getElementById('ovlSave');
+      selFrom   = document.getElementById('ovlFrom');
+      selTo     = document.getElementById('ovlTo');
+      modeSel   = document.getElementById('ovlMode');
+      s         = document.getElementById('ovlStart');
+      e         = document.getElementById('ovlEnd');
+      col       = document.getElementById('ovlColor');
+      a         = document.getElementById('ovlAlpha');
+      selStage  = document.getElementById('ovlStage');
+      stageGroup= document.getElementById('stageGroup');
+      timeGroup = document.getElementById('timeGroup');
+      listBox   = document.getElementById('ovlList');
+      if(!modal) return false;
+
+      if(modeSel){ modeSel.addEventListener('change', updateModeVisibility); }
+      if(selFrom){ selFrom.addEventListener('change', populateStages); }
+
+      if(listBox){
+        listBox.addEventListener('click', (ev)=>{
+          const editIdx = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-edit-ovl');
+          if(editIdx!=null){
+            const i = parseInt(editIdx,10);
+            if(Array.isArray(App.state._overlays) && i>=0 && i < App.state._overlays.length){
+              editingIndex = i;
+              if(saveBtn) saveBtn.textContent = 'Update overlay';
+              if(!modal.classList.contains('show')){
+                modal.classList.add('show');
+                modal.setAttribute('aria-hidden','false');
+              }
+              populateJunctions();
+              prefillOverlayForm(App.state._overlays[i]);
+            }
+            return; // don't fall through
+          }
+          const delIdx = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-del-ovl');
+          if(delIdx!=null){
+            const i = parseInt(delIdx,10);
+            if(Array.isArray(App.state._overlays) && i>=0 && i < App.state._overlays.length){
+              App.state._overlays.splice(i,1);
+              renderOverlayList();
+              if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
+            }
+          }
+          if(ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-clear-all')){
+            if(Array.isArray(App.state._overlays) && App.state._overlays.length){
+              App.state._overlays.length = 0;
+              renderOverlayList();
+              if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
+            }
+          }
+        });
+      }
+
+      if(saveBtn){
+        saveBtn.addEventListener('click', ()=>{
+          App.state._overlays = App.state._overlays || [];
+          const mode = (modeSel && modeSel.value) || 'stage';
+          const base = {
+            from: parseInt(selFrom.value||'0',10),
+            to:   parseInt(selTo.value||'0',10),
+            mode,
+            color: col.value||'#ffa500',
+            alpha: Math.max(0, Math.min(1, parseFloat(a.value||'0.3')||0.3))
+          };
+          if(mode==='stage'){
+            base.stage = (selStage && selStage.value) || null;
+          }else{ // time-based
+            base.start = Math.max(0, parseFloat(s && s.value || '0')||0);
+            base.end   = Math.max(base.start, parseFloat(e && e.value || '0')||0);
+          }
+          if(editingIndex>=0){
+            App.state._overlays[editingIndex] = base;
+            log('Overlay updated: '+JSON.stringify(base), 'info');
+          } else {
+            App.state._overlays.push(base);
+            log('Overlay saved (new): '+JSON.stringify(base), 'info');
+          }
+          renderOverlayList();
+          if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
+          closeModal();
+        });
+      }
+
+      if(closeBtn){ closeBtn.addEventListener('click', closeModal); }
+      if(cancelBtn){ cancelBtn.addEventListener('click', closeModal); }
+      if(modal){ modal.addEventListener('click', (ev)=>{ if(ev.target===modal) closeModal(); }); }
+
+      // Escape to close (query modal each time to avoid stale refs)
+      document.addEventListener('keydown', (ev)=>{ const m=document.getElementById('ovlModal'); if(ev.key==='Escape' && m && m.classList.contains('show')) closeModal(); });
+
+      modalWired = true;
+      return true;
+    }
+
+    function openModal(){
+      editingIndex = -1;
+      if(!modalWired){ if(!wireModalElements()) return; }
+      if(saveBtn) saveBtn.textContent = 'Save overlay';
+      populateJunctions();
+      renderOverlayList();
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden','false');
+    }
+
+    function closeModal(){
+      editingIndex = -1;
+      if(saveBtn) saveBtn.textContent = 'Save overlay';
+      const m = document.getElementById('ovlModal');
+      if(m){ m.classList.remove('show'); m.setAttribute('aria-hidden','true'); }
+    }
+
+    if(btn){ btn.addEventListener('click', openModal); }
   })();
 }
 boot();
@@ -1560,6 +1704,33 @@ document.addEventListener('DOMContentLoaded', ()=>{
 })();
 </script>
 
+<!-- Adjust modal (temporary) -->
+<div id="adjModal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-card" role="document" aria-labelledby="adjTitle">
+    <header>
+      <h3 id="adjTitle">Adjust junction</h3>
+      <button id="adjCloseBtn" aria-label="Close">✕</button>
+    </header>
+    <div class="body">
+      <div class="modal-grid">
+        <label>Junction
+          <select id="adjJunc"></select>
+        </label>
+        <label>Offset (s)
+          <input type="number" id="adjOffset" step="1" value="0"/>
+        </label>
+      </div>
+      <h4 style="margin:10px 0 6px 0;font-size:13px">Vary by moving boundaries</h4>
+      <div id="adjBoundaries"></div>
+      <p class="muted" style="margin-top:8px;font-size:12px">Offset shifts the UTC plan for this junction. Boundary deltas move the change points (e.g., between S1 → S2). These are temporary and only affect the plot/overlays.</p>
+    </div>
+    <footer>
+      <button id="adjClear">Clear</button>
+      <button id="adjApply">Apply</button>
+    </footer>
+  </div>
+</div>
+
 <!-- Overlays modal (temporary) -->
 <div id="ovlModal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true">
   <div class="modal-card" role="document" aria-labelledby="ovlTitle">
@@ -1621,5 +1792,22 @@ document.addEventListener('DOMContentLoaded', ()=>{
       
     
      
+<script type="application/json" id="initCfg">
+{
+  "appName": "Signal Plan Checker",
+  "ui": { "debug": { "enabled": true, "dock": { "showOnLoad": true }, "logLevel": "info", "validationOnActions": false, "perfMarkers": true } },
+  "mainCycleTime": { "default": 60, "min": 1, "max": 240, "mustBeEvenWhenAnyDouble": true },
+  "junctionCount": { "default": 3, "min": 2, "max": 5 },
+  "doubleCycle": { "allowed": true, "requireAtLeastOneMainCycle": true },
+  "stageCount": { "default": 2, "min": 2 },
+  "stage": { "minGreen": { "default": 7, "min": 1 } },
+  "intergreen": { "diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": { "offDiagonal": 5 }, "domain": { "min": 0, "max": 60 } },
+  "journeyTime": { "default": 20, "min": 0, "max": 60 },
+  "utcPlan": { "requireAtLeastOneChange": true, "markRequestsBlue": true, "showQueuedChangeMarkers": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [ { "to": "S1", "at": 0 }, { "to": "S2", "at": 30 } ] },
+  "plot": { "hiddenWindowMultiplier": 5, "viewCycles": { "options": [1, 2, 3], "default": 2 }, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4 },
+  "overlays": { "adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true },
+  "packaging": { "includeDocs": true }
+}
+</script>
 </body>
 </html>
