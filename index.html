@@ -263,8 +263,33 @@ function drawHidden(){
   if(!(App.state.validOk && App.state.readyToPlot)){
     log('Draw suppressed (requires Validate OK + Plot)','warn');
     return;
-  }
-  const C = document.getElementById('hiddenCanvas'); const ctx = C.getContext('2d');
+  
+  // Bottom Clock A timeline (labels only, 10s ticks), testing
+  (function(){
+    try{
+      const left = App.initCfg.plot.leftMargin || 120;
+      const top  = App.initCfg.plot.topMargin || 24;
+      const rowH = App.initCfg.plot.rowHeight || 48;
+      const gap  = App.initCfg.plot.rowGap || 8;
+      const pps  = App.state.pxPerSec || 4;
+      const mult = (App.initCfg.plot && App.initCfg.plot.hiddenWindowMultiplier) || 5;
+      const T    = App.state.mainCycle * mult;
+      const height = top + App.state.junctions.length*(rowH+gap) + 20;
+      const y = height - 6;
+      ctx.save();
+      ctx.fillStyle = '#000';
+      ctx.font = '10px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      for(let t=0;t<=T;t+=10){
+        const x = left + t*pps;
+        ctx.fillText(String(t), x, y - 3);
+      }
+      ctx.restore();
+    }catch(e){ console.warn('Bottom Clock A timeline failed', e); }
+  })();
+}
+const C = document.getElementById('hiddenCanvas'); const ctx = C.getContext('2d');
   const M = App.state.mainCycle; const mult = App.initCfg.plot.hiddenWindowMultiplier || 5; const T = M*mult;
   const pps = App.state.pxPerSec || 4; const left = App.initCfg.plot.leftMargin || 120; const top = App.initCfg.plot.topMargin || 24;
   const rowH = App.initCfg.plot.rowHeight || 48; const gap = App.initCfg.plot.rowGap || 18;
@@ -275,7 +300,7 @@ function drawHidden(){
   ctx.fillStyle="#fff"; ctx.fillRect(0,0,width,height);
   ctx.strokeStyle="#eee"; ctx.lineWidth=1;
   for(let t=0;t<=T;t+=10){ const x=left+t*pps; ctx.beginPath(); ctx.moveTo(x, top-8); ctx.lineTo(x, height-10); ctx.stroke();
-    ctx.fillStyle="#999"; ctx.font="10px system-ui"; ctx.fillText(String(t)+'s', x-8, top-12); }
+    ctx.fillStyle='#000'; ctx.font='10px system-ui'; ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.fillText(String(t - M), x, top-12); }
 
   const greens = ["rgba(60,180,75,0.9)","rgba(90,205,105,0.9)","rgba(120,220,135,0.9)","rgba(150,235,165,0.9)"];
 
@@ -561,58 +586,44 @@ boot();
 </script>
 
 <script>
-// Ensure hidden canvas lives in the Hidden tab
+
+<script>
+// Hidden canvas tab guard: keep hidden canvas inside the "Hidden ext canvas" tab only.
 (function(){
-  function byId(id){ return document.getElementById(id); }
-  function ensureTabs(){
-    let tabs = byId('masterTabs');
-    let panels = byId('tabPanels');
-    let tabData = byId('tab-data');
-    let tabHidden = byId('tab-hidden');
-    if(!tabs){
-      tabs = document.createElement('div');
+  function $(id){ return document.getElementById(id); }
+  function ensureTabsMarkup(){
+    if(!$('masterTabs')){
+      const tabs = document.createElement('div');
       tabs.id = 'masterTabs';
       tabs.className = 'tabbar';
       tabs.style.cssText = 'display:flex;gap:6px;padding:8px;border-bottom:1px solid #ddd;position:sticky;top:0;background:#fafafa;z-index:10';
       const bData = document.createElement('button');
-      bData.className = 'tabbtn'; bData.dataset.tab='data';
-      bData.textContent = 'Data';
-      bData.style.cssText = 'padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#fff;cursor:pointer';
+      bData.className='tabbtn'; bData.dataset.tab='data'; bData.textContent='Data';
+      bData.style.cssText='padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#fff;cursor:pointer';
       const bHidden = document.createElement('button');
-      bHidden.className = 'tabbtn'; bHidden.dataset.tab='hidden';
-      bHidden.textContent = 'Hidden ext canvas';
-      bHidden.style.cssText = 'padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#eee;cursor:pointer;margin-left:6px;';
+      bHidden.className='tabbtn'; bHidden.dataset.tab='hidden'; bHidden.textContent='Hidden ext canvas';
+      bHidden.style.cssText='padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#eee;cursor:pointer;margin-left:6px;';
       tabs.appendChild(bData); tabs.appendChild(bHidden);
       document.body.insertBefore(tabs, document.body.firstChild);
     }
-    if(!panels){
-      panels = document.createElement('div');
-      panels.id = 'tabPanels';
-      document.body.insertBefore(panels, tabs.nextSibling);
+    if(!$('tabPanels')){
+      const p = document.createElement('div'); p.id='tabPanels';
+      document.body.insertBefore(p, $('masterTabs').nextSibling);
     }
-    if(!tabData){
-      tabData = document.createElement('section');
-      tabData.id = 'tab-data';
-      tabData.style.display = 'block';
-      panels.appendChild(tabData);
+    if(!$('tab-data')){
+      const s = document.createElement('section'); s.id='tab-data'; s.style.display='block';
+      $('tabPanels').appendChild(s);
     }
-    if(!tabHidden){
-      tabHidden = document.createElement('section');
-      tabHidden.id = 'tab-hidden';
-      tabHidden.style.display = 'none';
-      tabHidden.style.height = 'calc(100vh - 48px)';
-      tabHidden.style.overflow = 'auto';
-      tabHidden.style.padding = '8px';
-      panels.appendChild(tabHidden);
+    if(!$('tab-hidden')){
+      const s = document.createElement('section'); s.id='tab-hidden'; s.style.display='none';
+      s.style.height = 'calc(100vh - 48px)'; s.style.overflow='auto'; s.style.padding='8px';
+      $('tabPanels').appendChild(s);
     }
-    return {tabs, panels, tabData, tabHidden};
   }
-
   function activate(tab){
-    const ids = ['data','hidden'];
-    ids.forEach(t=>{
+    ['data','hidden'].forEach(t=>{
       const btn = document.querySelector('.tabbtn[data-tab="'+t+'"]');
-      const sec = byId('tab-'+t);
+      const sec = $('tab-'+t);
       const on = (t===tab);
       if(sec) sec.style.display = on ? 'block' : 'none';
       if(btn){
@@ -621,49 +632,43 @@ boot();
       }
     });
   }
-
-  function moveContent(){
-    const {tabs, panels, tabData, tabHidden} = ensureTabs();
-    // Wrap hiddenCanvas if needed
-    let hiddenWrap = byId('hiddenWrap');
-    const hc = byId('hiddenCanvas');
-    if(!hiddenWrap && hc){
-      hiddenWrap = document.createElement('div');
-      hiddenWrap.id = 'hiddenWrap';
-      hiddenWrap.style.overflow = 'auto';
-      hiddenWrap.style.height = 'calc(100vh - 48px)';
-      hiddenWrap.style.padding = '8px';
-      hc.parentNode.insertBefore(hiddenWrap, hc);
-      hiddenWrap.appendChild(hc);
+  function wrapHiddenCanvas(){
+    const hc = $('hiddenCanvas');
+    if(!hc) return null;
+    let wrap = $('hiddenWrap');
+    if(!wrap){
+      wrap = document.createElement('div');
+      wrap.id = 'hiddenWrap';
+      wrap.style.overflow = 'auto';
+      wrap.style.height = 'calc(100vh - 48px)';
+      wrap.style.padding = '8px';
+      hc.parentNode.insertBefore(wrap, hc);
+      wrap.appendChild(hc);
     }
-    // Move hiddenWrap into Hidden tab
-    if(hiddenWrap && hiddenWrap.parentElement !== byId('tab-hidden')){
-      byId('tab-hidden').appendChild(hiddenWrap);
+    return wrap;
+  }
+  function moveIntoHiddenTab(){
+    const wrap = $('hiddenWrap') || wrapHiddenCanvas();
+    const dest = $('tab-hidden');
+    if(wrap && dest && wrap.parentElement !== dest){
+      dest.appendChild(wrap);
     }
-    // Move everything else (except our tabs/panels/footer/debug) into Data tab if it's outside
-    const keepIds = new Set(['masterTabs','tabPanels','tab-data','tab-hidden','hiddenWrap','debugDock','pageFooter']);
-    const children = Array.from(document.body.children);
-    children.forEach(node=>{
-      if(keepIds.has(node.id)) return;
-      if(node.parentElement === byId('tab-hidden')) return; // leave hidden content in hidden tab
-      if(node.parentElement === byId('tab-data')) return;   // already in data
-      // Move into Data
-      byId('tab-data').appendChild(node);
-    });
-
-    // Hook clicks
+  }
+  function hookClicks(){
     document.querySelectorAll('.tabbtn').forEach(btn=>{
       btn.addEventListener('click', ()=> activate(btn.dataset.tab));
     });
-    // Default tab
     activate('data');
   }
-
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', moveContent);
-  } else {
-    moveContent();
+  function init(){
+    ensureTabsMarkup();
+    moveIntoHiddenTab();
+    const obs = new MutationObserver(()=> moveIntoHiddenTab());
+    obs.observe(document.body, {childList:true, subtree:true});
+    hookClicks();
   }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
 </script>
 
