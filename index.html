@@ -100,17 +100,15 @@ input[type=number], select{padding:6px 8px;border:1px solid #d6d6d6;border-radiu
 
   <section id="plotPanel" class="card" style="display:none">
     <div id="plotToolbar">
-      <strong>Hidden Extended Canvas (dev)</strong>
+      <strong>TD Diagram</strong>
       <label>Zoom (px/s)<input type="range" id="zoom" min="1" max="12" step="1" value="4"/></label>
       <button id="fitBtn">Fit</button>
       <button id="overlayBtn">Overlays…</button>
       <span id="info" class="badge">—</span>
+      <button id="copyBtn" style="margin-left:auto" title="Copy TD Diagram as image">Copy</button>
     </div>
     <div id="twoCols">
       <div style="display:flex;flex-direction:column;height:100%">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <strong>Hidden</strong><span class="badge">full horizon</span>
-        </div>
         <div id="hiddenWrap">
           <div class="plot-row">
             <canvas id="labelCanvas"></canvas>
@@ -463,17 +461,66 @@ function drawHidden(){
   ctx.fillStyle = '#fff';
   ctx.fillRect(0,0,C.width,C.height);
 
-  // Grid every 10s inside the viewport only
-  ctx.strokeStyle = '#eee';
-  ctx.lineWidth = 1;
-  const tick0 = Math.floor(v0/10)*10;
-  for(let t=tick0; t<=v1; t+=10){
-    const x = (t - v0) * pps;
-    ctx.beginPath(); ctx.moveTo(x, top-8); ctx.lineTo(x, height-10); ctx.stroke();
-    // top labels show offset from the start of the first cycle
-    ctx.fillStyle='#000'; ctx.font='10px system-ui'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-    ctx.fillText(String(Math.round(t - M)), x, top-12);
+  // Grid + tick marks (1s/5s/10s) inside the viewport only
+  const yTop    = top;           // top edge of rows
+  const yTopTickBase = top;      // where ticks attach on top
+  const yBot    = height - 10;   // bottom guideline
+  const yBotTickBase = height - 10;
+
+  const sStart = Math.floor(v0);
+  const sEnd   = Math.ceil(v1);
+
+  for(let s = sStart; s <= sEnd; s++){
+    const x = (s - v0) * pps;
+
+    if(s % 10 === 0){
+      // 10s: full vertical grid + longest ticks
+      ctx.strokeStyle = '#d0d0d0'; // slightly darker grid line
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, yTop-8); ctx.lineTo(x, yBot); ctx.stroke();
+
+      // long ticks
+      ctx.strokeStyle = '#000';
+      ctx.beginPath(); ctx.moveTo(x, yTopTickBase); ctx.lineTo(x, yTopTickBase - 10); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, yBotTickBase); ctx.lineTo(x, yBotTickBase + 10); ctx.stroke();
+
+      // top labels show offset from the start of the first cycle
+      ctx.fillStyle='#000'; ctx.font='10px system-ui'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+      ctx.fillText(String(Math.round(s - M)), x, yTop-12);
+    } else if(s % 5 === 0){
+      // 5s: medium ticks, no full grid line
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, yTopTickBase); ctx.lineTo(x, yTopTickBase - 6); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, yBotTickBase); ctx.lineTo(x, yBotTickBase + 6); ctx.stroke();
+    } else {
+      // 1s: short ticks
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, yTopTickBase); ctx.lineTo(x, yTopTickBase - 3); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, yBotTickBase); ctx.lineTo(x, yBotTickBase + 3); ctx.stroke();
+    }
   }
+
+  // Red cycle markers at every multiple of mainCycle
+  (function(){
+    const Cj = App.state.mainCycle || 60;
+    if(!Cj) return;
+    const kStart = Math.ceil(v0 / Cj);
+    const kEnd   = Math.floor(v1 / Cj);
+    ctx.save();
+    ctx.strokeStyle = '#ff0000';
+    ctx.lineWidth = 2;
+    for(let k=kStart; k<=kEnd; k++){
+      const t = k * Cj;
+      const x = (t - v0) * pps;
+      ctx.beginPath();
+      ctx.moveTo(x, yTop);
+      ctx.lineTo(x, yBot);
+      ctx.stroke();
+    }
+    ctx.restore();
+  })();
 
   // Bottom labels (absolute seconds)
   (function(){
@@ -700,6 +747,30 @@ function drawLabels(){
     const y0 = top + idx*(rowH+gap);
     lctx.fillText(j.name, 12, y0 + rowH*0.6);
   });
+  // Between-junction journey times in the left margin (A→B down, B→A up)
+  try{
+    const juncs = App.state.junctions||[];
+    lctx.save();
+    lctx.font = '11px system-ui';
+    lctx.textAlign = 'right';
+    lctx.textBaseline = 'middle';
+    lctx.fillStyle = '#333';
+    const xRight = labelW - 8; // right edge inside the gutter
+    for(let i=0;i<juncs.length-1;i++){
+      const a = juncs[i], b = juncs[i+1];
+      const y0 = top + i*(rowH+gap);
+      const midY = y0 + rowH + (gap/2);
+      const downSec = (a && typeof a.travelNext==='number') ? a.travelNext : 0; // A→B
+      const upSec   = (b && typeof b.travelPrev==='number') ? b.travelPrev : 0; // B→A
+      // Render two stacked lines: up above, down below, tightly spaced
+      const dy = Math.min(10, Math.max(6, Math.floor(gap*0.3)));
+      // Up arrow (B→A)
+      lctx.fillText(`↑ ${upSec}s`, xRight, midY - dy);
+      // Down arrow (A→B)
+      lctx.fillText(`↓ ${downSec}s`, xRight, midY + dy);
+    }
+    lctx.restore();
+  }catch(_){/* ignore */}
 }
 
 
@@ -743,6 +814,9 @@ function renderJunctionPanel(j){
 
   return `
     <div class="row">
+      <label>Name
+        <input data-t="jName" data-id="${j.id}" value="${j.name}">
+      </label>
       <label>Double cycle <input type="checkbox" data-t="double" data-id="${j.id}" ${j.doubleCycle?'checked':''}></label>
       <label>To previous (↑)<input type="number" min="${App.initCfg.journeyTime.min}" max="${App.initCfg.journeyTime.max}" value="${j.travelPrev}" data-t="travelPrev" data-id="${j.id}"></label>
       <label>To next (↓)<input type="number" min="${App.initCfg.journeyTime.min}" max="${App.initCfg.journeyTime.max}" value="${j.travelNext}" data-t="travelNext" data-id="${j.id}"></label>
@@ -795,6 +869,13 @@ function onUTCEdit(e){
 function onPanelChange(e){
   const t=e.target.getAttribute('data-t'); const id=e.target.getAttribute('data-id');
   const j=findJ(id); if(!j) return;
+  if(t==='jName'){
+    const v = (e.target.value || '').toString().slice(0,64).trim();
+    j.name = v || j.name; // keep old if blank
+    e.target.value = j.name;
+    rebuildTabs();
+    return;
+  }
   if(t==='double'){ j.doubleCycle = e.target.checked; }
   if(t==='travelPrev'){ j.travelPrev = clampInt(e.target.value, App.initCfg.journeyTime.min, App.initCfg.journeyTime.max); e.target.value=j.travelPrev; }
   if(t==='travelNext'){ j.travelNext = clampInt(e.target.value, App.initCfg.journeyTime.min, App.initCfg.journeyTime.max); e.target.value=j.travelNext; }
@@ -938,6 +1019,56 @@ drawLabels();
     setViewStart(centerSec - (viewportPx/pps)/2);
     drawHidden(); drawLabels();
   }); }
+  // Copy combined label+timeline canvas to clipboard
+  const copyBtn = document.getElementById('copyBtn');
+  if(copyBtn){
+    copyBtn.addEventListener('click', async ()=>{
+      try{
+        const label = document.getElementById('labelCanvas');
+        const plot  = document.getElementById('hiddenCanvas');
+        if(!(label && plot)) throw new Error('Canvas not ready');
+        // Ensure latest drawing
+        if(App.state.readyToPlot && App.state.validOk){ drawHidden(); drawLabels(); }
+
+        const w = (label.width|0) + (plot.width|0);
+        const h = Math.max(label.height|0, plot.height|0);
+        const off = document.createElement('canvas');
+        off.width = w; off.height = h;
+        const octx = off.getContext('2d');
+        // white background so it looks good in dark clipboards
+        octx.fillStyle = '#fff'; octx.fillRect(0,0,w,h);
+        // draw label gutter then plot
+        octx.drawImage(label, 0, 0);
+        octx.drawImage(plot,  label.width|0, 0);
+
+        const doClipboard = async (blob)=>{
+          if(!blob) throw new Error('toBlob failed');
+          if(navigator.clipboard && window.ClipboardItem){
+            await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+            log('TD Diagram copied to clipboard (PNG)', 'info');
+          }else{
+            // Fallback: download PNG
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = 'td-diagram.png';
+            document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+            alert('Clipboard API not available — downloaded PNG instead.');
+          }
+        };
+
+        if(off.toBlob){
+          off.toBlob(async (blob)=>{ try{ await doClipboard(blob); }catch(err){ console.error(err); alert('Copy failed: '+err.message); } }, 'image/png');
+        }else{
+          // Safari < 14 fallback via dataURL
+          const dataURL = off.toDataURL('image/png');
+          try{
+            const res = await fetch(dataURL);
+            const blob = await res.blob();
+            await doClipboard(blob);
+          }catch(err){ console.error(err); alert('Copy failed: '+err.message); }
+        }
+      }catch(err){ console.error(err); alert('Copy failed: '+(err && err.message ? err.message : err)); }
+    });
+  }
   // Add scroll event to timelineScroll to keep labels synced
   const scroller = document.getElementById('timelineScroll');
   if(scroller){
@@ -960,20 +1091,23 @@ drawLabels();
     const saveBtn = document.getElementById('ovlSave');
     const selFrom = document.getElementById('ovlFrom');
     const selTo   = document.getElementById('ovlTo');
-const modeSel = document.getElementById('ovlMode');
-const s = document.getElementById('ovlStart');
-const e = document.getElementById('ovlEnd');
-
+    const modeSel = document.getElementById('ovlMode');
+    const s = document.getElementById('ovlStart');
+    const e = document.getElementById('ovlEnd');
     const col = document.getElementById('ovlColor');
     const a = document.getElementById('ovlAlpha');
     const selStage = document.getElementById('ovlStage');
     const stageGroup = document.getElementById('stageGroup');
-const timeGroup  = document.getElementById('timeGroup');
-function updateModeVisibility(){
-  const m = (modeSel && modeSel.value) || 'stage';
-  if(stageGroup) stageGroup.style.display = (m==='stage') ? '' : 'none';
-  if(timeGroup)  timeGroup.style.display  = (m==='time')  ? '' : 'none';
-}               
+    const timeGroup  = document.getElementById('timeGroup');
+
+    let editingIndex = -1; // -1 => creating, >=0 => editing existing overlay
+
+    function updateModeVisibility(){
+      const m = (modeSel && modeSel.value) || 'stage';
+      if(stageGroup) stageGroup.style.display = (m==='stage') ? '' : 'none';
+      if(timeGroup)  timeGroup.style.display  = (m==='time')  ? '' : 'none';
+    }
+
     function populateJunctions(){
       const juncs = (App.state.junctions||[]);
       function fillJ(sel){
@@ -993,27 +1127,58 @@ function updateModeVisibility(){
       updateModeVisibility();
     }
 
-  function populateStages(){
-   if(!selStage) return;
-   selStage.innerHTML='';
-   const fromIdx = parseInt(selFrom && selFrom.value || '0',10) || 0;
-   const J = (App.state.junctions||[])[fromIdx];
-   const stages = (J && Array.isArray(J.stages)) ? J.stages : [];
-   stages.forEach(st=>{
-     const opt=document.createElement('option');
-     opt.value = st.label;       // value is stage label
-     opt.textContent = st.label; // display label
-      selStage.appendChild(opt);
-    }); 
-  }
+    function populateStages(){
+      if(!selStage) return;
+      selStage.innerHTML='';
+      const fromIdx = parseInt(selFrom && selFrom.value || '0',10) || 0;
+      const J = (App.state.junctions||[])[fromIdx];
+      const stages = (J && Array.isArray(J.stages)) ? J.stages : [];
+      stages.forEach(st=>{
+        const opt=document.createElement('option');
+        opt.value = st.label;       // value is stage label
+        opt.textContent = st.label; // display label
+        selStage.appendChild(opt);
+      });
+    }
 
-  function openModal(){
-    populateJunctions();
-    renderOverlayList();
-    modal.classList.add('show');
-    modal.setAttribute('aria-hidden','false');
-  }
-    function closeModal(){ modal.classList.remove('show'); modal.setAttribute('aria-hidden','true'); }
+    // Helper to prefill the overlay form from an overlay object
+    function prefillOverlayForm(ovl){
+      try{
+        if(!ovl) return;
+        // set From/To first to drive stage population
+        if(selFrom){ selFrom.value = String(ovl.from||0); }
+        if(selTo){   selTo.value   = String(ovl.to||0); }
+        populateStages();
+        // mode and visibility
+        if(modeSel){ modeSel.value = ovl.mode || 'stage'; }
+        updateModeVisibility();
+        // stage vs time
+        if((ovl.mode||'stage') === 'stage'){
+          if(selStage && ovl.stage){ selStage.value = ovl.stage; }
+        }else{
+          if(s){ s.value = String(Math.max(0, ovl.start||0)); }
+          if(e){ e.value = String(Math.max(0, ovl.end||0)); }
+        }
+        // color/alpha
+        if(col){ col.value = ovl.color || '#ffa500'; }
+        if(a){ a.value = String(typeof ovl.alpha==='number' ? ovl.alpha : 0.3); }
+      }catch(_){/* ignore */}
+    }
+
+    function openModal(){
+      editingIndex = -1; // default to creating a new overlay
+      if(saveBtn) saveBtn.textContent = 'Save overlay';
+      populateJunctions();
+      renderOverlayList();
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden','false');
+    }
+    function closeModal(){
+      editingIndex = -1;
+      if(saveBtn) saveBtn.textContent = 'Save overlay';
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden','true');
+    }
 
     if(btn){ btn.addEventListener('click', openModal); }
     if(closeBtn){ closeBtn.addEventListener('click', closeModal); }
@@ -1022,59 +1187,77 @@ function updateModeVisibility(){
     document.addEventListener('keydown', (ev)=>{ if(ev.key==='Escape' && modal.classList.contains('show')) closeModal(); });
     if(modeSel){ modeSel.addEventListener('change', updateModeVisibility); }
 
-
-
-    // Handle delete / clear-all in the overlay list
-const listBox = document.getElementById('ovlList');
-if(listBox){
-  listBox.addEventListener('click', (ev)=>{
-    const delIdx = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-del-ovl');
-    if(delIdx!=null){
-      const i = parseInt(delIdx,10);
-      if(Array.isArray(App.state._overlays) && i>=0 && i < App.state._overlays.length){
-        App.state._overlays.splice(i,1);
-        renderOverlayList();
-        if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
-      }
+    // Handle edit/delete/clear-all in the overlay list
+    const listBox = document.getElementById('ovlList');
+    if(listBox){
+      listBox.addEventListener('click', (ev)=>{
+        const editIdx = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-edit-ovl');
+        if(editIdx!=null){
+          const i = parseInt(editIdx,10);
+          if(Array.isArray(App.state._overlays) && i>=0 && i < App.state._overlays.length){
+            editingIndex = i;
+            if(saveBtn) saveBtn.textContent = 'Update overlay';
+            // open modal and prefill
+            if(!modal.classList.contains('show')){
+              modal.classList.add('show');
+              modal.setAttribute('aria-hidden','false');
+            }
+            populateJunctions();
+            prefillOverlayForm(App.state._overlays[i]);
+          }
+          return; // don't fall through to delete
+        }
+        const delIdx = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-del-ovl');
+        if(delIdx!=null){
+          const i = parseInt(delIdx,10);
+          if(Array.isArray(App.state._overlays) && i>=0 && i < App.state._overlays.length){
+            App.state._overlays.splice(i,1);
+            renderOverlayList();
+            if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
+          }
+        }
+        if(ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-clear-all')){
+          if(Array.isArray(App.state._overlays) && App.state._overlays.length){
+            App.state._overlays.length = 0;
+            renderOverlayList();
+            if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
+          }
+        }
+      });
     }
-    if(ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-clear-all')){
-      if(Array.isArray(App.state._overlays) && App.state._overlays.length){
-        App.state._overlays.length = 0;
-        renderOverlayList();
-        if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
-      }
-    }
-  });
-}
 
-
-if(selFrom){ selFrom.addEventListener('change', populateStages); }
+    if(selFrom){ selFrom.addEventListener('change', populateStages); }
 
     if(saveBtn){
       saveBtn.addEventListener('click', ()=>{
         // Lazy in-memory store for now
         App.state._overlays = App.state._overlays || [];
-        
+
         const mode = (modeSel && modeSel.value) || 'stage';
-const base = {
-  from: parseInt(selFrom.value||'0',10),
-  to:   parseInt(selTo.value||'0',10),
-  mode,
-  color: col.value||'#ffa500',
-  alpha: Math.max(0, Math.min(1, parseFloat(a.value||'0.3')||0.3))
-};
-if(mode==='stage'){
-  base.stage = (selStage && selStage.value) || null;
-}else{ // time-based
-  base.start = Math.max(0, parseFloat(s && s.value || '0')||0);
-  base.end   = Math.max(base.start, parseFloat(e && e.value || '0')||0);
-}
-App.state._overlays.push(base);
-
-renderOverlayList();
-if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
-
-        log('Overlay saved (temp): '+JSON.stringify(App.state._overlays[App.state._overlays.length-1]), 'info');
+        const base = {
+          from: parseInt(selFrom.value||'0',10),
+          to:   parseInt(selTo.value||'0',10),
+          mode,
+          color: col.value||'#ffa500',
+          alpha: Math.max(0, Math.min(1, parseFloat(a.value||'0.3')||0.3))
+        };
+        if(mode==='stage'){
+          base.stage = (selStage && selStage.value) || null;
+        }else{ // time-based
+          base.start = Math.max(0, parseFloat(s && s.value || '0')||0);
+          base.end   = Math.max(base.start, parseFloat(e && e.value || '0')||0);
+        }
+        if(editingIndex>=0){
+          // update existing
+          App.state._overlays[editingIndex] = base;
+          log('Overlay updated: '+JSON.stringify(base), 'info');
+        } else {
+          // create new
+          App.state._overlays.push(base);
+          log('Overlay saved (new): '+JSON.stringify(base), 'info');
+        }
+        renderOverlayList();
+        if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
         closeModal();
       });
     }
@@ -1089,29 +1272,23 @@ if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
         return;
       }
       const juncs = App.state.junctions||[];
-const rows = list.map((o,idx)=>{
-  const jf = juncs[o.from] ? juncs[o.from].name : ('J'+o.from);
-  const jt = juncs[o.to]   ? juncs[o.to].name   : ('J'+o.to);
-  const mode = o.mode || 'stage';
-  const detail = (mode==='stage') ? (o.stage || '—') : `${o.start||0}–${o.end||0}s`;
-  const swatch = `<span style="display:inline-block;width:10px;height:10px;background:${o.color||'#ffa500'};border:1px solid #ccc;border-radius:2px;vertical-align:middle;margin-right:6px"></span>`;
-  return `<tr>
-    <td style="text-align:left">${swatch}${jf} → ${jt}</td>
-    <td>${mode}</td>
-    <td>${detail}</td>
-    <td><button data-del-ovl="${idx}">Delete</button></td>
-  </tr>`;
-}).join('');
-box.innerHTML = `<table class="grid"><thead><tr><th>Route</th><th>Mode</th><th>Stage / Time</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-
-
-
-
-
-
-
-
-
+      const rows = list.map((o,idx)=>{
+        const jf = juncs[o.from] ? juncs[o.from].name : ('J'+o.from);
+        const jt = juncs[o.to]   ? juncs[o.to].name   : ('J'+o.to);
+        const mode = o.mode || 'stage';
+        const detail = (mode==='stage') ? (o.stage || '—') : `${o.start||0}–${o.end||0}s`;
+        const swatch = `<span style="display:inline-block;width:10px;height:10px;background:${o.color||'#ffa500'};border:1px solid #ccc;border-radius:2px;vertical-align:middle;margin-right:6px"></span>`;
+        return `<tr>
+          <td style="text-align:left">${swatch}${jf} → ${jt}</td>
+          <td>${mode}</td>
+          <td>${detail}</td>
+          <td style="white-space:nowrap">
+            <button data-edit-ovl="${idx}">Edit</button>
+            <button data-del-ovl="${idx}">Delete</button>
+          </td>
+        </tr>`;
+      }).join('');
+      box.innerHTML = `<table class="grid"><thead><tr><th>Route</th><th>Mode</th><th>Stage / Time</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>
         <div style="margin-top:8px;display:flex;justify-content:flex-end"><button data-clear-all>Clear all</button></div>`;
     }
   })();
