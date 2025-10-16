@@ -40,15 +40,6 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
 </style>
 </head>
 <body>
-<div id="masterTabs" class="tabbar" style="display:flex;gap:6px;padding:8px;border-bottom:1px solid #ddd;position:sticky;top:0;background:#fafafa;z-index:10">
-  <button class="tabbtn" data-tab="data"    style="padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#fff;cursor:pointer">Data</button>
-  <button class="tabbtn" data-tab="hidden"  style="padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#eee;cursor:pointer">Hidden ext canvas</button>
-<div style="flex:1"></div><button id="debugToggleBtn" title="Show/hide debug log" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer">Debug log</button></div>
-<div id="tabPanels">
-  <section id="tab-data" style="display:block;"></section>
-  <section id="tab-hidden" style="display:none; height: calc(100vh - 48px); overflow:auto; padding:8px;"></section>
-</div>
-
 <header>
   <h1>Signal Plan Checker <small class="muted">1.1.7-alpha</small></h1>
   <div class="row"><span class="badge">Min-green + queued (hidden)</span><span class="badge">Transfer-ready visible canvas</span></div>
@@ -68,6 +59,7 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
       </label>
       <button id="validateBtn">Validate</button>
       <button id="plotBtn" disabled>Plot</button>
+      <button id="transferBtn" disabled>Transfer to Visible</button>
       <span id="statusChip" class="infochip">Waiting for Validate…</span>
     </div>
     <div class="tabs" id="jtabs"></div>
@@ -86,7 +78,7 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <strong>Hidden</strong><span class="badge">full horizon</span>
         </div>
-        <div id="hiddenWrap" style="overflow:auto;">
+        <div id="hiddenWrap">
           <canvas id="hiddenCanvas"></canvas>
         </div>
       </div>
@@ -94,7 +86,10 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <strong>Visible</strong><span class="badge">window: cycles 1..(1+N)</span>
         </div>
+        <div id="visibleWrap">
+          <canvas id="visibleCanvas"></canvas>
         </div>
+      </div>
     </div>
   </section>
 </main>
@@ -271,8 +266,7 @@ function drawHidden(){
   }
   const C = document.getElementById('hiddenCanvas'); const ctx = C.getContext('2d');
   const M = App.state.mainCycle; const mult = App.initCfg.plot.hiddenWindowMultiplier || 5; const T = M*mult;
-  const pps = App.state.pxPerSec || 4; 
-  const left = App.initCfg.plot.leftMargin || 120; const top = App.initCfg.plot.topMargin || 24;
+  const pps = App.state.pxPerSec || 4; const left = App.initCfg.plot.leftMargin || 120; const top = App.initCfg.plot.topMargin || 24;
   const rowH = App.initCfg.plot.rowHeight || 48; const gap = App.initCfg.plot.rowGap || 18;
   const width = left + T*pps + 20; const height = top + App.state.junctions.length*(rowH+gap) + 20;
   C.width = width; C.height = height;
@@ -281,7 +275,7 @@ function drawHidden(){
   ctx.fillStyle="#fff"; ctx.fillRect(0,0,width,height);
   ctx.strokeStyle="#eee"; ctx.lineWidth=1;
   for(let t=0;t<=T;t+=10){ const x=left+t*pps; ctx.beginPath(); ctx.moveTo(x, top-8); ctx.lineTo(x, height-10); ctx.stroke();
-    ctx.fillStyle = (t < M ? '#999' : '#444'); ctx.font = '10px system-ui'; ctx.fillText(String(t - M), x-8, top-12); }
+    ctx.fillStyle="#999"; ctx.font="10px system-ui"; ctx.fillText(String(t)+'s', x-8, top-12); }
 
   const greens = ["rgba(60,180,75,0.9)","rgba(90,205,105,0.9)","rgba(120,220,135,0.9)","rgba(150,235,165,0.9)"];
 
@@ -354,6 +348,42 @@ function drawHidden(){
   log('Hidden canvas redrawn (min-green enforced)','info');
 }
 
+// ---- transfer to visible (no extra logic; just blit a window) ----
+function transferToVisible(){
+  if(!(App.state.validOk && App.state.readyToPlot)){
+    alert('Please Validate and Plot first.'); return;
+  }
+  const hidden = document.getElementById('hiddenCanvas');
+  const visible = document.getElementById('visibleCanvas');
+  const wrap = document.getElementById('visibleWrap');
+  const pps = App.state.pxPerSec || 4;
+  const M = App.state.mainCycle;
+  const N = App.state.viewCycles || 2;
+  const left = App.initCfg.plot.leftMargin || 120;
+  const top = App.initCfg.plot.topMargin || 24;
+  const Cj = M; // window cycles are based on main, starting at 1*C .. (1+N)*C
+  const sx = left + 1*Cj*pps; // start at 1*C
+  const sw = N*Cj*pps; // width of N cycles
+  const sy = 0;
+  const sh = hidden.height;
+  // size visible to match the slice
+  visible.width = sw;
+  visible.height = sh;
+  const vctx = visible.getContext('2d');
+  vctx.clearRect(0,0,visible.width,visible.height);
+  vctx.drawImage(hidden, sx, sy, sw, sh, 0, 0, sw, sh);
+  log(`Transferred window: x=${sx}px w=${sw}px from hidden→visible (cycles 1..${1+N})`,'info');
+}
+
+function drawHiddenGate(){
+  if(!App.state.validOk){ alert('Please Validate first.'); return; }
+  App.state.readyToPlot = true;
+  const p=document.getElementById('plotBtn'); if(p) p.classList.remove('dirty');
+  const x=document.getElementById('transferBtn'); if(x) x.disabled=false;
+  const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Plotted ✓';
+  log('Plot clicked — drawing (min-green enforced)','info');
+  drawHidden();
+}
 
 // ---- UI rendering (same as v1.1.6) ----
 function renderUTCEditor(j){
@@ -514,7 +544,7 @@ async function boot(){
     log('Plot clicked — drawing (hidden)','info');
     drawHidden();
   });
-  
+  document.getElementById('transferBtn').addEventListener('click', transferToVisible);
 
   const zoom = document.getElementById('zoom');
   if(zoom){ zoom.value = String(App.state.pxPerSec||4); zoom.addEventListener('input', ()=>{ App.state.pxPerSec=parseInt(zoom.value,10); drawHidden(); }); }
@@ -530,53 +560,110 @@ async function boot(){
 boot();
 </script>
 
-<footer id="pageFooter" style="margin-top:12px;padding:8px 12px;border-top:1px solid #e5e5e5;color:#444;font:12px system-ui;display:flex;justify-content:space-between;align-items:center;background:#fafafa;">
-  <span>Signal Plan Checker</span>
-  <span id="versionBadge">1.6.7-alpha</span>
-</footer>
-
-
 <script>
+// Ensure hidden canvas lives in the Hidden tab
 (function(){
-  function setVersion(v){
-    var el = document.getElementById('versionBadge');
-    if(el){ el.textContent = v; }
+  function byId(id){ return document.getElementById(id); }
+  function ensureTabs(){
+    let tabs = byId('masterTabs');
+    let panels = byId('tabPanels');
+    let tabData = byId('tab-data');
+    let tabHidden = byId('tab-hidden');
+    if(!tabs){
+      tabs = document.createElement('div');
+      tabs.id = 'masterTabs';
+      tabs.className = 'tabbar';
+      tabs.style.cssText = 'display:flex;gap:6px;padding:8px;border-bottom:1px solid #ddd;position:sticky;top:0;background:#fafafa;z-index:10';
+      const bData = document.createElement('button');
+      bData.className = 'tabbtn'; bData.dataset.tab='data';
+      bData.textContent = 'Data';
+      bData.style.cssText = 'padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#fff;cursor:pointer';
+      const bHidden = document.createElement('button');
+      bHidden.className = 'tabbtn'; bHidden.dataset.tab='hidden';
+      bHidden.textContent = 'Hidden ext canvas';
+      bHidden.style.cssText = 'padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#eee;cursor:pointer;margin-left:6px;';
+      tabs.appendChild(bData); tabs.appendChild(bHidden);
+      document.body.insertBefore(tabs, document.body.firstChild);
+    }
+    if(!panels){
+      panels = document.createElement('div');
+      panels.id = 'tabPanels';
+      document.body.insertBefore(panels, tabs.nextSibling);
+    }
+    if(!tabData){
+      tabData = document.createElement('section');
+      tabData.id = 'tab-data';
+      tabData.style.display = 'block';
+      panels.appendChild(tabData);
+    }
+    if(!tabHidden){
+      tabHidden = document.createElement('section');
+      tabHidden.id = 'tab-hidden';
+      tabHidden.style.display = 'none';
+      tabHidden.style.height = 'calc(100vh - 48px)';
+      tabHidden.style.overflow = 'auto';
+      tabHidden.style.padding = '8px';
+      panels.appendChild(tabHidden);
+    }
+    return {tabs, panels, tabData, tabHidden};
   }
-  if(window.APP_VERSION){
-    setVersion(window.APP_VERSION);
+
+  function activate(tab){
+    const ids = ['data','hidden'];
+    ids.forEach(t=>{
+      const btn = document.querySelector('.tabbtn[data-tab="'+t+'"]');
+      const sec = byId('tab-'+t);
+      const on = (t===tab);
+      if(sec) sec.style.display = on ? 'block' : 'none';
+      if(btn){
+        btn.style.background = on ? '#fff' : '#eee';
+        btn.style.borderBottom = on ? '1px solid #fff' : '1px solid #ccc';
+      }
+    });
+  }
+
+  function moveContent(){
+    const {tabs, panels, tabData, tabHidden} = ensureTabs();
+    // Wrap hiddenCanvas if needed
+    let hiddenWrap = byId('hiddenWrap');
+    const hc = byId('hiddenCanvas');
+    if(!hiddenWrap && hc){
+      hiddenWrap = document.createElement('div');
+      hiddenWrap.id = 'hiddenWrap';
+      hiddenWrap.style.overflow = 'auto';
+      hiddenWrap.style.height = 'calc(100vh - 48px)';
+      hiddenWrap.style.padding = '8px';
+      hc.parentNode.insertBefore(hiddenWrap, hc);
+      hiddenWrap.appendChild(hc);
+    }
+    // Move hiddenWrap into Hidden tab
+    if(hiddenWrap && hiddenWrap.parentElement !== byId('tab-hidden')){
+      byId('tab-hidden').appendChild(hiddenWrap);
+    }
+    // Move everything else (except our tabs/panels/footer/debug) into Data tab if it's outside
+    const keepIds = new Set(['masterTabs','tabPanels','tab-data','tab-hidden','hiddenWrap','debugDock','pageFooter']);
+    const children = Array.from(document.body.children);
+    children.forEach(node=>{
+      if(keepIds.has(node.id)) return;
+      if(node.parentElement === byId('tab-hidden')) return; // leave hidden content in hidden tab
+      if(node.parentElement === byId('tab-data')) return;   // already in data
+      // Move into Data
+      byId('tab-data').appendChild(node);
+    });
+
+    // Hook clicks
+    document.querySelectorAll('.tabbtn').forEach(btn=>{
+      btn.addEventListener('click', ()=> activate(btn.dataset.tab));
+    });
+    // Default tab
+    activate('data');
+  }
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', moveContent);
   } else {
-    try {
-      fetch('VERSION.json?v='+(Date.now())).then(r=>r.json()).then(j=>{
-        setVersion(j.version || 'unknown');
-        window.APP_VERSION = j.version || 'unknown';
-      }).catch(()=>{});
-    } catch(e){}
+    moveContent();
   }
-})();
-</script>
-
-
-<script>
-(function(){
-  const KEY = 'spc.debug.visible';
-  function qs(id){ return document.getElementById(id); }
-  function setVis(v){
-    const dock = qs('debugDock');
-    if(!dock) return;
-    dock.style.display = v ? 'block' : 'none';
-    localStorage.setItem(KEY, v ? '1' : '0');
-    const btn = qs('debugToggleBtn');
-    if(btn) btn.textContent = v ? 'Debug log ▾' : 'Debug log ▸';
-  }
-  document.addEventListener('DOMContentLoaded', function(){
-    const btn = qs('debugToggleBtn');
-    const dock = qs('debugDock');
-    if(!btn || !dock) return;
-    const saved = localStorage.getItem(KEY);
-    const show = saved === null ? false : saved === '1';
-    setVis(show);
-    btn.addEventListener('click', function(){ setVis(dock.style.display === 'none'); });
-  });
 })();
 </script>
 
