@@ -15,3 +15,7 @@
 ## v1.6.2-alpha — 2025-10-15T23:01:39Z UTC
 - TOP axis now shows **Clock B** = (t − mainCycle) labels. Pre-origin (negative) labels render in grey. 
 - Bottom testing axis remains **Clock A** (0..T) for comparison.
+
+## v1.6.3-alpha — 2025-10-15T23:08:13Z UTC
+- Auto-scroll the hidden canvas so **B=0** (i.e., **A = mainCycle**) is positioned at the **left edge** after Fit, on Hidden-tab open, and at boot.
+- Top axis remains **Clock B = t − mainCycle**; bottom axis stays **Clock A** for testing.

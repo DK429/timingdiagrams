@@ -710,7 +710,10 @@ function fitToViewCycles(){
     App.state.pxPerSec = pps;
     const zoom = document.getElementById('zoom'); if(zoom) zoom.value = String(pps);
     if(typeof drawHidden==='function') drawHidden();
-  }catch(e){ console.warn('fitToViewCycles failed', e); }
+  
+    // Scroll so B=0 (A = mainCycle) sits at the left edge
+    try { const wrap = document.getElementById('hiddenWrap'); const left = (App.initCfg.plot && App.initCfg.plot.leftMargin) || 120; const M = App.state.mainCycle; const pps = App.state.pxPerSec || 4; if(wrap){ wrap.scrollLeft = Math.max(0, left + M*pps); } } catch(e){};
+}catch(e){ console.warn('fitToViewCycles failed', e); }
 }
 </script>
 
