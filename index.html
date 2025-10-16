@@ -40,6 +40,15 @@ border:1px solid #30363d;border-radius:10px;padding:8px;font-family:ui-monospace
 </style>
 </head>
 <body>
+<div id="masterTabs" class="tabbar" style="display:flex;gap:6px;padding:8px;border-bottom:1px solid #ddd;position:sticky;top:0;background:#fafafa;z-index:10">
+  <button class="tabbtn" data-tab="data"    style="padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#fff;cursor:pointer">Data</button>
+  <button class="tabbtn" data-tab="hidden"  style="padding:8px 12px;border:1px solid #ccc;border-bottom:none;border-radius:8px 8px 0 0;background:#eee;cursor:pointer">Hidden ext canvas</button>
+</div>
+<div id="tabPanels">
+  <section id="tab-data" style="display:block;"></section>
+  <section id="tab-hidden" style="display:none; height: calc(100vh - 48px); overflow:auto; padding:8px;"></section>
+</div>
+
 <header>
   <h1>Signal Plan Checker <small class="muted">1.1.7-alpha</small></h1>
   <div class="row"><span class="badge">Min-green + queued (hidden)</span><span class="badge">Transfer-ready visible canvas</span></div>
@@ -275,7 +284,7 @@ function drawHidden(){
   ctx.fillStyle="#fff"; ctx.fillRect(0,0,width,height);
   ctx.strokeStyle="#eee"; ctx.lineWidth=1;
   for(let t=0;t<=T;t+=10){ const x=left+t*pps; ctx.beginPath(); ctx.moveTo(x, top-8); ctx.lineTo(x, height-10); ctx.stroke();
-    ctx.fillStyle = (t < M ? '#999' : '#444'); ctx.font = '10px system-ui'; ctx.fillText(String(t - M), x-8, top-12); }
+    ctx.fillStyle="#999"; ctx.font="10px system-ui"; ctx.fillText(String(t)+'s', x-8, top-12); }
 
   const greens = ["rgba(60,180,75,0.9)","rgba(90,205,105,0.9)","rgba(120,220,135,0.9)","rgba(150,235,165,0.9)"];
 
@@ -346,6 +355,47 @@ function drawHidden(){
   const info = document.getElementById('info');
   if(info) info.textContent = `Hidden T=${T}s · scale=${pps}px/s · canvas ${C.width}×${C.height}`;
   log('Hidden canvas redrawn (min-green enforced)','info');
+
+  // --- TESTING: Bottom Clock A timeline (labels in seconds) ---
+  (function(){
+    try{
+      const left = App.initCfg.plot.leftMargin || 120;
+      const top  = App.initCfg.plot.topMargin || 24;
+      const rowH = App.initCfg.plot.rowHeight || 48;
+      const gap  = App.initCfg.plot.rowGap || 8;
+      const pps  = App.state.pxPerSec || 4;
+      const mult = (App.initCfg.plot && App.initCfg.plot.hiddenWindowMultiplier) || 5;
+      const T    = App.state.mainCycle * mult; // full widened horizon
+      const height = top + App.state.junctions.length*(rowH+gap) + 20;
+      const stripH = 18;
+      const yStrip = height - 6; // just above bottom padding
+
+      // draw a white strip to stand out under the plot
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(left, yStrip - stripH + 2, (T*pps), stripH);
+
+      ctx.fillStyle = '#444';
+      ctx.font = '11px ui-monospace, Consolas, monospace';
+      ctx.textBaseline = 'alphabetic';
+
+      // Label every 10s along Clock A (0..T)
+      for(let t=0;t<=T;t+=10){
+        const x = left + t*pps;
+        // tick
+        ctx.beginPath();
+        ctx.moveTo(x, yStrip - stripH + 2);
+        ctx.lineTo(x, yStrip + 1);
+        ctx.strokeStyle = '#bbb';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // text
+        ctx.fillText(String(t)+'s', x+2, yStrip - 3);
+      }
+      ctx.restore();
+    }catch(e){ console.warn('Clock A bottom timeline failed', e); }
+  })();
+
 }
 
 // ---- transfer to visible (no extra logic; just blit a window) ----
@@ -559,5 +609,129 @@ async function boot(){
 }
 boot();
 </script>
+
+<script>
+// ---- Master Tabs (robust) ----
+(function(){
+  function byId(id){ return document.getElementById(id); }
+  const panels = byId('tabPanels');
+  const tabData = byId('tab-data');
+  const tabHidden = byId('tab-hidden');
+  if(!panels || !tabData || !tabHidden) return;
+
+  // Move known canvas wrapper to Hidden tab
+  const hiddenWrap = byId('hiddenWrap') || (function(){
+    // Try to find hiddenCanvas and wrap it if needed
+    const hc = byId('hiddenCanvas');
+    if(!hc) return null;
+    const wrap = document.createElement('div');
+    wrap.id = 'hiddenWrap';
+    wrap.style.overflow = 'auto';
+    hc.parentNode.insertBefore(wrap, hc);
+    wrap.appendChild(hc);
+    return wrap;
+  })();
+
+  if(hiddenWrap && hiddenWrap.parentElement !== tabHidden){
+    tabHidden.appendChild(hiddenWrap);
+  }
+
+  // Move other non-tab content into Data tab (except our tabs container/panels)
+  const masterTabs = byId('masterTabs');
+  const children = Array.from(document.body.children);
+  children.forEach(node=>{
+    if(node===masterTabs || node===panels || node.id==='tab-data' || node.id==='tab-hidden') return;
+    if(node.id==='hiddenWrap') return;
+    tabData.appendChild(node);
+  });
+
+  // Click handlers
+  function activate(tab){
+    ['data','hidden'].forEach(t=>{
+      const btn = document.querySelector('.tabbtn[data-tab="'+t+'"]');
+      const sec = byId('tab-'+t);
+      if(!btn || !sec) return;
+      const active = (t===tab);
+      sec.style.display = active ? 'block' : 'none';
+      btn.style.background = active ? '#fff' : '#eee';
+      btn.style.borderBottom = active ? '1px solid #fff' : '1px solid #ccc';
+    });
+    if(tab==='hidden'){
+      try{ if(typeof fitToViewCycles==='function') fitToViewCycles(); }catch(e){}
+    }
+  }
+  document.querySelectorAll('.tabbtn').forEach(btn=>{
+    btn.addEventListener('click', ()=> activate(btn.getAttribute('data-tab')));
+  });
+  // Default
+  activate('data');
+})();
+</script>
+
+
+<script>
+// --- Zoom handler for hidden canvas ---
+(function(){
+  const wrap = document.getElementById('hiddenWrap');
+  if(!wrap) return;
+  wrap.addEventListener('wheel', (ev)=>{
+    if(!(ev.ctrlKey || ev.metaKey)) return;
+    ev.preventDefault();
+    const rect = wrap.getBoundingClientRect();
+    const cx = ev.clientX - rect.left + wrap.scrollLeft;
+    const old = App.state.pxPerSec || 4;
+    const minP = 1, maxP = 20;
+    const f = (ev.deltaY < 0) ? 1.1 : 0.9;
+    let next = Math.max(minP, Math.min(maxP, Math.round(old * f)));
+    if(next === old) return;
+    const left = (App.initCfg.plot && App.initCfg.plot.leftMargin) || 120;
+    const t_before = Math.max(0, (cx - left) / old);
+    App.state.pxPerSec = next;
+    const z = document.getElementById('zoom'); if(z) z.value = String(next);
+    if(typeof drawHidden==='function') drawHidden();
+    const t_px_after = left + t_before * next;
+    wrap.scrollLeft = Math.max(0, t_px_after - (ev.clientX - rect.left));
+  }, {passive:false});
+})();
+</script>
+
+
+<script>
+function fitToViewCycles(){
+  try{
+    const wrap = document.getElementById('hiddenWrap');
+    if(!wrap) return;
+    const M = App.state.mainCycle;
+    const N = App.state.viewCycles || 2;
+    const left = (App.initCfg.plot && App.initCfg.plot.leftMargin) || 120;
+    const rightPad = 20;
+    const usable = Math.max(100, (wrap.clientWidth||wrap.offsetWidth) - left - rightPad);
+    const pps = Math.max(1, Math.floor(usable / Math.max(1, N * M)));
+    App.state.pxPerSec = pps;
+    const zoom = document.getElementById('zoom'); if(zoom) zoom.value = String(pps);
+    if(typeof drawHidden==='function') drawHidden();
+  
+    // Scroll so B=0 (A = mainCycle) sits at the left edge
+    try { const wrap = document.getElementById('hiddenWrap'); const left = (App.initCfg.plot && App.initCfg.plot.leftMargin) || 120; const M = App.state.mainCycle; const pps = App.state.pxPerSec || 4; if(wrap){ wrap.scrollLeft = Math.max(0, left + M*pps); } } catch(e){};
+}catch(e){ console.warn('fitToViewCycles failed', e); }
+}
+</script>
+
+
+<script>
+// Hook view cycles change -> fit canvas width
+(function(){
+  var vc = document.querySelector('[data-key="plot.viewCycles"]') || document.getElementById('viewCycles');
+  if(vc){
+    vc.addEventListener('change', function(){
+      var n = parseInt(vc.value, 10);
+      if(!isNaN(n)){ App.state.viewCycles = n; }
+      fitToViewCycles();
+    });
+  }
+  window.addEventListener('resize', function(){ fitToViewCycles(); });
+})();
+</script>
+
 </body>
 </html>
