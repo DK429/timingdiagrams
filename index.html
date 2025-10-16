@@ -272,8 +272,7 @@ function drawHidden(){
   const C = document.getElementById('hiddenCanvas'); const ctx = C.getContext('2d');
   const M = App.state.mainCycle; const mult = App.initCfg.plot.hiddenWindowMultiplier || 5; const T = M*mult;
   const pps = App.state.pxPerSec || 4; 
-  const M = App.state.mainCycle;
-const left = App.initCfg.plot.leftMargin || 120; const top = App.initCfg.plot.topMargin || 24;
+  const left = App.initCfg.plot.leftMargin || 120; const top = App.initCfg.plot.topMargin || 24;
   const rowH = App.initCfg.plot.rowHeight || 48; const gap = App.initCfg.plot.rowGap || 18;
   const width = left + T*pps + 20; const height = top + App.state.junctions.length*(rowH+gap) + 20;
   C.width = width; C.height = height;
@@ -355,38 +354,6 @@ const left = App.initCfg.plot.leftMargin || 120; const top = App.initCfg.plot.to
   log('Hidden canvas redrawn (min-green enforced)','info');
 }
 
-// ---- transfer to visible (no extra logic; just blit a window) ----
-  const hidden = document.getElementById('hiddenCanvas');
-  const visible = null;
-  const wrap = null;
-  const pps = App.state.pxPerSec || 4;
-  const M = App.state.mainCycle;
-  const N = App.state.viewCycles || 2;
-  const left = App.initCfg.plot.leftMargin || 120;
-  const top = App.initCfg.plot.topMargin || 24;
-  const Cj = M; // window cycles are based on main, starting at 1*C .. (1+N)*C
-  const sx = left + 1*Cj*pps; // start at 1*C
-  const sw = N*Cj*pps; // width of N cycles
-  const sy = 0;
-  const sh = hidden.height;
-  // size visible to match the slice
-  visible.width = sw;
-  visible.height = sh;
-  const vctx = visible.getContext('2d');
-  vctx.clearRect(0,0,visible.width,visible.height);
-  vctx.drawImage(hidden, sx, sy, sw, sh, 0, 0, sw, sh);
-  log(`Transferred window: x=${sx}px w=${sw}px from hidden→visible (cycles 1..${1+N})`,'info');
-}
-
-function drawHiddenGate(){
-  if(!App.state.validOk){ alert('Please Validate first.'); return; }
-  App.state.readyToPlot = true;
-  const p=document.getElementById('plotBtn'); if(p) p.classList.remove('dirty');
-  const x=document.getElementById('transferBtn'); if(x) x.disabled=false;
-  const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Plotted ✓';
-  log('Plot clicked — drawing (min-green enforced)','info');
-  drawHidden();
-}
 
 // ---- UI rendering (same as v1.1.6) ----
 function renderUTCEditor(j){
@@ -547,7 +514,7 @@ async function boot(){
     log('Plot clicked — drawing (hidden)','info');
     drawHidden();
   });
-  document.getElementById('transferBtn').addEventListener('click', transferToVisible);
+  
 
   const zoom = document.getElementById('zoom');
   if(zoom){ zoom.value = String(App.state.pxPerSec||4); zoom.addEventListener('input', ()=>{ App.state.pxPerSec=parseInt(zoom.value,10); drawHidden(); }); }
