@@ -222,6 +222,8 @@ select{min-width:6ch;padding:4px 6px}
 [data-t="travelPrev"], [data-t="travelNext"]{width:7ch}
 /* Stage label can be short */
 [data-t="stageLabel"]{width:7ch}
+/* Stage direction (icon) selector */
+[data-t="stageDir"]{width:6ch; min-width:6ch; text-align:center}
 /* UTC "at (s)" is usually short */
 [data-t="planAt"]{width:7ch;min-width:7ch}
 /* Diagonal intergreens (fixed -1) also compact */
@@ -433,6 +435,7 @@ function ensureTD2(name){
 }
 
 // Helper: build export object for save/load
+// Step (3)
 function buildExportObject(){
   const main = { mainCycle: App.state.mainCycle, viewCycles: App.state.viewCycles };
   const junctions = (App.state.junctions||[]).map(j=>({
@@ -441,7 +444,7 @@ function buildExportObject(){
     doubleCycle: !!j.doubleCycle,
     travelPrev: j.travelPrev|0,
     travelNext: j.travelNext|0,
-    stages: (j.stages||[]).map(s=>({ label:s.label, minGreenSec: s.minGreenSec|0 })),
+    stages: (j.stages||[]).map(s=>({ label:s.label, minGreenSec: s.minGreenSec|0, dir: (s.dir||'none') })),
     intergreen: (j.intergreen||[]).map(row=> row.slice()),
     utcPlan: (j.utcPlan||[]).map(r=>({ to:r.to, at: r.at|0 }))
   }));
@@ -562,8 +565,12 @@ function mkDefaultUTCPlan(cfg){
 
 function mkJunction(id, cfg){
   const nStages = Math.max(cfg.stageCount.min, cfg.stageCount.default);
-  const stages = []; const minG = cfg.stage.minGreen.default;
-  for(let i=0;i<nStages;i++){ stages.push({ label: 'S'+(i+1), minGreenSec: minG }); }
+  const stages = []; 
+  const minG = cfg.stage.minGreen.default;
+  for(let i=0;i<nStages;i++)
+    { 
+      stages.push({ label: 'S'+(i+1), minGreenSec: minG, dir: 'none' });
+    }
   const N = nStages; const ig = [];
   for(let r=0;r<N;r++){ const row=[]; for(let c=0;c<N;c++){ row.push(r===c ? cfg.intergreen.diagonalLockedValue : cfg.intergreen.defaults.offDiagonal); } ig.push(row); }
   return { id, name:'Junction '+id, doubleCycle:false, utcPlan: mkDefaultUTCPlan(cfg), stages, intergreen: ig, travelPrev: cfg.journeyTime.default, travelNext: cfg.journeyTime.default };
@@ -731,6 +738,135 @@ function drawArrowLine(ctx, x1, y1, x2, y2){
   ctx.closePath();
   ctx.fillStyle = ctx.strokeStyle;
   ctx.fill();
+}
+
+//(8)
+// Draw a small direction icon inside a green bar.
+// dir: 'none' | 'E' | 'W' | 'N' | 'S' | 'EW' | 'NS' | 'P' (pedestrian)
+function drawStageDirIcon(ctx, dir, x, y){
+  if (!dir || dir === 'none') return;
+
+  ctx.save();
+
+  // Common styling: crisp white with a soft drop shadow for contrast on green
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffffff';
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = 3;
+
+  // Arrow geometry (kept small so it fits even in compact rows)
+  const shaft = 14;   // shaft length
+  const head  = 6;    // arrow head size
+  const half  = shaft / 2;
+
+  function hArrowRight(cx, cy){
+    // shaft
+    ctx.beginPath();
+    ctx.moveTo(cx - half, cy);
+    ctx.lineTo(cx + half, cy);
+    ctx.stroke();
+    // head (right)
+    ctx.beginPath();
+    ctx.moveTo(cx + half, cy);
+    ctx.lineTo(cx + half - head, cy - head * 0.6);
+    ctx.lineTo(cx + half - head, cy + head * 0.6);
+    ctx.closePath();
+    ctx.fill();
+  }
+  function hArrowLeft(cx, cy){
+    ctx.beginPath();
+    ctx.moveTo(cx + half, cy);
+    ctx.lineTo(cx - half, cy);
+    ctx.stroke();
+    // head (left)
+    ctx.beginPath();
+    ctx.moveTo(cx - half, cy);
+    ctx.lineTo(cx - half + head, cy - head * 0.6);
+    ctx.lineTo(cx - half + head, cy + head * 0.6);
+    ctx.closePath();
+    ctx.fill();
+  }
+  function vArrowUp(cx, cy){
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + half);
+    ctx.lineTo(cx, cy - half);
+    ctx.stroke();
+    // head (up)
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - half);
+    ctx.lineTo(cx - head * 0.6, cy - half + head);
+    ctx.lineTo(cx + head * 0.6, cy - half + head);
+    ctx.closePath();
+    ctx.fill();
+  }
+  function vArrowDown(cx, cy){
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - half);
+    ctx.lineTo(cx, cy + half);
+    ctx.stroke();
+    // head (down)
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + half);
+    ctx.lineTo(cx - head * 0.6, cy + half - head);
+    ctx.lineTo(cx + head * 0.6, cy + half - head);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Render based on direction value
+  if (dir === 'E'){
+    hArrowRight(x, y);
+  } else if (dir === 'W'){
+    hArrowLeft(x, y);
+  } else if (dir === 'N'){
+    vArrowUp(x, y);
+  } else if (dir === 'S'){
+    vArrowDown(x, y);
+  } else if (dir === 'EW'){
+    // Double-headed horizontal (left + right)
+    // Slightly compress so both heads fit nicely
+    const dx = 0;
+    hArrowLeft (x - dx, y);
+    hArrowRight(x + dx, y);
+  } else if (dir === 'NS'){
+    // Double-headed vertical (up + down)
+    const dy = 0;
+    vArrowUp  (x, y - dy);
+    vArrowDown(x, y + dy);
+  } else if (dir === 'P'){
+    // Finer pedestrian stick-figure
+    // Slightly thinner lines for detail on small bars
+    const lw = 1.6;
+    ctx.lineWidth = lw;
+
+    // Head
+    ctx.beginPath();
+    ctx.arc(x, y - 6, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Body
+    ctx.beginPath();
+    ctx.moveTo(x, y - 3);
+    ctx.lineTo(x, y + 6);
+    ctx.stroke();
+
+    // Arms (angled)
+    ctx.beginPath();
+    ctx.moveTo(x - 5, y);
+    ctx.lineTo(x + 5, y);
+    ctx.stroke();
+
+    // Legs (angled)
+    ctx.beginPath();
+    ctx.moveTo(x, y + 6);
+    ctx.lineTo(x - 4, y + 12);
+    ctx.moveTo(x, y + 6);
+    ctx.lineTo(x + 4, y + 12);
+    ctx.stroke();
+  }
+
+  ctx.restore();
 }
 
 // ---- validation
@@ -1009,23 +1145,36 @@ function drawHidden(){
         if(e > s){
           ctx.fillStyle = greens[curIdx % greens.length];
           ctx.fillRect((s - v0)*pps, y0+6, (e - s)*pps, rowH-12);
-          // Stage label centered in the green bar
-          const wpx = (e - s) * pps;
-          if(wpx >= 28){
-            const xMid = ((s + e)/2 - v0) * pps;
-            const yMid = y0 + rowH/2;
-            const fs = Math.min(14, Math.max(10, Math.floor(rowH * 0.36)));
-            ctx.save();
-            ctx.font = fs + 'px system-ui';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            // subtle shadow for contrast on green backgrounds
-            ctx.shadowColor = 'rgba(0,0,0,0.45)';
-            ctx.shadowBlur = 3;
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(j.stages[curIdx].label, xMid, yMid);
-            ctx.restore();
-          }
+
+// (9)
+const wpx = (e - s) * pps;
+if(wpx >= 28){
+  const xMid = ((s + e)/2 - v0) * pps;
+  const yMid = y0 + rowH/2;
+  const fs = Math.min(14, Math.max(10, Math.floor(rowH * 0.36)));
+
+  // If a direction icon is set, nudge the text left a little to make room
+  const hasDir = !!(j.stages[curIdx] && j.stages[curIdx].dir && j.stages[curIdx].dir!=='none');
+  const textX = hasDir ? (xMid - 10) : xMid;
+
+  ctx.save();
+  ctx.font = fs + 'px system-ui';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // subtle shadow for contrast on green backgrounds
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = 3;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(j.stages[curIdx].label, textX, yMid);
+  ctx.restore();
+
+  // draw the small direction icon to the right of the label if present
+  if(hasDir){
+    drawStageDirIcon(ctx, j.stages[curIdx].dir, xMid + 12, yMid);
+  }
+}
+
+
           // Start/End time labels (relative to junction cycle Cj)
           // Start is (RCi + igPrev) modulo Cj; End is RCn modulo Cj
           const tStartC = ((RCi + igPrev) % Cj + Cj) % Cj; // normalized into [0, Cj)
@@ -1310,10 +1459,22 @@ function renderJunctionPanel(j){
   const cfg = App.initCfg; const N=j.stages.length;
   let rows = '';
   for(let i=0;i<N;i++){
-    rows += `<tr>
-      <td><input data-t="stageLabel" data-id="${j.id}" data-idx="${i}" value="${j.stages[i].label}"></td>
-      <td><input type="number" min="${cfg.stage.minGreen.min}" value="${j.stages[i].minGreenSec}" data-t="minGreen" data-id="${j.id}" data-idx="${i}"></td>
-    </tr>`;
+  rows += `<tr>
+    <td><input data-t="stageLabel" data-id="${j.id}" data-idx="${i}" value="${j.stages[i].label}"></td>
+    <td><input type="number" min="${cfg.stage.minGreen.min}" value="${j.stages[i].minGreenSec}" data-t="minGreen" data-id="${j.id}" data-idx="${i}"></td>
+    <td>
+     <select data-t="stageDir" data-id="${j.id}" data-idx="${i}">
+        <option value="none" ${j.stages[i].dir==='none'?'selected':''}>—</option>
+        <option value="E" ${j.stages[i].dir==='E'?'selected':''}>→</option>
+        <option value="W" ${j.stages[i].dir==='W'?'selected':''}>←</option>
+        <option value="N" ${j.stages[i].dir==='N'?'selected':''}>↑</option>
+        <option value="S" ${j.stages[i].dir==='S'?'selected':''}>↓</option>
+        <option value="EW" ${j.stages[i].dir==='EW'?'selected':''}>↔</option>
+        <option value="NS" ${j.stages[i].dir==='NS'?'selected':''}>↕</option>
+        <option value="P" ${j.stages[i].dir==='P'?'selected':''}>Ped</option>
+      </select>
+    </td>
+  </tr>`;
   }
   let ig = '<table class="grid compact auto"><thead><tr><th>From \\ To</th>';
   for(let c=0;c<N;c++){ ig += `<th>${j.stages[c].label}</th>`; }
@@ -1327,7 +1488,7 @@ function renderJunctionPanel(j){
     ig += '</tr>';
   }
   ig += '</tbody></table>';
-
+// (5)
 return `
   <div class="row">
     <label>Name
@@ -1343,7 +1504,7 @@ return `
     <div>
       <h4>Stages</h4>
       <table class="grid compact auto">
-        <thead><tr><th>Label</th><th>Min green (s)</th></tr></thead>
+        <thead><tr><th>Label</th><th>Min green (s)</th><th>Dir</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
@@ -1424,6 +1585,14 @@ function onPanelChange(e){
   if(t==='stageCount'){ const n = Math.max(App.initCfg.stageCount.min, Math.min(8, parseInt(e.target.value||2,10))); resizeStages(j, n); rebuildTabs(); }
   if(t==='stageLabel'){ const idx=parseInt(e.target.getAttribute('data-idx'),10); j.stages[idx].label = e.target.value|| ('S'+(idx+1)); rebuildTabs(); }
   if(t==='minGreen'){ const idx=parseInt(e.target.getAttribute('data-idx'),10); j.stages[idx].minGreenSec = Math.max(App.initCfg.stage.minGreen.min, parseInt(e.target.value||App.initCfg.stage.minGreen.default,10)); e.target.value=j.stages[idx].minGreenSec; }
+// (6) 
+  if(t==='stageDir'){
+    const idx=parseInt(e.target.getAttribute('data-idx'),10);
+    const v = String(e.target.value||'none');
+    j.stages[idx].dir = v;
+    return;
+  }
+ 
   if(t==='ig'){ const r=parseInt(e.target.getAttribute('data-r'),10), c=parseInt(e.target.getAttribute('data-c'),10);
     let v = parseInt(e.target.value||0,10); if(v!==-1) v = Math.max(App.initCfg.intergreen.domain.min, Math.min(App.initCfg.intergreen.domain.max, v));
     j.intergreen[r][c] = v; e.target.value = v; }
@@ -1435,12 +1604,15 @@ function resizeStages(j, n){
   const minG = App.initCfg.stage.minGreen.default;
   while(j.stages.length < n){ j.stages.push({label:'S'+(j.stages.length+1), minGreenSec:minG}); }
   while(j.stages.length > n){ j.stages.pop(); }
-  const N = j.stages.length;
-  const igNew = [];
-  for(let r=0;r<N;r++){ const row=[]; for(let c=0;c<N;c++){ row.push(r===c ? App.initCfg.intergreen.diagonalLockedValue : (j.intergreen[r] && typeof j.intergreen[r][c]==='number' ? j.intergreen[r][c] : App.initCfg.intergreen.defaults.offDiagonal)); } igNew.push(row); }
-  j.intergreen = igNew;
-  j.utcPlan.forEach(p=>{ if(!j.stages.find(s=>s.label===p.to)) p.to = j.stages[0].label; });
-}
+  // (7)
+  // Ensure every stage has a dir property
+  j.stages.forEach(s => { if(!('dir' in s)) s.dir = 'none'; });
+    const N = j.stages.length;
+    const igNew = [];
+    for(let r=0;r<N;r++){ const row=[]; for(let c=0;c<N;c++){ row.push(r===c ? App.initCfg.intergreen.diagonalLockedValue : (j.intergreen[r] && typeof j.intergreen[r][c]==='number' ? j.intergreen[r][c] : App.initCfg.intergreen.defaults.offDiagonal)); } igNew.push(row); }
+      j.intergreen = igNew;
+      j.utcPlan.forEach(p=>{ if(!j.stages.find(s=>s.label===p.to)) p.to = j.stages[0].label; });
+  }
 
 // ---- boot
 async function boot(){
@@ -1611,6 +1783,7 @@ if(saveBtn){
         }
 
         // Apply junctions
+        // (4)
         if(Array.isArray(obj.junctions)){
           App.state.junctions = obj.junctions.map(j=>({
             id: j.id,
@@ -1618,7 +1791,7 @@ if(saveBtn){
             doubleCycle: !!j.doubleCycle,
             travelPrev: j.travelPrev|0,
             travelNext: j.travelNext|0,
-            stages: (j.stages||[]).map(s=>({ label: s.label, minGreenSec: s.minGreenSec|0 })),
+            stages: (j.stages||[]).map(s=>({ label: s.label, minGreenSec: s.minGreenSec|0, dir: (s.dir||'none') })),
             intergreen: (j.intergreen||[]).map(row => row.slice()),
             utcPlan: (j.utcPlan||[]).map(r => ({ to: r.to, at: r.at|0 }))
           }));
