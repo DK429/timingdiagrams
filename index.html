@@ -47,20 +47,51 @@ input[type=number], select{padding:6px 8px;border:1px solid #d6d6d6;border-radiu
 /* Overlay modal */
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:10000}
 .modal-backdrop.show{display:flex}
-.modal-card{width:min(720px,90vw);max-height:80vh;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.modal-card{width:auto;max-width:min(720px,90vw);max-height:80vh;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+/* Allow modal card to be positioned by JS (for dragging) */
+.modal-card{ position:absolute; }
+/* Make modal headers show a move cursor while draggable */
+.modal-card header{ cursor:move; user-select:none; }
 .modal-card header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line)}
 .modal-card .body{padding:12px 14px}
 .modal-card footer{display:flex;gap:8px;justify-content:flex-end;padding:12px 14px;border-top:1px solid var(--line)}
 .modal-card h3{margin:0;font-size:16px}
 .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .modal-grid label{font-size:12px}
-.modal-grid input[type=number], .modal-grid select, .modal-grid input[type=color]{width:100%}
+.modal-grid input[type=number], .modal-grid select, .modal-grid input[type=color]{width:auto}
+/* Compact modal control sizing */
+.modal-grid{ grid-template-columns:max-content max-content; column-gap:16px; row-gap:10px; align-items:end; }
+.modal-grid label{ white-space:nowrap; }
+
+/* Number inputs: leave room for spinner controls */
+.modal-grid input[type=number]{ width:7ch; min-width:7ch; }
+
+/* Specific fields */
+#ovlStart, #ovlEnd, #adjOffset{ width:7ch; }
+#ovlAlpha{ width:6ch; }
+#adjBoundaries input[type=number]{ width:7ch; }
+
+/* Stage selector a bit wider than numbers */
+#ovlStage{ width:10ch; }
+
+/* From/To junction selects: moderate width for names */
+#ovlFrom, #ovlTo{ width:18ch; }
+
+/* Main colour input: narrow to match adjacent inputs */
+#ovlColor{ width:8ch; }
+
+/* Place Stage or Time group in the second column next to Mode */
+#stageGroup, #timeGroup{ grid-column: 2; }
+
+/* Time-based inputs inline: Start then End, aligned to the bottom like other controls */
+#timeGroup{ display:flex; gap:12px; align-items:end; }
+#timeGroup label{ margin:0; white-space:nowrap; }
 /* Normalize iOS Safari colour input (fix deformed oval & rainbow ring) */
 .modal-grid input[type="color"]{
   -webkit-appearance: none;   /* remove iOS special control styling */
   appearance: none;
   display: block;
-  width: 100%;
+  width: auto;
   height: 32px;               /* consistent height */
   padding: 0;                 /* iOS adds internal padding */
   border: 1px solid #ccc;
@@ -340,6 +371,61 @@ function setStatus(msg){
       setTimeout(()=>{ chip.style.backgroundColor = old || '#fff'; }, 250);
     }
   }catch(_){/* noop */}
+}
+
+// Enable drag-to-move on a modal by id (e.g., 'ovlModal' or 'adjModal')
+function enableDragModal(modalId){
+  const backdrop = document.getElementById(modalId);
+  if(!backdrop) return;
+  const card = backdrop.querySelector('.modal-card');
+  if(!card) return;
+
+  // Only init once per modal
+  if(card.__dragInit) return; 
+  card.__dragInit = true;
+
+  // Ensure absolute positioning (CSS also sets this)
+  card.style.position = 'absolute';
+
+  // Center once on first open if no left/top set
+  function centerOnce(){
+    const br = backdrop.getBoundingClientRect();
+    const cr = card.getBoundingClientRect();
+    if(!card.style.left && !card.style.top){
+      const left = Math.max(8, (br.width  - cr.width )/2);
+      const top  = Math.max(8, (br.height - cr.height)/2);
+      card.style.left = left + 'px';
+      card.style.top  = top  + 'px';
+    }
+  }
+  centerOnce();
+
+  const header = card.querySelector('header') || card; // drag by header if present
+  let dragging=false, startX=0, startY=0, baseLeft=0, baseTop=0;
+
+  header.addEventListener('pointerdown', (e)=>{
+    dragging = true;
+    startX = e.clientX; startY = e.clientY;
+    const cs = getComputedStyle(card);
+    baseLeft = parseFloat(cs.left)||0; baseTop = parseFloat(cs.top)||0;
+    try{ header.setPointerCapture(e.pointerId); }catch(_){}
+    document.body.style.userSelect = 'none';
+  });
+  header.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    const dx = e.clientX - startX; const dy = e.clientY - startY;
+    const br = backdrop.getBoundingClientRect();
+    const cr = card.getBoundingClientRect();
+    let nl = baseLeft + dx; let nt = baseTop + dy;
+    // clamp within viewport with 8px margin
+    nl = Math.max(8, Math.min(br.width  - cr.width  - 8, nl));
+    nt = Math.max(8, Math.min(br.height - cr.height - 8, nt));
+    card.style.left = nl + 'px';
+    card.style.top  = nt + 'px';
+  });
+  function endDrag(){ dragging=false; document.body.style.userSelect=''; }
+  header.addEventListener('pointerup', endDrag);
+  header.addEventListener('pointercancel', endDrag);
 }
 
 window.addEventListener('error', e=>log('ERROR: '+(e.message||e.error),'err'));
@@ -717,6 +803,28 @@ function drawHidden(){
   App.state.junctions.forEach((j, idx)=>{
     const y0 = top + idx*(rowH+gap);
     ctx.strokeStyle = '#ddd'; ctx.strokeRect(0, y0, viewportPx, rowH);
+    // Row-level tick bar (replicates the top time ticks for each junction row)
+    (function(){
+      const sStartRow = Math.floor(v0);
+      const sEndRow   = Math.ceil(v1);
+      for(let ss = sStartRow; ss <= sEndRow; ss++){
+        const xx = (ss - v0) * pps;
+        // 10s: longest ticks; 5s: medium; 1s: short
+        if(ss % 10 === 0){
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(xx, y0); ctx.lineTo(xx, y0 - 10); ctx.stroke();
+        } else if(ss % 5 === 0){
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(xx, y0); ctx.lineTo(xx, y0 - 6); ctx.stroke();
+        } else {
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(xx, y0); ctx.lineTo(xx, y0 - 3); ctx.stroke();
+        }
+      }
+    })();
 
     const rc = computeRealisedCycleAdj(j);
     if(!rc.ok){ ctx.fillStyle = '#b00020'; ctx.fillText('ERR: '+rc.err.join(' | '), 8, y0+14); return; }
@@ -768,6 +876,33 @@ function drawHidden(){
             ctx.fillText(j.stages[curIdx].label, xMid, yMid);
             ctx.restore();
           }
+          // Start/End time labels (relative to junction cycle Cj)
+          // Start is (RCi + igPrev) modulo Cj; End is RCn modulo Cj
+          const tStartC = ((RCi + igPrev) % Cj + Cj) % Cj; // normalized into [0, Cj)
+          const tEndC   = ((RCn) % Cj + Cj) % Cj;
+
+          ctx.save();
+          ctx.fillStyle = '#000';
+          ctx.font = '10px system-ui';
+          // Place labels above the per-row tick marks for most rows,
+          // but for the TOP junction row (idx === 0) place them *below* the bar
+          // so they don't clash with the main timing bar at the very top.
+          const isTopRow = (idx === 0);
+          const yLabel = isTopRow ? (y0 + rowH + 12) : (y0 - 12);
+          ctx.textBaseline = isTopRow ? 'top' : 'bottom';
+          ctx.textAlign = 'center';
+
+          // Draw start label if the start tick is within the viewport
+          if(segStartAbs >= v0 && segStartAbs <= v1){
+            const xStart = (segStartAbs - v0) * pps;
+            ctx.fillText(String(Math.round(tStartC)), xStart, yLabel);
+          }
+          // Draw end label if the end tick is within the viewport
+          if(segEndAbs >= v0 && segEndAbs <= v1){
+            const xEnd = (segEndAbs - v0) * pps;
+            ctx.fillText(String(Math.round(tEndC)), xEnd, yLabel);
+          }
+          ctx.restore();
         }
 
         // queued change delay marker (clipped)
@@ -1528,6 +1663,7 @@ if(clearAllBtn){
       renderAdjustList();
       const m = document.getElementById('adjModal');
       if(m){ m.classList.add('show'); m.setAttribute('aria-hidden','false'); }
+      if(m){ enableDragModal('adjModal'); }
     }
     function close(){ const m=document.getElementById('adjModal'); if(m){ m.classList.remove('show'); m.setAttribute('aria-hidden','true'); } }
 
@@ -1763,6 +1899,7 @@ if(clearAllBtn){
       renderOverlayList();
       modal.classList.add('show');
       modal.setAttribute('aria-hidden','false');
+      enableDragModal('ovlModal');
     }
 
     function closeModal(){
