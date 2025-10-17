@@ -5,19 +5,19 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Signal Plan Checker 2.0.0</title>
 <style>
-:root{--bg:#ffffff;--card:#f8f9fb;--line:#e8e8e8;--ink:#222;--muted:#666;--accent:#0a66ff;--errbg:#fff4f4;--errbd:#f5c2c7;--errink:#842029}
+:root{--bg:#ffffff;--card:#f8f9fb;--line:#e8e8e8;--ink:#222;--muted:#666;--accent:#0a66ff;--errbg:#fff4f4;--errbd:#f5c2c7;--errink:#842029;--block-gap:12px;--mincol:4ch;--utcPlan-vshift:2rem;}
 *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;height:100%}
 header{padding:14px 16px;border-bottom:1px solid var(--line);background:#fafafa}
 h1{font-size:18px;margin:0} small.muted{color:var(--muted)}
 main{height:calc(100vh - 60px);display:grid;grid-template-rows:auto 1fr;gap:10px;padding:10px}
-.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}
 .alert{display:none;margin:8px 0;padding:10px 12px;border:1px solid var(--errbd);background:var(--errbg);color:var(--errink);border-radius:8px}
 .alert.show{display:block}
 .tabs{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
 .tab{padding:8px 10px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:#f1f3f6;cursor:pointer}
 .tab.active{background:#fff}
-.tabpanel{display:none;border:1px solid var(--line);border-radius:0 10px 10px 10px;padding:10px;background:#fff;max-height:40vh;overflow:auto}
+.tabpanel{display:none;border:1px solid var(--line);border-radius:0 10px 10px 10px;padding:8px;background:#fff;overflow:auto;min-height:0}
 .tabpanel.active{display:block}
 .grid{border-collapse:collapse;width:100%} .grid th,.grid td{border:1px solid #eee;padding:6px 8px;font-size:12px;text-align:center} .grid th{background:#f7f7f7}
 button{padding:8px 10px;border:1px solid #d0d0d0;border-radius:8px;background:#f7f7f7;cursor:pointer;transition:box-shadow .15s,border-color .15s}
@@ -58,13 +58,85 @@ input[type=number], select{padding:6px 8px;border:1px solid #d6d6d6;border-radiu
 
 .logline.info{color:#a5d6ff} .logline.warn{color:#ffd27f} .logline.err{color:#ffb4b4}
 .infochip{padding:4px 8px;border-radius:999px;border:1px solid #e0e0e0;background:#fff;font-size:12px}
+.infobar{display:block;width:100%;margin-top:8px}
+.infobar-wrap{margin-top:6px}
 #twoCols{display:grid;grid-template-columns:1fr;gap:10px;height:100%}
+
+/* Data panel should fill available height */
+#dataPanel{display:flex;flex-direction:column;height:100%;min-height:0}
+#jtabs{flex:0 0 auto}
+#tabpanels{flex:1 1 auto;min-height:0;overflow:auto;display:block}
+#tabpanels .tabpanel.active{display:block}
+
+/* Tighter tables and labels */
+.grid th,.grid td{padding:4px 6px}
+label{gap:2px}
+
+/* Default compact number/select fields */
+input[type=number]{min-width:5ch;padding:4px 6px}
+select{min-width:6ch;padding:4px 6px}
+
+/* Compact grids that don't stretch full width */
+.grid.auto{width:auto;display:inline-table}
+.grid.compact th,.grid.compact td{padding:3px 4px}
+.grid.auto th,.grid.auto td{white-space:nowrap}
+.grid.compact td input[type=number]{margin:0}
+
+/* Stages + Intergreens side-by-side */
+/* Stages + Intergreens side-by-side */
+.stage-ig{
+  display:grid;
+  grid-template-columns:max-content max-content; /* prevent tracks from stretching */
+  place-items:start;              /* align + justify items at start */
+  row-gap:6px;
+  column-gap:4ch;
+  margin-top:var(--block-gap);
+}
+.stage-ig > *{
+  justify-self:start;
+  align-self:start;
+  width:max-content;              /* shrink to content instead of filling the track */
+}
+.stage-ig .ig-col h4{
+  max-width:36ch;                 /* long header wraps and doesn't widen the column */
+  white-space:normal;
+}
+/* pull the Intergreen column a bit left to align under the 'To previous' input */
+.stage-ig .ig-col{--ig-shift:2ch;margin-left:var(--ig-shift)}
+@media (max-width:760px){.stage-ig{grid-template-columns:1fr}.stage-ig .ig-col{margin-left:0}}
+ .section-title{display:flex;align-items:center;gap:8px;margin:var(--block-gap) 0 6px 0}
+ .section-title h4{margin:0}
+
+/* Allow vertical shifting of the UTC Plan section */
+.utc-plan-section{
+  margin-top:var(--utcPlan-vshift);
+}
+@media (max-width:760px){.stage-ig{grid-template-columns:1fr}}
+
+[data-t="jName"] {
+  width: 15ch;
+}
+/* Specific compact widths for common fields */
+/* 2‑char numbers (min greens, intergreens) */
+[data-t="minGreen"], [data-t="ig"]{width:4ch}
+/* 3‑char numbers (journey times) */
+/* Journey times: allow extra room for spinner controls */
+[data-t="travelPrev"], [data-t="travelNext"]{width:7ch}
+/* Stage label can be short */
+[data-t="stageLabel"]{width:7ch}
+/* UTC "at (s)" is usually short */
+[data-t="planAt"]{width:4ch}
+/* Diagonal intergreens (fixed -1) also compact */
+.ig-lock{width:4ch;min-width:4ch;box-sizing:border-box;text-align:center;padding:4px 6px}
 </style>
 </head>
 <body>
+
 <header>
   <h1>Signal Plan Checker <small class="muted">2.0.0</small></h1>
-  <div class="row"><span class="badge">Min-green + queued (hidden)</span><span class="badge">Transfer-ready visible canvas</span></div>
+  <div class="infobar-wrap">
+    <span id="statusChip" class="infochip infobar">Waiting for Validate…</span>
+  </div>
 </header>
  
   <div class="tabs" id="masterTabs" style="margin:8px 10px 0">
@@ -74,7 +146,7 @@ input[type=number], select{padding:6px 8px;border:1px solid #d6d6d6;border-radiu
   </div>
 
 <main>
-  <section class="card">
+  <section class="card" id="dataPanel">
     <!-- data panel -->
     <!-- Was the main data input card; give it an id so we can toggle tabs -->
     
@@ -92,7 +164,6 @@ input[type=number], select{padding:6px 8px;border:1px solid #d6d6d6;border-radiu
       </label>
   <button id="validateBtn">Validate</button>
   <button id="plotBtn" disabled>Plot</button>
-      <span id="statusChip" class="infochip">Waiting for Validate…</span>
     </div>
     <div class="tabs" id="jtabs"></div>
     <div id="tabpanels"></div>
@@ -830,9 +901,10 @@ function renderUTCEditor(j){
       <td><button data-t="planDel" data-id="${j.id}" data-idx="${i}">Delete</button></td>
     </tr>`;
   });
-  return `<h4>UTC Plan</h4>
-  <table class="grid"><thead><tr><th>To stage</th><th>At (s)</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-  <button data-t="planAdd" data-id="${j.id}">Add change</button>`;
+  return `<div class="utc-plan-section">
+  <div class="section-title"><h4>UTC Plan</h4><button data-t="planAdd" data-id="${j.id}">Add change</button></div>
+  <table class="grid compact auto"><thead><tr><th>To stage</th><th>At (s)</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+  </div>`;
 }
 
 function renderJunctionPanel(j){
@@ -844,38 +916,64 @@ function renderJunctionPanel(j){
       <td><input type="number" min="${cfg.stage.minGreen.min}" value="${j.stages[i].minGreenSec}" data-t="minGreen" data-id="${j.id}" data-idx="${i}"></td>
     </tr>`;
   }
-  let ig = '<table class="grid"><thead><tr><th>From \\ To</th>';
+  let ig = '<table class="grid compact auto"><thead><tr><th>From \\ To</th>';
   for(let c=0;c<N;c++){ ig += `<th>${j.stages[c].label}</th>`; }
   ig += '</tr></thead><tbody>';
   for(let r=0;r<N;r++){
     ig += `<tr><th>${j.stages[r].label}</th>`;
     for(let c=0;c<N;c++){
-      if(r===c){ ig += `<td><input value="${cfg.intergreen.diagonalLockedValue}" disabled></td>`; }
+      if(r===c){ ig += `<td><input class="ig-lock" value="${cfg.intergreen.diagonalLockedValue}" disabled></td>`; }
       else{ ig += `<td><input type="number" step="1" min="-1" max="${cfg.intergreen.domain.max}" value="${j.intergreen[r][c]}" data-t="ig" data-id="${j.id}" data-r="${r}" data-c="${c}"></td>`; }
     }
     ig += '</tr>';
   }
   ig += '</tbody></table>';
 
-  return `
-    <div class="row">
-      <label>Name
-        <input data-t="jName" data-id="${j.id}" value="${j.name}">
-      </label>
-      <label>Double cycle <input type="checkbox" data-t="double" data-id="${j.id}" ${j.doubleCycle?'checked':''}></label>
-      <label>To previous (↑)<input type="number" min="${App.initCfg.journeyTime.min}" max="${App.initCfg.journeyTime.max}" value="${j.travelPrev}" data-t="travelPrev" data-id="${j.id}"></label>
-      <label>To next (↓)<input type="number" min="${App.initCfg.journeyTime.min}" max="${App.initCfg.journeyTime.max}" value="${j.travelNext}" data-t="travelNext" data-id="${j.id}"></label>
-      <label>Stage count<input type="number" min="${App.initCfg.stageCount.min}" max="8" value="${j.stages.length}" data-t="stageCount" data-id="${j.id}"></label>
+return `
+  <div class="row">
+    <label>Name
+      <input data-t="jName" data-id="${j.id}" value="${j.name}">
+    </label>
+    <label>Double cycle <input type="checkbox" data-t="double" data-id="${j.id}" ${j.doubleCycle?'checked':''}></label>
+    <label>To previous (↑)<input type="number" min="${App.initCfg.journeyTime.min}" max="${App.initCfg.journeyTime.max}" value="${j.travelPrev}" data-t="travelPrev" data-id="${j.id}"></label>
+    <label>To next (↓)<input type="number" min="${App.initCfg.journeyTime.min}" max="${App.initCfg.journeyTime.max}" value="${j.travelNext}" data-t="travelNext" data-id="${j.id}"></label>
+    <label>Stage count<input type="number" min="${App.initCfg.stageCount.min}" max="8" value="${j.stages.length}" data-t="stageCount" data-id="${j.id}"></label>
+  </div>
+
+  <div class="stage-ig">
+    <div>
+      <h4>Stages</h4>
+      <table class="grid compact auto">
+        <thead><tr><th>Label</th><th>Min green (s)</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
     </div>
-    <h4>Stages</h4>
-    <table class="grid">
-      <thead><tr><th>Label</th><th>Min green (s)</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <h4>Intergreen matrix (leading intergreen; -1 = not permitted)</h4>
-    ${ig}
-    ${renderUTCEditor(j)}
-  `;
+    <div class="ig-col">
+      <h4>Intergreen matrix (leading intergreen; -1 = not permitted)</h4>
+      ${ig}
+    </div>
+  </div>
+
+  ${renderUTCEditor(j)}
+`;
+
+
+
+
+
+  
+  
+  
+
+
+
+
+
+
+
+
+
+  
 }
 
 function rebuildTabs(){
@@ -915,7 +1013,7 @@ function onPanelChange(e){
   const t=e.target.getAttribute('data-t'); const id=e.target.getAttribute('data-id');
   const j=findJ(id); if(!j) return;
   if(t==='jName'){
-    const v = (e.target.value || '').toString().slice(0,64).trim();
+    const v = (e.target.value || '').toString().slice(0,14).trim();
     j.name = v || j.name; // keep old if blank
     e.target.value = j.name;
     rebuildTabs();
@@ -1075,6 +1173,7 @@ drawLabels();
         // Ensure latest drawing
         if(App.state.readyToPlot && App.state.validOk){ drawHidden(); drawLabels(); }
 
+        // Compose a single canvas
         const w = (label.width|0) + (plot.width|0);
         const h = Math.max(label.height|0, plot.height|0);
         const off = document.createElement('canvas');
@@ -1086,32 +1185,72 @@ drawLabels();
         octx.drawImage(label, 0, 0);
         octx.drawImage(plot,  label.width|0, 0);
 
-        const doClipboard = async (blob)=>{
-          if(!blob) throw new Error('toBlob failed');
-          if(navigator.clipboard && window.ClipboardItem){
-            await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+        // Helper: convert dataURL to Blob without fetch() (Safari/Firefox robustness)
+        function dataURLtoBlob(dataURL){
+          const parts = dataURL.split(',');
+          const mime = (parts[0].match(/:(.*?);/)||[])[1] || 'image/png';
+          const bstr = atob(parts[1]);
+          let n = bstr.length;
+          const u8 = new Uint8Array(n);
+          while(n--){ u8[n] = bstr.charCodeAt(n); }
+          return new Blob([u8], {type:mime});
+        }
+
+        async function saveAsDownload(blob){
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = 'td-diagram.png';
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url);
+        }
+
+        async function tryClipboard(blob){
+          // Check feature support; some browsers (Safari/Firefox) may not support image writes.
+          const canWrite = !!(navigator.clipboard && window.ClipboardItem);
+          if(!canWrite) return false;
+          try{
+            const item = new ClipboardItem({ [blob.type || 'image/png']: blob });
+            await navigator.clipboard.write([item]);
             log('TD Diagram copied to clipboard (PNG)', 'info');
-          }else{
-            // Fallback: download PNG
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a'); a.href = url; a.download = 'td-diagram.png';
-            document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-            alert('Clipboard API not available — downloaded PNG instead.');
+            // Set status chip after successful copy
+            const chip = document.getElementById('statusChip');
+            if(chip) chip.textContent = '✅ Diagram copied to clipboard.';
+            return true;
+          }catch(err){
+            console.warn('Clipboard write failed, falling back to download:', err && err.name ? err.name : err);
+            return false;
+          }
+        }
+
+        const handleBlob = async (blob)=>{
+          if(!blob) throw new Error('toBlob failed');
+          const ok = await tryClipboard(blob);
+          if(!ok){
+            await saveAsDownload(blob);
+            // Set status chip after download
+            const chip = document.getElementById('statusChip');
+            if(chip) chip.textContent = '📁 Diagram downloaded as PNG.';
+            alert('Clipboard not available — downloaded PNG instead.');
           }
         };
 
         if(off.toBlob){
-          off.toBlob(async (blob)=>{ try{ await doClipboard(blob); }catch(err){ console.error(err); alert('Copy failed: '+err.message); } }, 'image/png');
+          off.toBlob(async (blob)=>{
+            try{ await handleBlob(blob); }
+            catch(err){ console.error(err); alert('Copy failed: '+(err && err.message ? err.message : err)); }
+          }, 'image/png');
         }else{
-          // Safari < 14 fallback via dataURL
+          // Older Safari fallback via dataURL (no fetch to avoid platform issues)
           const dataURL = off.toDataURL('image/png');
           try{
-            const res = await fetch(dataURL);
-            const blob = await res.blob();
-            await doClipboard(blob);
-          }catch(err){ console.error(err); alert('Copy failed: '+err.message); }
+            const blob = dataURLtoBlob(dataURL);
+            await handleBlob(blob);
+          }catch(err){ console.error(err); alert('Copy failed: '+(err && err.message ? err.message : err)); }
         }
-      }catch(err){ console.error(err); alert('Copy failed: '+(err && err.message ? err.message : err)); }
+      }catch(err){
+        console.error(err);
+        alert('Copy failed: ' + (err && err.message ? err.message : err));
+      }
     });
   }
   // Add scroll event to timelineScroll to keep labels synced
