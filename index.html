@@ -8,15 +8,20 @@
 :root{--bg:#ffffff;--card:#f8f9fb;--line:#e8e8e8;--ink:#222;--muted:#666;--accent:#0a66ff;--errbg:#fff4f4;--errbd:#f5c2c7;--errink:#842029;--block-gap:12px;--mincol:4ch;--utcPlan-vshift:2rem;}
 *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;height:100%}
 header{padding:14px 16px;border-bottom:1px solid var(--line);background:#fafafa}
+.header-row{display:flex;align-items:baseline;gap:12px;justify-content:space-between}
 h1{font-size:18px;margin:0} small.muted{color:var(--muted)}
+#fileNameLabel{font-size:12px;color:var(--muted)}
 main{height:calc(100vh - 60px);display:grid;grid-template-rows:auto 1fr;gap:10px;padding:10px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}
 .alert{display:none;margin:8px 0;padding:10px 12px;border:1px solid var(--errbd);background:var(--errbg);color:var(--errink);border-radius:8px}
 .alert.show{display:block}
 .tabs{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.tabs .push-right{ margin-left:auto }
 .tab{padding:8px 10px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:#f1f3f6;cursor:pointer}
 .tab.active{background:#fff}
+.tab[disabled]{opacity:.5;cursor:not-allowed}
+#tabDebugBtn{display:none}
 .tabpanel{display:none;border:1px solid var(--line);border-radius:0 10px 10px 10px;padding:8px;background:#fff;overflow:auto;min-height:0}
 .tabpanel.active{display:block}
 .grid{border-collapse:collapse;width:100%} .grid th,.grid td{border:1px solid #eee;padding:6px 8px;font-size:12px;text-align:center} .grid th{background:#f7f7f7}
@@ -199,7 +204,7 @@ select{min-width:6ch;padding:4px 6px}
 /* Stage label can be short */
 [data-t="stageLabel"]{width:7ch}
 /* UTC "at (s)" is usually short */
-[data-t="planAt"]{width:4ch}
+[data-t="planAt"]{width:7ch;min-width:7ch}
 /* Diagonal intergreens (fixed -1) also compact */
 .ig-lock{width:4ch;min-width:4ch;box-sizing:border-box;text-align:center;padding:4px 6px}
 </style>
@@ -207,7 +212,10 @@ select{min-width:6ch;padding:4px 6px}
 <body>
 
 <header>
-  <h1>Signal Plan Checker <small class="muted">2.0.0</small></h1>
+  <div class="header-row">
+    <h1>Signal Plan Checker <small class="muted">2.0.0</small></h1>
+    <span id="fileNameLabel">file unsaved</span>
+  </div>
   <div class="infobar-wrap">
     <span id="statusChip" class="infochip infobar">Waiting for Validate…</span>
   </div>
@@ -215,8 +223,12 @@ select{min-width:6ch;padding:4px 6px}
  
   <div class="tabs" id="masterTabs" style="margin:8px 10px 0">
     <button class="tab active" id="tabDataBtn">Data</button>
-    <button class="tab" id="tabPlotBtn">Plot</button>
-    <button class="tab" id="tabDebugBtn">Debug</button>
+    <button class="tab" id="tabPlotBtn" disabled>Plot</button>
+    <button class="tab" id="tabDebugBtn" style="display:none">Debug</button>
+    <span class="push-right"></span>
+    <button id="saveAllBtn" title="Save all data (human-readable)">Save…</button>
+    <button id="loadAllBtn" title="Load saved data">Load…</button>
+    <input id="loadFileInput" type="file" accept=".TD2,.td2,.txt,.json,.plan" style="display:none" />
   </div>
 
 <main>
@@ -278,7 +290,7 @@ select{min-width:6ch;padding:4px 6px}
 
 
 <script>
-const App = { initCfg:null, state:{ validOk:false, readyToPlot:false, pxPerSec:8, viewStartSec:0, didAutoFit:false, temp:{ offsets:{}, boundary:{}} } };
+const App = { initCfg:null, state:{ validOk:false, readyToPlot:false, pxPerSec:8, viewStartSec:0, didAutoFit:false, fileName:null, temp:{ offsets:{}, boundary:{}} } };
 
 function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
 
@@ -371,6 +383,61 @@ function setStatus(msg){
       setTimeout(()=>{ chip.style.backgroundColor = old || '#fff'; }, 250);
     }
   }catch(_){/* noop */}
+}
+
+function setFileNameLabel(name){
+  const el = document.getElementById('fileNameLabel');
+  if(!el) return;
+  el.textContent = name && name.trim() ? name.trim() : 'file unsaved';
+}
+
+function ensureTD2(name){
+  // Strip illegal path chars for safety and force .TD2 extension
+  name = (name || '').trim().replace(/[\\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ');
+  if(!name) return 'My Diagram.TD2';
+  if(!/\.td2$/i.test(name)) name += '.TD2';
+  return name;
+}
+
+// Helper: build export object for save/load
+function buildExportObject(){
+  const main = { mainCycle: App.state.mainCycle, viewCycles: App.state.viewCycles };
+  const junctions = (App.state.junctions||[]).map(j=>({
+    id: j.id,
+    name: j.name,
+    doubleCycle: !!j.doubleCycle,
+    travelPrev: j.travelPrev|0,
+    travelNext: j.travelNext|0,
+    stages: (j.stages||[]).map(s=>({ label:s.label, minGreenSec: s.minGreenSec|0 })),
+    intergreen: (j.intergreen||[]).map(row=> row.slice()),
+    utcPlan: (j.utcPlan||[]).map(r=>({ to:r.to, at: r.at|0 }))
+  }));
+  const overlays = Array.isArray(App.state._overlays)? App.state._overlays.slice() : [];
+  const temp = { offsets: {...(App.state.temp&&App.state.temp.offsets||{})}, boundary: {...(App.state.temp&&App.state.temp.boundary||{})} };
+  return { version: '2.0.0', exportedAt: new Date().toISOString(), main, junctions, overlays, temp };
+}
+
+function makeHumanReadableText(obj){
+  const header = [
+    '# Signal Plan Checker export',
+    '# Version: '+(obj.version||'unknown'),
+    '# Exported: '+(obj.exportedAt||new Date().toISOString()),
+    '#',
+    '# The JSON below contains:',
+    '#  - main: mainCycle, viewCycles',
+    '#  - junctions: per-junction config (stages, intergreens, utcPlan)',
+    '#  - overlays: any saved overlays',
+    '#  - temp: uncommitted adjustments (offsets, boundary)',
+    '#',
+    ''
+  ].join('\n');
+  return header + JSON.stringify(obj, null, 2) + '\n';
+}
+
+function parseHumanReadableText(text){
+  // Strip comment lines starting with #, then parse JSON
+  const json = text.split(/\r?\n/).filter(line=> !/^\s*#/.test(line)).join('\n');
+  return JSON.parse(json);
 }
 
 // Enable drag-to-move on a modal by id (e.g., 'ovlModal' or 'adjModal')
@@ -711,11 +778,28 @@ function drawHidden(){
   const height = totalH;
   C.height = height;
 
-  // Compute visible window [v0, v1] in seconds and clamp
-  const viewDurSec = viewportPx / pps;                           // how many seconds fit in the viewport
-  setViewStart(App.state.viewStartSec);                          // clamp to [0, T - viewDurSec]
-  const v0 = App.state.viewStartSec;                             // left edge time (s)
-  const v1 = v0 + viewDurSec;                                    // right edge time (s)
+  // Compute visible window [v0, v1] in seconds and clamp to the time horizon [0, T]
+  let viewDurSec = viewportPx / pps;                             // how many seconds fit in the viewport
+
+  // If the viewport can show more than the total horizon, rescale px/sec so that the window exactly fits T
+  if (T > 0 && viewDurSec > T) {
+    App.state.pxPerSec = Math.max(1, viewportPx / T);
+    viewDurSec = viewportPx / App.state.pxPerSec;
+    setViewStart(0); // start at the left edge
+  } else {
+    // Otherwise just clamp the start to the available range [0, T - viewDurSec]
+    setViewStart(App.state.viewStartSec);
+  }
+
+  let v0 = App.state.viewStartSec;                               // left edge time (s)
+  let v1 = v0 + viewDurSec;                                      // right edge time (s)
+
+  // Final guard: never render past the horizon
+  if (v1 > T) {
+    v1 = T;
+    v0 = Math.max(0, T - viewDurSec);
+    App.state.viewStartSec = v0;                                 // keep state consistent
+  }
 
   // Background
   ctx.fillStyle = '#fff';
@@ -732,6 +816,15 @@ function drawHidden(){
 
   for(let s = sStart; s <= sEnd; s++){
     const x = (s - v0) * pps;
+
+    // subtle vertical gridlines at 5s (lighter than 10s main grid)
+    if (s % 5 === 0 && s % 10 !== 0) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0,0,0,0.06)'; // very light
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, yTop); ctx.lineTo(x, yBot); ctx.stroke();
+      ctx.restore();
+    }
 
     if(s % 10 === 0){
       // 10s: full vertical grid + longest ticks
@@ -790,7 +883,9 @@ function drawHidden(){
       ctx.fillStyle = '#000';
       ctx.font = '10px system-ui';
       ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      for(let t=tick0; t<=v1; t+=10){
+      
+      const tick0 = Math.ceil(v0 / 10) * 10;   // first 10-sec mark at or to the right of v0
+      for (let t = tick0; t <= v1; t += 10) {
         const x = (t - v0) * pps; ctx.fillText(String(Math.round(t)), x, y - 3);
       }
       ctx.restore();
@@ -822,6 +917,27 @@ function drawHidden(){
           ctx.strokeStyle = '#000';
           ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(xx, y0); ctx.lineTo(xx, y0 - 3); ctx.stroke();
+        }
+      }
+    })();
+
+    // For the top junction (A), draw a mirrored tick bar below the green bar
+    (function(){
+      if (idx !== 0) return; // only for the very first (top) junction row
+      const sStartRow = Math.floor(v0);
+      const sEndRow   = Math.ceil(v1);
+      const yBase = y0 + rowH; // bottom edge of the row's bar area
+      for(let ss = sStartRow; ss <= sEndRow; ss++){
+        const xx = (ss - v0) * pps;
+        // 10s: longest ticks downward; 5s: medium; 1s: short
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        if(ss % 10 === 0){
+          ctx.beginPath(); ctx.moveTo(xx, yBase); ctx.lineTo(xx, yBase + 10); ctx.stroke();
+        } else if(ss % 5 === 0){
+          ctx.beginPath(); ctx.moveTo(xx, yBase); ctx.lineTo(xx, yBase + 6); ctx.stroke();
+        } else {
+          ctx.beginPath(); ctx.moveTo(xx, yBase); ctx.lineTo(xx, yBase + 3); ctx.stroke();
         }
       }
     })();
@@ -904,6 +1020,62 @@ function drawHidden(){
           }
           ctx.restore();
         }
+
+        // --- tiny blue triangle indicators on nearest tick to start/end (pointing toward the green bar)
+        (function(){
+          // Skip if segment is completely outside viewport
+          if(!(segEndAbs >= v0 && segStartAbs <= v1)) return;
+
+          // Round to nearest second to align with tick marks
+          const tStartTick = Math.round(segStartAbs);
+          const tEndTick   = Math.round(segEndAbs);
+
+          // Compute x positions (only draw if inside viewport)
+          const xStartTick = (tStartTick - v0) * pps;
+          const xEndTick   = (tEndTick   - v0) * pps;
+
+          // Triangle size
+          const tri = 6;
+
+          const isTopRow = (idx === 0);
+          // Triangle apex sits exactly on the tick base line
+          //  • non-top rows: ticks are drawn upward from y0, so base = y0
+          //  • top row (A): mirrored ticks are drawn downward from y0+rowH, so base = y0 + rowH
+          const yBase = isTopRow ? (y0 + rowH) : y0;
+
+          ctx.save();
+          ctx.fillStyle = '#1e88ff';   // blue
+          ctx.strokeStyle = '#1e88ff';
+
+          // Helper to draw an isosceles triangle pointing up or down
+          function drawTriangle(xc, yBase, dirDown){
+            ctx.beginPath();
+            if (dirDown){
+              // point DOWN: apex at yBase, base above
+              ctx.moveTo(xc, yBase);
+              ctx.lineTo(xc - tri*0.7, yBase - tri);
+              ctx.lineTo(xc + tri*0.7, yBase - tri);
+            } else {
+              // point UP: apex at yBase, base below
+              ctx.moveTo(xc, yBase);
+              ctx.lineTo(xc - tri*0.7, yBase + tri);
+              ctx.lineTo(xc + tri*0.7, yBase + tri);
+            }
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          // Start triangle
+          if (tStartTick >= Math.floor(v0) && tStartTick <= Math.ceil(v1)) {
+            drawTriangle(xStartTick, yBase, /*dirDown=*/ !isTopRow);
+          }
+          // End triangle
+          if (tEndTick >= Math.floor(v0) && tEndTick <= Math.ceil(v1)) {
+            drawTriangle(xEndTick, yBase, /*dirDown=*/ !isTopRow);
+          }
+
+          ctx.restore();
+        })();
 
         // queued change delay marker (clipped)
         const nextReqAbs = base + rc.details[i].rqNext;
@@ -1096,7 +1268,7 @@ function renderUTCEditor(j){
   });
   return `<div class="utc-plan-section">
   <div class="section-title"><h4>UTC Plan</h4><button data-t="planAdd" data-id="${j.id}">Add change</button></div>
-  <table class="grid compact auto"><thead><tr><th>To stage</th><th>At (s)</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+  <table class="grid compact auto"><thead><tr><th>To stage</th><th>Force Stage at<br/>(s)</th><th></th></tr></thead><tbody>${rows}</tbody></table>
   </div>`;
 }
 
@@ -1239,6 +1411,7 @@ function resizeStages(j, n){
 // ---- boot
 async function boot(){
   App.initCfg = await loadBundledInit();
+  setFileNameLabel(App.state.fileName);
   const dbgPanel = document.getElementById('debugPanel');
   const wantDebugOnLoad = !!(App.initCfg.ui && App.initCfg.ui.debug && App.initCfg.ui.debug.enabled && App.initCfg.ui.debug.dock && App.initCfg.ui.debug.dock.showOnLoad);
   if(wantDebugOnLoad && window.__showPanel){ window.__showPanel('debug'); }
@@ -1306,21 +1479,129 @@ async function boot(){
     }
   });
 
+  // === Save/Load (human-readable) ===
+  const saveBtn = document.getElementById('saveAllBtn');
+  const loadBtn = document.getElementById('loadAllBtn');
+  const fileInp = document.getElementById('loadFileInput');
+
+if(saveBtn){
+  saveBtn.addEventListener('click', ()=>{
+    try{
+      // Ask the user for a name (default from current fileName or a timestamped suggestion)
+      const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+      const suggested = (App.state.fileName ? App.state.fileName.replace(/\.td2$/i,'') : `Signal-Plan-${ts}`);
+      const nameInput = prompt('Enter a file name (no extension):', suggested);
+      if(nameInput === null){
+        setStatus('Save cancelled.');
+        return;
+      }
+      const finalName = ensureTD2(nameInput);
+
+      const data = buildExportObject();
+      const text = makeHumanReadableText(data);
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = finalName;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+
+      // Remember & display the filename
+      App.state.fileName = finalName;
+      setFileNameLabel(App.state.fileName);
+      setStatus('💾 Saved: ' + finalName);
+    }catch(err){
+      console.error(err);
+      setStatus('❌ Save failed: ' + (err && err.message ? err.message : err));
+    }
+  });
+}
+
+  // Duplicate saveBtn click handler removed
+
+  if(loadBtn && fileInp){
+    loadBtn.addEventListener('click', ()=> fileInp.click());
+    fileInp.addEventListener('change', async ()=>{
+      const f = fileInp.files && fileInp.files[0];
+      if(!f){ setStatus('No file selected.'); return; }
+      try{
+        const text = await f.text();
+        const obj  = parseHumanReadableText(text);
+
+        // Apply main settings
+        if(obj.main){
+          if(typeof obj.main.mainCycle === 'number'){
+            App.state.mainCycle = obj.main.mainCycle;
+            const mc = document.getElementById('mainCycle'); if(mc) mc.value = App.state.mainCycle;
+          }
+          if(typeof obj.main.viewCycles === 'number'){
+            App.state.viewCycles = obj.main.viewCycles;
+            const vc = document.getElementById('viewCycles'); if(vc) vc.value = String(App.state.viewCycles);
+          }
+        }
+
+        // Apply junctions
+        if(Array.isArray(obj.junctions)){
+          App.state.junctions = obj.junctions.map(j=>({
+            id: j.id,
+            name: j.name,
+            doubleCycle: !!j.doubleCycle,
+            travelPrev: j.travelPrev|0,
+            travelNext: j.travelNext|0,
+            stages: (j.stages||[]).map(s=>({ label: s.label, minGreenSec: s.minGreenSec|0 })),
+            intergreen: (j.intergreen||[]).map(row => row.slice()),
+            utcPlan: (j.utcPlan||[]).map(r => ({ to: r.to, at: r.at|0 }))
+          }));
+        }
+
+        // Apply overlays and uncommitted adjustments
+        App.state._overlays = Array.isArray(obj.overlays) ? obj.overlays.slice() : [];
+        App.state.temp = obj.temp ? {
+          offsets:  {...(obj.temp.offsets  || {})},
+          boundary: {...(obj.temp.boundary || {})}
+        } : { offsets:{}, boundary:{} };
+
+        // Refresh UI
+        rebuildTabs();
+        setDirty();
+        runValidation({silent:true});
+        if(App.state.readyToPlot && App.state.validOk){ drawHidden(); drawLabels(); }
+        setStatus('📂 Loaded data from file.');
+        App.state.fileName = (f && f.name) ? f.name : App.state.fileName;
+        setFileNameLabel(App.state.fileName);
+      }catch(err){
+        console.error(err);
+        setStatus('❌ Load failed: ' + (err && err.message ? err.message : err));
+        alert('Load failed: ' + (err && err.message ? err.message : err));
+      }finally{
+        fileInp.value = '';
+      }
+    });
+  }
+
   document.getElementById('validateBtn').addEventListener('click', ()=>{ runValidation({silent:false}); });
   document.getElementById('plotBtn').addEventListener('click', ()=>{
 if(!App.state.validOk){ alert('Please Validate first.'); return; }
 App.state.readyToPlot = true;
-const p=document.getElementById('plotBtn'); if(p) p.classList.remove('dirty');
-const chip=document.getElementById('statusChip'); if(chip) chip.textContent='Plotted ✓';
+const p=document.getElementById('plotBtn'); 
+if(p) p.classList.remove('dirty');
+const chip=document.getElementById('statusChip'); 
+if(chip) chip.textContent='Plotted ✓';
 log('Plot clicked — drawing (viewport-fixed)','info');
 
 // Initial default view: choose px/s so [C, C*N] fills viewport exactly
-const Cj = App.state.mainCycle; const N = App.state.viewCycles || 2;
+const Cj = App.state.mainCycle; 
+const N = App.state.viewCycles || 2;
 const viewportPx = measureViewportPx();
 App.state.pxPerSec = Math.max(1, viewportPx / Math.max(1, N*Cj));
 const zoom = document.getElementById('zoom');
 if(zoom){ const zmin=1,zmax=12; zoom.value = String(Math.max(zmin, Math.min(zmax, zmax - (Math.round(App.state.pxPerSec) - zmin)))); }
 setViewStart(Cj);
+// ✅ Enable the Plot tab after first successful plot
+const plotTabBtn = document.getElementById('tabPlotBtn');
+if (plotTabBtn) plotTabBtn.disabled = false;
 
 drawHidden();
 drawLabels();
@@ -1465,7 +1746,7 @@ drawLabels();
 
     let wired = false; // modal wired after first open
     // element refs
-    let modal, closeBtn, applyBtn, clearBtn, clearAllBtn, selJ, off, listBox;
+    let modal, closeBtn, applyBtn, clearBtn, clearAllBtn, commitBtn, selJ, off, listBox;
 
     function getBoxB(){ return document.getElementById('adjBoundaries'); }
 
@@ -1558,6 +1839,7 @@ function renderAdjustList(){
       off      = document.getElementById('adjOffset');
       clearAllBtn = document.getElementById('adjClearAll');
       listBox = document.getElementById('adjList');
+      commitBtn = document.getElementById('adjCommit');
 
 if(listBox){
   listBox.addEventListener('click', (ev)=>{
@@ -1648,6 +1930,48 @@ if(clearAllBtn){
         if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
         setStatus('Adjustments cleared for this junction.');
       });
+
+      if(commitBtn){
+  commitBtn.addEventListener('click', ()=>{
+    try{
+      // Apply current temporary adjustments to ALL junctions' UTC plans
+      (App.state.junctions||[]).forEach((j)=>{
+        // Build adjusted plan using current offsets/boundary tweaks
+        const adj = getAdjustedPlan(j);
+
+        // Persist adjusted times back into the real plan (whole seconds)
+        j.utcPlan = adj.map(r=>({ to: r.to, at: Math.round(r.at) }));
+
+        // Clear temporary adjustments for this junction
+        if(App.state.temp && App.state.temp.offsets)  delete App.state.temp.offsets[j.id];
+        if(App.state.temp && App.state.temp.boundary) delete App.state.temp.boundary[j.id];
+      });
+
+      // Refresh UI and mark data as changed (forces re-Validate)
+      rebuildTabs();
+      setDirty();
+
+      // Redraw plot if already plotted
+      if(App.state.readyToPlot && App.state.validOk){
+        drawHidden();
+        drawLabels();
+      }
+
+      // Update status bar + refresh the modal’s lists
+      setStatus('UTC plans updated from adjustments.');
+      close();
+      renderB();
+      renderAdjustList();
+    }catch(err){
+  console.error(err);
+  setStatus('❌ Update failed: ' + (err && err.message ? err.message : err));
+}
+    
+    
+  
+  });
+}
+
       wired = true;
       return true;
     }
@@ -1845,44 +2169,47 @@ if(clearAllBtn){
         });
       }
 
-      if(saveBtn){
-        saveBtn.addEventListener('click', ()=>{
-          App.state._overlays = App.state._overlays || [];
-          const mode = (modeSel && modeSel.value) || 'stage';
-          const base = {
-            from: parseInt(selFrom.value||'0',10),
-            to:   parseInt(selTo.value||'0',10),
-            mode,
-            color: col.value||'#ffa500',
-            alpha: Math.max(0, Math.min(1, parseFloat(a.value||'0.3')||0.3))
-          };
-          if(mode==='stage'){
-            base.stage = (selStage && selStage.value) || null;
-          }else{ // time-based
-            base.start = Math.max(0, parseFloat(s && s.value || '0')||0);
-            base.end   = Math.max(base.start, parseFloat(e && e.value || '0')||0);
-          }
-          if(editingIndex>=0){
-            App.state._overlays[editingIndex] = base;
-            log('Overlay updated: '+JSON.stringify(base), 'info');
-          } else {
-            App.state._overlays.push(base);
-            log('Overlay saved (new): '+JSON.stringify(base), 'info');
-          }
-          if(editingIndex>=0){
-            setStatus('Overlay updated.');
-          }else{
-            setStatus('Overlay added.');
-          }
-          renderOverlayList();
-          if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
-          closeModal();
-        });
-      }
-
       if(closeBtn){ closeBtn.addEventListener('click', closeModal); }
       if(cancelBtn){ cancelBtn.addEventListener('click', closeModal); }
       if(modal){ modal.addEventListener('click', (ev)=>{ if(ev.target===modal) closeModal(); }); }
+
+      // Save / Update overlay
+      if(saveBtn){
+        saveBtn.addEventListener('click', ()=>{
+          try{
+            App.state._overlays = App.state._overlays || [];
+            const mode = (modeSel && modeSel.value) || 'stage';
+            const ovl = {
+              from: parseInt(selFrom.value||'0',10) || 0,
+              to:   parseInt(selTo.value||'0',10)   || 0,
+              mode,
+              color: (col && col.value) || '#ffa500',
+              alpha: Math.max(0, Math.min(1, parseFloat((a && a.value) || '0.3') || 0.3))
+            };
+            if(mode === 'stage'){
+              ovl.stage = (selStage && selStage.value) || null;
+            }else{
+              ovl.start = Math.max(0, parseFloat((s && s.value) || '0') || 0);
+              ovl.end   = Math.max(ovl.start, Math.max(0, parseFloat((e && e.value) || '0') || 0));
+            }
+
+            if(editingIndex >= 0){
+              App.state._overlays[editingIndex] = ovl;
+              setStatus('Overlay updated.');
+            }else{
+              App.state._overlays.push(ovl);
+              setStatus('Overlay saved.');
+            }
+
+            renderOverlayList();
+            if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
+            closeModal();
+          }catch(err){
+            console.error(err);
+            setStatus('❌ Save overlay failed: ' + (err && err.message ? err.message : err));
+          }
+        });
+      }
 
       // Escape to close (query modal each time to avoid stale refs)
       document.addEventListener('keydown', (ev)=>{ const m=document.getElementById('ovlModal'); if(ev.key==='Escape' && m && m.classList.contains('show')) closeModal(); });
@@ -2201,27 +2528,17 @@ document.addEventListener('DOMContentLoaded', ()=>{
 <hr style="border:none;border-top:1px solid var(--line);margin:10px 0"/>
 <h4 style="margin:0 0 6px 0;font-size:13px">Current adjustments</h4>
 <div id="adjList"></div>
-<div style="margin-top:8px;display:flex;justify-content:flex-end">
-  <button id="adjClearAll">Clear all</button>
-</div>
 
 <p class="muted" style="margin-top:8px;font-size:12px">
   Offset shifts the UTC plan for this junction. Boundary deltas move the change points (e.g., between S1 → S2).
   These are temporary and only affect the plot/overlays.
 </p>
- 
- 
-    <h4 style="margin:12px 0 6px 0;font-size:13px">Current adjustments</h4>
-    <div id="adjList"></div>
     </div>
     <footer>
-  <button id="adjClearAll">Clear all</button>
-  <button id="adjClear">Clear</button>
-  <button id="adjApply">Apply</button>
-</footer>
-    
-    
-    
+      <button id="adjClear">Clear</button>
+      <button id="adjCommit">Update UTC plans</button>
+      <button id="adjApply">Apply</button>
+    </footer>
   </div>
 </div>
 
