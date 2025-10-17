@@ -55,7 +55,50 @@ input[type=number], select{padding:6px 8px;border:1px solid #d6d6d6;border-radiu
 .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .modal-grid label{font-size:12px}
 .modal-grid input[type=number], .modal-grid select, .modal-grid input[type=color]{width:100%}
-
+/* Normalize iOS Safari colour input (fix deformed oval & rainbow ring) */
+.modal-grid input[type="color"]{
+  -webkit-appearance: none;   /* remove iOS special control styling */
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 32px;               /* consistent height */
+  padding: 0;                 /* iOS adds internal padding */
+  border: 1px solid #ccc;
+  border-radius: 6px;         /* match other inputs */
+  background: transparent;    /* prevent extra ring artefacts */
+  box-shadow: none;           /* avoid odd inner shadows on iOS */
+}
+.modal-grid input[type="color"]::-webkit-color-swatch-wrapper{
+  padding: 0;                 /* remove wrapper padding that causes oval */
+  border-radius: 6px;
+}
+.modal-grid input[type="color"]::-webkit-color-swatch{
+  border: none;               /* remove default border */
+  border-radius: 6px;         /* keep corners consistent */
+}
+/* Quick colour presets for Overlays modal */
+.swatch-row{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+  margin-bottom:6px;
+}
+.swatch-btn{
+  width:24px;
+  height:24px;
+  border:1px solid #ccc;
+  border-radius:6px;
+  cursor:pointer;
+  display:inline-block;
+  box-sizing:border-box;
+}
+.swatch-btn:focus{ outline:2px solid #0a66ff; outline-offset:2px; }
+.swatch-btn[data-color="#e74c3c"]{ background:#e74c3c; } /* red */
+.swatch-btn[data-color="#3498db"]{ background:#3498db; } /* blue */
+.swatch-btn[data-color="#27ae60"]{ background:#27ae60; } /* green */
+.swatch-btn[data-color="#ffa500"]{ background:#ffa500; } /* orange */
+.swatch-btn[data-color="#9b59b6"]{ background:#9b59b6; } /* purple */
 .logline.info{color:#a5d6ff} .logline.warn{color:#ffd27f} .logline.err{color:#ffb4b4}
 .infochip{padding:4px 8px;border-radius:999px;border:1px solid #e0e0e0;background:#fff;font-size:12px}
 .infobar{display:block;width:100%;margin-top:8px}
@@ -284,6 +327,21 @@ function log(msg, level){
     box.appendChild(d); box.scrollTop=box.scrollHeight;
   }catch(e){}
 }
+
+function setStatus(msg){
+  try{
+    const chip = document.getElementById('statusChip');
+    if(chip){
+      chip.textContent = msg;
+      // quick visual pulse (optional)
+      chip.style.transition = 'background-color .25s';
+      const old = chip.style.backgroundColor;
+      chip.style.backgroundColor = '#eef9ee';
+      setTimeout(()=>{ chip.style.backgroundColor = old || '#fff'; }, 250);
+    }
+  }catch(_){/* noop */}
+}
+
 window.addEventListener('error', e=>log('ERROR: '+(e.message||e.error),'err'));
 window.addEventListener('unhandledrejection', e=>log('PROMISE: '+(e.reason&&e.reason.message?e.reason.message:e.reason),'err'));
 
@@ -1272,7 +1330,7 @@ drawLabels();
 
     let wired = false; // modal wired after first open
     // element refs
-    let modal, closeBtn, applyBtn, clearBtn, selJ, off;
+    let modal, closeBtn, applyBtn, clearBtn, clearAllBtn, selJ, off, listBox;
 
     function getBoxB(){ return document.getElementById('adjBoundaries'); }
 
@@ -1300,6 +1358,62 @@ drawLabels();
       html += '</tbody></table>';
       boxB.innerHTML = html;
     }
+function readDraftAdjustments(){
+  const out = [];
+  const id = (document.getElementById('adjJunc')||{}).value;
+  if(!id) return out;
+
+  const offInp = document.getElementById('adjOffset');
+  const offVal = parseInt(offInp && offInp.value || '0', 10) || 0;
+  if(offVal) out.push({ kind:'offset', id, value: offVal });
+
+  const boxB = document.getElementById('adjBoundaries');
+  if(boxB){
+    boxB.querySelectorAll('input[data-bidx]').forEach(inp=>{
+      const v = parseInt(inp.value||'0',10) || 0;
+      if(v) out.push({ kind:'boundary', id, bidx: inp.getAttribute('data-bidx'), value: v });
+    });
+  }
+  return out;
+}
+function renderAdjustList(){
+  if(!listBox) listBox = document.getElementById('adjList');
+  const sel = document.getElementById('adjJunc');
+  const j = (App.state.junctions||[]).find(x=>x.id=== (sel && sel.value));
+  if(!listBox || !j){ if(listBox) listBox.innerHTML=''; return; }
+
+  const plan = getAdjustedPlan(j);
+  const labels = plan.map(p=>p.to);
+
+  const rows = readDraftAdjustments().map(a=>{
+    if(a.kind==='offset'){
+      return `<tr>
+        <td>Offset</td>
+        <td>${a.value>0?('+'+a.value):a.value}s</td>
+        <td style="white-space:nowrap">
+          <button data-edit-adj="offset">Edit</button>
+          <button data-del-adj="offset">Delete</button>
+        </td>
+      </tr>`;
+    }else{
+      const i = parseInt(a.bidx,10) || 0;
+      const cur = labels[i] || `S${i+1}`;
+      const nxt = labels[(i+1)%labels.length] || `S${(i+1)%labels.length+1}`;
+      return `<tr>
+        <td>${cur} → ${nxt}</td>
+        <td>${a.value>0?('+'+a.value):a.value}s</td>
+        <td style="white-space:nowrap">
+          <button data-edit-adj="${i}">Edit</button>
+          <button data-del-adj="${i}">Delete</button>
+        </td>
+      </tr>`;
+    }
+  }).join('');
+
+  listBox.innerHTML = rows
+    ? `<table class="grid compact auto"><thead><tr><th>Adjustment</th><th>Δ (s)</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`
+    : '<div class="muted" style="font-size:12px">No adjustments yet.</div>';
+}
     function wireModalElements(){
       modal    = document.getElementById('adjModal');
       closeBtn = document.getElementById('adjCloseBtn');
@@ -1307,6 +1421,61 @@ drawLabels();
       clearBtn = document.getElementById('adjClear');
       selJ     = document.getElementById('adjJunc');
       off      = document.getElementById('adjOffset');
+      clearAllBtn = document.getElementById('adjClearAll');
+      listBox = document.getElementById('adjList');
+
+if(listBox){
+  listBox.addEventListener('click', (ev)=>{
+    const editKey = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-edit-adj');
+    const delKey  = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-del-adj');
+
+    if(editKey != null){
+      if(editKey === 'offset'){
+        const offInp = document.getElementById('adjOffset');
+        if(offInp){ offInp.focus(); offInp.select && offInp.select(); }
+      }else{
+        const bidx = String(parseInt(editKey,10));
+        const boxB = document.getElementById('adjBoundaries');
+        if(boxB){
+          const target = boxB.querySelector(`input[data-bidx="${bidx}"]`);
+          if(target){ target.focus(); target.select && target.select(); }
+        }
+      }
+      return; // don't fall through to delete
+    }
+
+    if(delKey != null){
+      if(delKey === 'offset'){
+        const offInp = document.getElementById('adjOffset');
+        if(offInp){ offInp.value = '0'; }
+        renderAdjustList();
+        setStatus('Adjustment removed.');
+      }else{
+        const bidx = String(parseInt(delKey,10));
+        const boxB = document.getElementById('adjBoundaries');
+        if(boxB){
+          const target = boxB.querySelector(`input[data-bidx="${bidx}"]`);
+          if(target){ target.value = '0'; }
+        }
+        renderAdjustList();
+        setStatus('Adjustment removed.');
+      }
+    }
+  });
+}
+
+if(clearAllBtn){
+  clearAllBtn.addEventListener('click', ()=>{
+    const offInp = document.getElementById('adjOffset');
+    if(offInp) offInp.value = '0';
+    const boxB = document.getElementById('adjBoundaries');
+    if(boxB){ boxB.querySelectorAll('input[data-bidx]').forEach(inp => inp.value = '0'); }
+    renderAdjustList();
+    setStatus('All adjustments cleared.');
+  });
+}
+
+
       if(!modal || wired) return !!modal;
 
       if(closeBtn) closeBtn.addEventListener('click', close);
@@ -1314,7 +1483,10 @@ drawLabels();
       if(selJ) selJ.addEventListener('change', ()=>{
         const id = selJ.value; const v = (App.state.temp.offsets[id]||0); const offInp = document.getElementById('adjOffset'); if(offInp) offInp.value=String(v);
         renderB();
+      renderAdjustList();
       });
+    
+    
       if(applyBtn) applyBtn.addEventListener('click', ()=>{
         const id = (document.getElementById('adjJunc')||{}).value; if(!id) return;
         const offInp = document.getElementById('adjOffset');
@@ -1328,6 +1500,7 @@ drawLabels();
           });
         }
         if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
+        setStatus('Adjustments applied.');
         close();
       });
       if(clearBtn) clearBtn.addEventListener('click', ()=>{
@@ -1336,7 +1509,9 @@ drawLabels();
         if(App.state.temp.boundary) delete App.state.temp.boundary[id];
         const offInp = document.getElementById('adjOffset'); if(offInp) offInp.value='0';
         renderB();
+        renderAdjustList();
         if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
+        setStatus('Adjustments cleared for this junction.');
       });
       wired = true;
       return true;
@@ -1350,6 +1525,7 @@ drawLabels();
       const offInp = document.getElementById('adjOffset');
       if(offInp) offInp.value = String((id && App.state.temp.offsets[id]) || 0);
       renderB();
+      renderAdjustList();
       const m = document.getElementById('adjModal');
       if(m){ m.classList.add('show'); m.setAttribute('aria-hidden','false'); }
     }
@@ -1474,6 +1650,21 @@ drawLabels();
       stageGroup= document.getElementById('stageGroup');
       timeGroup = document.getElementById('timeGroup');
       listBox   = document.getElementById('ovlList');
+
+// Quick colour presets click handler
+(function(){
+  const quick = document.getElementById('ovlColorQuick');
+  if(!quick) return;
+  quick.addEventListener('click', (ev)=>{
+    const btn = ev.target.closest && ev.target.closest('.swatch-btn');
+    if(!btn) return;
+    const v = btn.getAttribute('data-color');
+    if(v && col){
+      col.value = v;
+    }
+  });
+})();
+
       if(!modal) return false;
 
       if(modeSel){ modeSel.addEventListener('change', updateModeVisibility); }
@@ -1503,13 +1694,16 @@ drawLabels();
               App.state._overlays.splice(i,1);
               renderOverlayList();
               if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
+            setStatus('Overlay deleted.');
             }
           }
+          
           if(ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-clear-all')){
             if(Array.isArray(App.state._overlays) && App.state._overlays.length){
               App.state._overlays.length = 0;
               renderOverlayList();
               if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
+              setStatus('All overlays cleared.');
             }
           }
         });
@@ -1538,6 +1732,11 @@ drawLabels();
           } else {
             App.state._overlays.push(base);
             log('Overlay saved (new): '+JSON.stringify(base), 'info');
+          }
+          if(editingIndex>=0){
+            setStatus('Overlay updated.');
+          }else{
+            setStatus('Overlay added.');
           }
           renderOverlayList();
           if(App.state.readyToPlot && App.state.validOk){ drawHidden(); }
@@ -1859,14 +2058,33 @@ document.addEventListener('DOMContentLoaded', ()=>{
           <input type="number" id="adjOffset" step="1" value="0"/>
         </label>
       </div>
-      <h4 style="margin:10px 0 6px 0;font-size:13px">Vary by moving boundaries</h4>
-      <div id="adjBoundaries"></div>
-      <p class="muted" style="margin-top:8px;font-size:12px">Offset shifts the UTC plan for this junction. Boundary deltas move the change points (e.g., between S1 → S2). These are temporary and only affect the plot/overlays.</p>
+ <h4 style="margin:10px 0 6px 0;font-size:13px">Vary by moving boundaries</h4>
+<div id="adjBoundaries"></div>
+
+<hr style="border:none;border-top:1px solid var(--line);margin:10px 0"/>
+<h4 style="margin:0 0 6px 0;font-size:13px">Current adjustments</h4>
+<div id="adjList"></div>
+<div style="margin-top:8px;display:flex;justify-content:flex-end">
+  <button id="adjClearAll">Clear all</button>
+</div>
+
+<p class="muted" style="margin-top:8px;font-size:12px">
+  Offset shifts the UTC plan for this junction. Boundary deltas move the change points (e.g., between S1 → S2).
+  These are temporary and only affect the plot/overlays.
+</p>
+ 
+ 
+    <h4 style="margin:12px 0 6px 0;font-size:13px">Current adjustments</h4>
+    <div id="adjList"></div>
     </div>
     <footer>
-      <button id="adjClear">Clear</button>
-      <button id="adjApply">Apply</button>
-    </footer>
+  <button id="adjClearAll">Clear all</button>
+  <button id="adjClear">Clear</button>
+  <button id="adjApply">Apply</button>
+</footer>
+    
+    
+    
   </div>
 </div>
 
@@ -1904,9 +2122,20 @@ document.addEventListener('DOMContentLoaded', ()=>{
     <input type="number" id="ovlEnd" min="0" step="1" value="10"/>
   </label>
 </div>      
-        <label>Color
-          <input type="color" id="ovlColor" value="#ffa500"/>
-        </label>
+  <div>
+  <div class="swatch-row" id="ovlColorQuick" aria-label="Quick colours">
+    <button type="button" class="swatch-btn" data-color="#e74c3c" title="Red"></button>
+    <button type="button" class="swatch-btn" data-color="#3498db" title="Blue"></button>
+    <button type="button" class="swatch-btn" data-color="#27ae60" title="Green"></button>
+    <button type="button" class="swatch-btn" data-color="#ffa500" title="Orange"></button>
+    <button type="button" class="swatch-btn" data-color="#9b59b6" title="Purple"></button>
+  </div>
+  <label>Color
+    <input type="color" id="ovlColor" value="#ffa500"/>
+  </label>
+</div>      
+        
+        
         <label>Opacity (0–1)
           <input type="number" id="ovlAlpha" min="0" max="1" step="0.05" value="0.3"/>
         </label>
