@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Signal Plan Checker 2.0.0</title>
+<title>Signal Plan Checker 2.6.1</title>
 <style>
 :root{--bg:#ffffff;--card:#f8f9fb;--line:#e8e8e8;--ink:#222;--muted:#666;--accent:#0a66ff;--errbg:#fff4f4;--errbd:#f5c2c7;--errink:#842029;--block-gap:12px;--mincol:4ch;--utcPlan-vshift:2rem;}
 *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;height:100%}
@@ -234,7 +234,7 @@ select{min-width:6ch;padding:4px 6px}
 
 <header>
   <div class="header-row">
-    <h1>Signal Plan Checker <small class="muted">2.0.0</small></h1>
+    <h1>Signal Plan Checker <small class="muted">v2.6.1</small></h1>
   </div>
   <div class="infobar-wrap">
     <div class="infobar-line">
@@ -273,6 +273,8 @@ select{min-width:6ch;padding:4px 6px}
       </label>
   <button id="validateBtn">Validate</button>
   <button id="plotBtn" disabled>Plot</button>
+  <!-- --- Scale Plans button definition -->
+  <button id="scaleBtn" disabled>Scale Plans</button>
     </div>
     <div class="tabs" id="jtabs"></div>
     <div id="tabpanels"></div>
@@ -311,10 +313,76 @@ select{min-width:6ch;padding:4px 6px}
     </div>
     <div id="log"></div>
   </section>
+
+  <!-- --- Scale Plans modal definition -->
+  <div id="scaleModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="scaleModalTitle">
+    <div class="modal-card">
+      <header>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <h3 id="scaleModalTitle">Scale Plans</h3>
+          <div id="scSuggestMsg" class="infochip" style="font-size:12px"></div>
+        </div>
+        <button id="scCloseBtn" title="Close">×</button>
+      </header>
+      <div class="body">
+        <div class="modal-grid">
+          <label>Current cycle (s)
+            <input id="scCur" type="number" disabled>
+          </label>
+          <label>Target cycle (s)
+            <input id="scTarget" type="number" min="1" max="240">
+          </label>
+          <label style="display:flex; align-items:center; gap:8px">
+            <button id="scSuggestBtn" type="button" title="Suggest minimum feasible main cycle">Suggest min</button>
+          </label>
+          <label style="grid-column: 1 / span 2; display:flex; align-items:center; gap:8px">
+            <input id="scRemoveDouble" type="checkbox"> Remove double cycle (if present)
+          </label>
+        </div>
+        <div id="scPreview" class="infobar-wrap" style="margin-top:8px"></div>
+        <div id="scDiag" class="infobar-wrap" style="margin-top:8px"></div>
+      </div>
+      <footer>
+        <button id="scPreviewBtn">Preview</button>
+        <button id="scExportBtn" disabled title="Export scaled UTC plans (from preview) as JSON">Export JSON</button>
+        <button id="scApplyBtn" disabled>Apply</button>
+        <button id="scCancelBtn">Cancel</button>
+      </footer>
+    </div>
+  </div>
 </main>
 
 
 <script>
+
+// --- Sanity checks: verify required DOM elements exist (non-fatal)
+function runSanityChecks(){
+  const requiredIds = [
+    // Top-level controls
+    'validateBtn','plotBtn','saveAllBtn','loadAllBtn','loadFileInput',
+    // Data & plot containers
+    'dataPanel','plotPanel','jtabs','tabpanels',
+    // Canvases / scroller
+    'labelCanvas','hiddenCanvas','timelineScroll',
+    // Status chips
+    'statusChip','fileNameLabel',
+    // Scale Plans modal + fields
+    'scaleBtn','scaleModal','scCur','scTarget','scPreview','scDiag',
+    'scRemoveDouble','scPreviewBtn','scApplyBtn','scExportBtn','scCancelBtn','scCloseBtn','scSuggestBtn','scSuggestMsg'
+  ];
+  const missing = [];
+  for(const id of requiredIds){ if(!document.getElementById(id)) missing.push(id); }
+  if(missing.length){
+    const msg = 'Missing elements: ' + missing.join(', ');
+    try{ setStatus('⚠️ UI check: ' + msg); }catch(_){/* noop */}
+    try{ console.warn('[SanityChecks]', msg); }catch(_){/* noop */}
+  } else {
+    try{ setStatus('UI check passed'); }catch(_){/* noop */}
+  }
+}
+// Run after DOM is ready (does not interfere with boot)
+document.addEventListener('DOMContentLoaded', runSanityChecks);
+
 const App = { initCfg:null, state:{ validOk:false, readyToPlot:false, pxPerSec:8, viewStartSec:0, didAutoFit:false, fileName:null, showGuides:true, temp:{ offsets:{}, boundary:{}} } };
 
 function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
@@ -379,9 +447,12 @@ function setDirty(){
   const v=document.getElementById('validateBtn');
   const p=document.getElementById('plotBtn');
   const x=document.getElementById('transferBtn');
+  // --- Scale Plans button definitions (grab handle)
+  const s=document.getElementById('scaleBtn');
   if(v) v.classList.add('dirty');
   if(p){ p.classList.add('dirty'); p.disabled = true; }
   if(x){ x.disabled = true; }
+  if(s){ s.classList.add('dirty'); s.disabled = true; }
   App.state.validOk=false;
   App.state.readyToPlot=false;
   setStatus('Changes detected — Validate required');
@@ -433,6 +504,404 @@ function ensureTD2(name){
   if(!/\.td2$/i.test(name)) name += '.TD2';
   return name;
 }
+
+// --- Scale Plans button helper
+function openScalePlansDialog(){
+  // Populate modal fields
+  const cur = App.state.mainCycle|0;
+  const modal = document.getElementById('scaleModal');
+  const inpCur = document.getElementById('scCur');
+  const inpTgt = document.getElementById('scTarget');
+  const chkRem = document.getElementById('scRemoveDouble');
+  const preview = document.getElementById('scPreview');
+  const btnApply = document.getElementById('scApplyBtn');
+  if(inpCur) inpCur.value = cur;
+  if(inpTgt) inpTgt.value = String(cur);
+  if(chkRem) chkRem.checked = (App.state.junctions||[]).some(j=>!!j.doubleCycle);
+  if(preview) preview.innerHTML = '';
+  if(btnApply) btnApply.disabled = true;
+  const msgEl = document.getElementById('scSuggestMsg');
+  if(msgEl) msgEl.innerHTML = '';
+
+  // Show modal
+  modal.classList.add('show');
+  enableDragModal('scaleModal');
+}
+
+// --- Scale Plans modal helpers
+function closeScalePlansDialog(){
+  const modal = document.getElementById('scaleModal');
+  if(modal) modal.classList.remove('show');
+}
+
+// --- Compute minimum feasible MAIN cycle across junctions (max of per-junction (sumMinGreens + sumIntergreens for used moves))
+function computeMinCycleSuggestion(){
+  const juncs = App.state.junctions || [];
+  if(!juncs.length) return { error: 'No junctions available' };
+  const perJ = [];
+  let maxNeed = 0;
+  for(const j of juncs){
+    const rc = computeRealisedCycleAdj(j);
+    if(!rc.ok){
+      return { error: rc.err && rc.err[0] ? rc.err[0] : `Invalid UTC plan for ${j.name}` };
+    }
+    const N = rc.plan.length; const toIdx = rc.toIdx.slice();
+    let sumIG = 0, sumMin = 0;
+    for(let i=0;i<N;i++){
+      const curIdx  = toIdx[i];
+      const prevIdx = toIdx[(i-1+N)%N];
+      const ig = j.intergreen[prevIdx][curIdx];
+      sumIG  += Math.max(0, ig); // fixed intergreens for the **used** moves
+      sumMin += (j.stages[curIdx] && (j.stages[curIdx].minGreenSec|0)) || 0;
+    }
+    const need = sumIG + sumMin;
+    perJ.push({ id:j.id, name:j.name, sumIG, sumMin, minCycle: need });
+    if(need > maxNeed) maxNeed = need;
+  }
+  const lo = App.initCfg.mainCycleTime.min||1;
+  const hi = App.initCfg.mainCycleTime.max||240;
+  const minMain = Math.max(lo, Math.min(hi, Math.ceil(maxNeed)));
+  return { minMain, perJ };
+}
+
+// --- Scale Plans: wire Suggest Min button (idempotent)
+document.addEventListener('DOMContentLoaded', function(){
+  const btnSuggest = document.getElementById('scSuggestBtn');
+  if(btnSuggest && !btnSuggest.__wired){
+    btnSuggest.__wired = true;
+    btnSuggest.addEventListener('click', function(){
+      try{
+        const res = computeMinCycleSuggestion();
+        const msgEl = document.getElementById('scSuggestMsg');
+        if(res && res.error){
+          if(msgEl) msgEl.textContent = res.error;
+          return;
+        }
+        const m = res.minMain;
+        const inp = document.getElementById('scTarget');
+        if(inp){ inp.value = String(m); }
+        if(msgEl){
+          const parts = res.perJ.map(p=>`${p.name}: ${p.minCycle}s`);
+          msgEl.innerHTML = `<strong>Suggested main cycle:</strong> ${m}s &nbsp; <em>${parts.join(' · ')}</em>`;
+        }
+      }catch(err){
+        const msgEl = document.getElementById('scSuggestMsg');
+        if(msgEl) msgEl.textContent = 'Suggest min failed: ' + (err && err.message ? err.message : String(err));
+      }
+    });
+  }
+});
+
+// --- Scale Plans button helper (read + validate target cycle)
+function parseTarget(){
+  const inpTgt = document.getElementById('scTarget');
+  if(!inpTgt) return null;
+  let v = parseInt(inpTgt.value||'',10);
+  if(!Number.isFinite(v)) { alert('Enter a target cycle in seconds.'); return null; }
+  const lo = App.initCfg.mainCycleTime.min||1;
+  const hi = App.initCfg.mainCycleTime.max||240;
+  if(v < lo || v > hi){ alert(`Target must be between ${lo} and ${hi} seconds.`); return null; }
+  return v|0;
+}
+
+// HTML-escape helper for error messages (escapes &, <, > only)
+function __escHtml(s){
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+function renderScalePreview(result, target){
+  const box = document.getElementById('scPreview');
+  if(!box) return;
+  if(!result){ box.innerHTML=''; return; }
+  const rows = result.details.map(d=>{
+    const ok = d.ok;
+    const icon = ok ? '✅' : '❌';
+    let summary = '';
+    if(ok && d.metrics){
+      const m = d.metrics;
+      const slack = Math.max(0, (m.needGreen - m.scaledGreen));
+      summary = ` • greens: ${m.curGreen}s → ${m.scaledGreen}s • IG: ${m.igTotal}s • need: ${m.needGreen}s • slack: ${slack}s`;
+    }
+    const msg = ok ? `OK${summary}` : __escHtml(d.err||'Failed');
+    return `<div class=\"infochip\" style=\"display:block; margin:4px 0\">${icon} <strong>${d.name}</strong> — ${msg}</div>`;
+  }).join('');
+  const allOk = result.ok;
+  try{
+    box.innerHTML = `<div class="infobar">Preview for ${target}s</div>${rows}`;
+  }catch(e){
+    box.textContent = `Preview render error: ${e&&e.message?e.message:e}`;
+  }
+  // --- Cache for export and enable Export button if allOk
+  App._scalePreviewCache = { result, target };
+  const btnExport = document.getElementById('scExportBtn');
+  if(btnExport) btnExport.disabled = !allOk;
+  const btnApply = document.getElementById('scApplyBtn');
+  if(btnApply) btnApply.disabled = !allOk;
+  renderScaleDiagnostics(result, target);
+}
+
+// --- Scale Plans diagnostics renderer
+function renderScaleDiagnostics(result, target){
+  const host = document.getElementById('scDiag');
+  const toggle = document.getElementById('scDiagToggle');
+  if(!host) return;
+  host.innerHTML = '';
+  // If there's no explicit toggle element, render by default when container exists
+  const show = toggle ? !!toggle.checked : true;
+  if(!show) return;
+  if(!result) return;
+  const blocks = result.details.map(d=>{
+    if(!d.ok || !d.perStage) {
+      const msg = d.err ? __escHtml(d.err) : 'No diagnostics available';
+      return `<div class="infochip" style="display:block; margin:4px 0">${d.name}: ${msg}</div>`;
+    }
+    const rows = d.perStage.map(ps =>
+      `<tr><td>${ps.label}</td><td>${ps.igPrev}</td><td>${ps.minGreen}</td><td>${ps.greenOld}</td><td>${ps.greenNew}</td><td>${ps.requiredGap}</td><td>${ps.actualGap}</td></tr>`
+    ).join('');
+    return `
+      <div class="card" style="padding:8px; margin:6px 0">
+        <strong>${d.name}</strong>
+        <table class="grid compact auto" style="margin-top:6px">
+          <thead><tr><th>Stage</th><th>IG(prev→cur)</th><th>Min green</th><th>Old green</th><th>New green</th><th>Req gap</th><th>Actual gap</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }).join('');
+  host.innerHTML = `<div class="infobar">Diagnostics for ${target}s</div>` + blocks;
+}
+
+// --- Scale Plans button helper (export)
+function exportScalePreviewJSON(){
+  const cache = App._scalePreviewCache;
+  if(!cache || !cache.result){ alert('Please run Preview first.'); return; }
+  const { result, target } = cache;
+  if(!result.ok){ alert('Preview must be OK for all junctions before exporting.'); return; }
+  const payload = {
+    type: 'scaled-utc-plan',
+    version: 'v2.6.1',
+    targetCycle: target|0,
+    generatedAt: new Date().toISOString(),
+    main: { mainCycle: target|0 },
+    junctions: result.details.map(d=>({ id:d.id, name:d.name, utcPlan: d.plan }))
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().replace(/[:.]/g,'-');
+  a.href = url;
+  a.download = `scaled-plans-${target}s-${ts}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function scalePreview(target, removeDouble){
+  const details = [];
+  const clones = JSON.parse(JSON.stringify(App.state.junctions||[]));
+  // apply double-cycle removal on clones if requested
+  if(removeDouble){ clones.forEach(j=> j.doubleCycle = false); }
+  for(let i=0;i<clones.length;i++){
+    const j = clones[i];
+    const r = computeScaledPlanForJunction(j, target);
+    if(r.ok){
+      // stash plan for potential application
+      details.push({ok:true, name:j.name, id:j.id, plan:r.plan, metrics:r.metrics});
+    }else{
+      details.push({ok:false, name:j.name, id:j.id, err:r.err});
+    }
+  }
+  const ok = details.every(d=>d.ok);
+  return {ok, details};
+}
+
+function applyScale(target, removeDouble){
+  // Optional: remove double cycle on real state first
+  if(removeDouble){ (App.state.junctions||[]).forEach(j=> j.doubleCycle=false); }
+
+  // Compute with real objects to obtain plans; abort on first failure
+  const updates = [];
+  for(const j of (App.state.junctions||[])){
+    const r = computeScaledPlanForJunction(j, target);
+    if(!r.ok){ return {ok:false, err:r.err}; }
+    updates.push({j, plan:r.plan});
+  }
+  // Apply
+  updates.forEach(u=>{ u.j.utcPlan = u.plan; });
+  App.state.mainCycle = target|0;
+  const mc = document.getElementById('mainCycle'); if(mc) mc.value = App.state.mainCycle;
+  rebuildTabs();
+  setDirty();
+  runValidation({silent:true});
+  setStatus(`✅ Scaled plans to ${target}s and updated main cycle.`);
+  return {ok:true};
+}
+
+// Compute a scaled UTC plan for one junction while keeping intergreens fixed and
+// scaling only the actual green time proportionally. Returns {ok, plan, err, metrics}
+function computeScaledPlanForJunction(j, targetMain){
+  // Effective current/target cycles for this junction (respect double cycle flag)
+  const curC = j.doubleCycle ? (App.state.mainCycle/2) : App.state.mainCycle;
+  const tgtC = j.doubleCycle ? (targetMain/2) : targetMain;
+  if(!(curC>0 && tgtC>0)) return {ok:false, err:`Invalid cycles for ${j.name}`};
+
+  // Realised cycle under current timings (includes min greens + intergreens)
+  const rc = computeRealisedCycleAdj(j);
+  if(!rc.ok) return {ok:false, err: rc.err && rc.err[0] ? rc.err[0] : `Realised cycle error for ${j.name}`};
+
+  const N = rc.plan.length;
+  const toIdx = rc.toIdx.slice();
+
+  // Fixed intergreens (preceding each stage)
+  const igPrev = new Array(N).fill(0).map((_,i)=>{
+    const curIdx  = toIdx[i];
+    const prevIdx = toIdx[(i-1+N)%N];
+    return Math.max(0, j.intergreen[prevIdx][curIdx]);
+  });
+
+  // Actual green durations per stage (current)
+  const greens = new Array(N).fill(0).map((_,i)=>{
+    const curIdx  = toIdx[i];
+    const prevIdx = toIdx[(i-1+N)%N];
+    const start   = rc.RC[i] + Math.max(0, j.intergreen[prevIdx][curIdx]);
+    const end     = rc.RC[i+1];
+    return Math.max(0, end - start);
+  });
+
+  const factor = tgtC / curC;
+  let scaled = greens.map(g=> Math.max(0, Math.round(g * factor)));
+
+  // Enforce per-stage min green constraints
+  const mins = toIdx.map(idx => (j.stages[idx] && (j.stages[idx].minGreenSec|0)) || 0);
+  for(let i=0;i<N;i++) if(scaled[i] < mins[i]) scaled[i] = mins[i];
+
+  // Totals check against target: fixed IG + scaled greens must fit exactly tgtC
+  const sum = arr=> arr.reduce((a,b)=>a+b,0);
+  const totalIG = sum(igPrev);
+  const totalG  = sum(scaled);
+  const need    = tgtC - totalIG;
+
+  if(totalG > need){
+    // We need to reduce total green by `over` seconds but may not go below per-stage mins
+    let over = totalG - need; // > 0
+    const surplus = scaled.map((g,i)=> Math.max(0, g - mins[i]));
+    const totalSurplus = surplus.reduce((a,b)=>a+b,0);
+    if(totalSurplus < over){
+      // Even if we squeeze all stages down to their min greens we still don't fit
+      const minTotal = mins.reduce((a,b)=>a+b,0);
+      return {ok:false, err:`${j.name}: min greens (${minTotal}s) + fixed intergreens (${totalIG}s) exceed ${tgtC}s (need ≤ ${need}s green).`};
+    }
+    // Proportional compression based on available surplus per stage
+    // First pass: proportional integer reduction
+    let removed = 0;
+    for(let i=0;i<scaled.length;i++){
+      if(surplus[i] <= 0) continue;
+      const take = Math.min(surplus[i], Math.floor(over * (surplus[i] / totalSurplus)));
+      if(take>0){ scaled[i] -= take; surplus[i] -= take; removed += take; }
+    }
+    over -= removed;
+    // Second pass: round-robin any remaining seconds of `over`, never go below mins
+    let i = 0; const Nrr = scaled.length; let guard = 10000;
+    while(over > 0 && guard-- > 0){
+      if(surplus[i % Nrr] > 0){ scaled[i % Nrr] -= 1; surplus[i % Nrr] -= 1; over -= 1; }
+      i++;
+    }
+  }
+
+  // Distribute slack proportionally to original greens (fallback to even if all zeros)
+  let slack = need - totalG; // ≥ 0
+  if(slack > 0){
+    const base = sum(greens);
+    if(base > 0){
+      for(let i=0;i<N;i++){
+        const add = Math.floor(slack * (greens[i]/base));
+        scaled[i] += add; slack -= add;
+      }
+    }
+    // Any remainder: add 1s round-robin to preserve order
+    let k=0; while(slack>0){ scaled[k%N]++; slack--; k++; }
+  }
+
+  // Build per-stage diagnostics (after final scaling/compression)
+  const perStage = new Array(N).fill(null).map((_,i)=>({
+    label: j.stages[toIdx[i]].label,
+    igPrev: igPrev[i],
+    minGreen: mins[i],
+    greenOld: greens[i],
+    greenNew: scaled[i],
+    requiredGap: igPrev[i] + mins[i],
+    actualGap: igPrev[i] + scaled[i]
+  }));
+
+  // Build new realised change times RC' based on igPrev + scaled greens, anchored at 0
+  const RCp = new Array(N+1).fill(0);
+  RCp[0] = 0; // anchor start at 0 to avoid wrap artefacts during preview verification
+  for(let i=0;i<N;i++){
+    const inc = igPrev[i] + scaled[i];
+    RCp[i+1] = RCp[i] + (inc < 1 ? 1 : inc);
+  }
+  // Total should equal target cycle for this junction
+  const totalRC = RCp[N];
+  if(totalRC !== tgtC){
+    // minor rounding guard: adjust the last boundary to match exactly
+    RCp[N] = tgtC;
+  }
+
+  // Convert realised boundaries into plan requests (request exactly at change times)
+  const newPlan = new Array(N).fill(null).map((_,i)=>({
+    to: j.stages[toIdx[i]].label,
+    at: Math.round(RCp[i])
+  })).sort((a,b)=> a.at - b.at);
+  // Wrap into [0, tgtC)
+  for(let i=0;i<newPlan.length;i++){ newPlan[i].at = ((newPlan[i].at % tgtC) + tgtC) % tgtC; }
+  newPlan.sort((a,b)=> a.at - b.at);
+
+  // Verify feasibility under the TARGET cycle time
+  const jClone = JSON.parse(JSON.stringify(j));
+  jClone.utcPlan = newPlan.map(r=>({to:r.to, at:r.at}));
+  const __oldMain = App.state.mainCycle;
+  let rcNew;
+  try{
+    App.state.mainCycle = targetMain|0;
+    rcNew = computeRealisedCycle(jClone);
+  }finally{
+    App.state.mainCycle = __oldMain;
+  }
+  if(!rcNew.ok){
+    return {ok:false, err:`${j.name}: ${rcNew.err && rcNew.err[0] ? rcNew.err[0] : 'realisation check failed'}`};
+  }
+
+  // Also ensure no stage is "missed": sequence length and labels preserved up to rotation
+  const seqOldArr = rc.plan.map(p=>p.to);
+  const seqNewArr = rcNew.plan.map(p=>p.to);
+  function isRotation(a,b){
+    if(a.length!==b.length) return false;
+    const s = a.join('\u0001');
+    const t = b.join('\u0001');
+    return (s+s).includes(t);
+  }
+  if(!isRotation(seqOldArr, seqNewArr)){
+    return {ok:false, err:`${j.name}: stage sequence changed unexpectedly (would miss or reorder a stage).`};
+  }
+
+  // Build metrics breakdown for preview
+  const sum2 = arr=> arr.reduce((a,b)=>a+b,0);
+  const metrics = {
+    curCycle: curC|0,
+    tgtCycle: tgtC|0,
+    factor: +(tgtC/curC).toFixed(3),
+    igTotal: sum2(igPrev),
+    curGreen: sum2(greens),
+    minGreenTotal: sum2(mins),
+    scaledGreen: sum2(scaled),
+    needGreen: tgtC - sum2(igPrev),
+  };
+  return {ok:true, plan:newPlan, metrics, perStage};
+}
+
 
 // Helper: build export object for save/load
 // Step (3)
@@ -902,6 +1371,8 @@ function runValidation({silent}={silent:false}){
     const v=document.getElementById('validateBtn'); if(v) v.classList.remove('dirty');
     setStatus('Validated ✔ — press Plot to render');
     const plot=document.getElementById('plotBtn'); if(plot) plot.disabled=false;
+    // --- Scale Plans button event handler (enable on validate OK)
+    const scale=document.getElementById('scaleBtn'); if(scale) scale.disabled=false;
     const x=document.getElementById('transferBtn'); if(x) x.disabled=false;
     if(!silent) log('VALIDATION OK','info');
     const ba=document.getElementById('bootAlert'); if(ba){ ba.classList.remove('show'); ba.textContent=''; }
@@ -909,6 +1380,8 @@ function runValidation({silent}={silent:false}){
     App.state.validOk = false;
     setStatus('Validation failed — see alerts');
     const plot=document.getElementById('plotBtn'); if(plot) plot.disabled=true;
+    // --- Scale Plans button event handler (disable when invalid)
+    const scale=document.getElementById('scaleBtn'); if(scale) scale.disabled=true;
     const x=document.getElementById('transferBtn'); if(x) x.disabled=true;
     const msg = 'Fix these first:\n - '+errs.join('\n - ');
     if(silent){
@@ -1615,7 +2088,106 @@ function resizeStages(j, n){
   }
 
 // ---- boot
+// --- DOM hygiene helper: remove any stray JS text accidentally injected into the page
+function stripStrayScriptText(){
+  const needles = [
+    '// --- Scale Plans button definitions',
+    '// --- Scale Plans button event handler (modal wiring)'
+  ];
+  function walk(node){
+    if(!node) return;
+    // If this is a text node, scrub it if it contains any needle
+    if(node.nodeType === Node.TEXT_NODE){
+      const s = node.nodeValue || '';
+      for(const n of needles){
+        if(s.includes(n)){
+          node.nodeValue = '';
+          return; // cleaned
+        }
+      }
+      return;
+    }
+    // Recurse into element children
+    const kids = node.childNodes;
+    for(let i=0;i<kids.length;i++) walk(kids[i]);
+  }
+  walk(document.body);
+}
+
 async function boot(){
+  // Scrub any stray JS text nodes that might have been pasted into the HTML
+  stripStrayScriptText();
+  // --- Scale Plans button definitions
+  const scaleBtn = document.getElementById('scaleBtn');
+  // --- Scale Plans button event handler
+  if (scaleBtn){
+    scaleBtn.addEventListener('click', ()=>{
+      if(!App.state.validOk){
+        alert('Please Validate first.');
+        return;
+      }
+      openScalePlansDialog();
+    });
+  }
+  // --- Scale Plans button event handler (modal wiring)
+  (function(){
+    const modal   = document.getElementById('scaleModal');
+    if(!modal) return;
+    const btnPrev = document.getElementById('scPreviewBtn');
+    const btnApply= document.getElementById('scApplyBtn');
+    const btnCancel=document.getElementById('scCancelBtn');
+    const btnClose =document.getElementById('scCloseBtn');
+    const chkRem  = document.getElementById('scRemoveDouble');
+    const btnExport = document.getElementById('scExportBtn');
+
+    if(btnClose){ btnClose.addEventListener('click', closeScalePlansDialog); }
+    if(btnCancel){ btnCancel.addEventListener('click', closeScalePlansDialog); }
+
+    if(btnPrev){
+      btnPrev.addEventListener('click', ()=>{
+        const t = parseTarget(); if(t==null) return;
+        btnPrev.disabled = true; if(btnApply) btnApply.disabled = true;
+        const prevText = btnPrev.textContent; btnPrev.textContent = 'Previewing…';
+        try{
+          const res = scalePreview(t, !!(chkRem && chkRem.checked));
+          renderScalePreview(res, t);
+          if(!res.ok){
+            const bad = res.details.find(d=>!d.ok);
+            if(bad){ setStatus(`❌ Cycle ${t}s not possible: ${bad.err||'constraint violation'}`); }
+          }else{
+            setStatus(`Preview OK for ${t}s — ready to apply.`);
+          }
+        }catch(err){
+          const msg = (err && err.message) ? err.message : String(err);
+          setStatus('❌ Preview failed: '+msg);
+          const box = document.getElementById('scPreview');
+          if(box) box.textContent = 'Preview failed: '+msg;
+        }finally{
+          btnPrev.textContent = prevText;
+          btnPrev.disabled = false;
+        }
+      });
+    }
+
+    if(btnApply){
+      btnApply.addEventListener('click', ()=>{
+        const t = parseTarget(); if(t==null) return;
+        const res = applyScale(t, !!(chkRem && chkRem.checked));
+        if(!res.ok){
+          alert(res.err||'Apply failed');
+        }else{
+          closeScalePlansDialog();
+        }
+      });
+    }
+
+    if(btnExport){
+      btnExport.addEventListener('click', ()=>{
+        try{ exportScalePreviewJSON(); }
+        catch(err){ alert((err&&err.message)||String(err)); }
+      });
+    }
+  })();
   App.initCfg = await loadBundledInit();
   setFileNameLabel(App.state.fileName);
   const dbgPanel = document.getElementById('debugPanel');
