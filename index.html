@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Signal Plan Checker 2.6.1</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header>
+  <div class="header-row">
+    <h1>Signal Plan Checker <small class="muted">v2.6.1h</small></h1>
+  </div>
+  <div class="infobar-wrap">
+    <div class="infobar-line">
+      <span id="statusChip" class="infochip infobar">Status Message: Waiting for Validate…</span>
+      <span id="fileNameLabel" class="infochip infobar">Filename: file unsaved</span>
+    </div>
+  </div>
+</header>
+ 
+  <div class="tabs" id="masterTabs" style="margin:8px 10px 0">
+    <button class="tab active" id="tabDataBtn">Data</button>
+    <button class="tab" id="tabPlotBtn" disabled>Plot</button>
+    <button class="tab" id="tabDebugBtn" style="display:none">Debug</button>
+    <span class="push-right"></span>
+    <button id="saveAllBtn" title="Save all data (human-readable)">Save…</button>
+    <button id="loadAllBtn" title="Load saved data">Load…</button>
+    <button id="helpBtn" title="Open the user manual in a new window">Help</button>
+    <input id="loadFileInput" type="file" accept=".TD2,.td2,.txt,.json,.plan" style="display:none" />
+  </div>
+
+<main>
+  <section class="card" id="dataPanel">
+    <!-- data panel -->
+    <!-- Was the main data input card; give it an id so we can toggle tabs -->
+    
+    
+    
+    <div id="bootAlert" class="alert"></div>
+    <div class="row">
+      <span class="badge">Init auto-loaded</span>
+      <label>Main cycle (s)<input id="mainCycle" type="number" min="1" max="240" value="60"/></label>
+      <label>Junctions<input id="jCount" type="number" min="2" max="5" value="3"/></label>
+      <label>View cycles
+        <select id="viewCycles">
+          <option value="1">1</option><option value="2" selected>2</option><option value="3">3</option>
+        </select>
+      </label>
+  <button id="validateBtn">Validate</button>
+  <button id="plotBtn" disabled>Plot</button>
+  <!-- --- Scale Plans button definition -->
+  <button id="scaleBtn" disabled>Scale Plans</button>
+    </div>
+    <div class="tabs" id="jtabs"></div>
+    <div id="tabpanels"></div>
+  </section>
+
+  <section id="plotPanel" class="card" style="display:none">
+    <div id="plotToolbar">
+      <strong>TD Diagram</strong>
+      <label>Zoom (px/s)<input type="range" id="zoom" min="1" max="12" step="1" value="4"/></label>
+      <button id="fitBtn">Fit</button>
+      <button id="overlayBtn">Overlays…</button>
+      <button id="adjustBtn">Adjust…</button>
+      <label style="display:flex;align-items:center;gap:6px"><input id="guidesToggle" type="checkbox" checked> Guides</label>
+      <label style="display:flex;align-items:center;gap:6px"><input id="debugToggle" type="checkbox"> Enable Debug</label>
+      <span id="info" class="badge">—</span>
+      <button id="copyBtn" style="margin-left:auto" title="Copy TD Diagram as image">Copy</button>
+    </div>
+    <div id="twoCols">
+      <div id="hiddenWrap">
+        <div class="plot-row">
+          <canvas id="labelCanvas"></canvas>
+          <div id="timelineScroll">
+            <canvas id="hiddenCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+      <!-- Visible canvas removed: using hidden canvas only -->
+    </div>
+  </section>
+  <section id="debugPanel" class="card" style="display:none">
+    <div class="row">
+      <button id="dbgClear">Clear</button>
+      <span>Debug Log</span>
+    </div>
+    <div id="log"></div>
+  </section>
+
+  <!-- --- Scale Plans modal definition -->
+  <div id="scaleModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="scaleModalTitle">
+    <div class="modal-card">
+      <header>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <h3 id="scaleModalTitle">Scale Plans</h3>
+          <div id="scSuggestMsg" class="infochip" style="font-size:12px"></div>
+        </div>
+        <button id="scCloseBtn" title="Close">×</button>
+      </header>
+      <div class="body">
+        <div class="modal-grid">
+          <label>Current cycle (s)
+            <input id="scCur" type="number" disabled>
+          </label>
+          <label>Target cycle (s)
+            <input id="scTarget" type="number" min="1" max="240">
+          </label>
+          <label style="display:flex; align-items:center; gap:8px">
+            <button id="scSuggestBtn" type="button" title="Suggest minimum feasible main cycle">Suggest min</button>
+          </label>
+          <label style="grid-column: 1 / span 2; display:flex; align-items:center; gap:8px">
+            <input id="scRemoveDouble" type="checkbox"> Remove double cycle (if present)
+          </label>
+        </div>
+        <div id="scPreview" class="infobar-wrap" style="margin-top:8px"></div>
+        <div id="scDiag" class="infobar-wrap" style="margin-top:8px"></div>
+      </div>
+      <footer>
+        <button id="scPreviewBtn">Preview</button>
+        <button id="scExportBtn" disabled title="Export scaled UTC plans (from preview) as JSON">Export JSON</button>
+        <button id="scApplyBtn" disabled>Apply</button>
+        <button id="scCancelBtn">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- --- Help modal (PDF viewer) -->
+  <div id="helpModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
+    <div class="modal-card" style="width:min(900px,95vw);max-width:95vw;max-height:85vh;">
+      <header>
+        <h3 id="helpModalTitle">User Manual</h3>
+        <button id="helpCloseBtn" title="Close">×</button>
+      </header>
+      <div class="body" style="padding:0">
+        <div id="helpViewer" style="display:block;width:80vw;max-width:900px;height:70vh">
+          <object id="helpObject" data="" type="application/pdf" width="100%" height="100%">
+            <div id="helpFallback" style="padding:12px;font-size:14px">
+              <p><strong>Unable to display the PDF here.</strong></p>
+              <p><a href="TD2_User_Manual.pdf" target="_blank" rel="noopener">Open the manual in a new tab</a>.</p>
+              <p>If this keeps happening, your browser may block inline PDFs; the **Open in new tab** button below will always work.</p>
+            </div>
+          </object>
+        </div>
+      </div>
+      <footer>
+        <button id="helpOpenNew" title="Open manual in a new tab">Open in new tab</button>
+        <button id="helpCloseBtn2" title="Close">Close</button>
+      </footer>
+    </div>
+  </div>
+</main>
+
+<!-- Embedded Configuration Data -->
+<script type="application/json" id="initCfg">
+{
+  "appName": "Signal Plan Checker",
+  "ui": { "debug": { "enabled": true, "dock": { "showOnLoad": true }, "logLevel": "info", "validationOnActions": false, "perfMarkers": true } },
+  "mainCycleTime": { "default": 60, "min": 1, "max": 240, "mustBeEvenWhenAnyDouble": true },
+  "junctionCount": { "default": 3, "min": 2, "max": 5 },
+  "doubleCycle": { "allowed": true, "requireAtLeastOneMainCycle": true },
+  "stageCount": { "default": 2, "min": 2 },
+  "stage": { "minGreen": { "default": 7, "min": 1 } },
+  "intergreen": { "diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": { "offDiagonal": 5 }, "domain": { "min": 0, "max": 60 } },
+  "journeyTime": { "default": 20, "min": 0, "max": 60 },
+  "utcPlan": { "requireAtLeastOneChange": true, "markRequestsBlue": true, "showQueuedChangeMarkers": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [ { "to": "S1", "at": 0 }, { "to": "S2", "at": 30 } ] },
+  "plot": { "hiddenWindowMultiplier": 5, "viewCycles": { "options": [1, 2, 3], "default": 2 }, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4 },
+  "overlays": { "adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true },
+  "packaging": { "includeDocs": true }
+}
+</script>
+
+<!-- Adjust modal (temporary) -->
+<div id="adjModal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-card" role="document" aria-labelledby="adjTitle">
+    <header>
+      <h3 id="adjTitle">Adjust junction</h3>
+      <button id="adjCloseBtn" aria-label="Close">✕</button>
+    </header>
+    <div class="body">
+      <div class="modal-grid">
+        <label>Junction
+          <select id="adjJunc"></select>
+        </label>
+      </div>
+
+      <h4 style="margin:10px 0 6px 0;font-size:13px">Offset adjustment</h4>
+      <div class="modal-grid" style="grid-template-columns: 1fr auto; gap: 8px; align-items: end;">
+        <label>Offset (s)
+          <input type="number" id="adjOffset" step="1" value="0"/>
+        </label>
+        <button id="adjApply" style="padding: 8px 16px;">Apply Offset</button>
+      </div>
+
+ <h4 style="margin:10px 0 6px 0;font-size:13px">Transfer time between stages</h4>
+<div class="modal-grid" style="grid-template-columns: 1fr 1fr; gap: 8px;">
+  <label>Donor stage
+    <select id="adjDonorStage"></select>
+  </label>
+  <label>Fixed point
+    <select id="adjFixedPoint">
+      <option value="eog">End of Green (EoG)</option>
+      <option value="sog">Start of Green (SoG)</option>
+    </select>
+  </label>
+  <label>Recipient stage
+    <select id="adjRecipientStage"></select>
+  </label>
+  <label>Time to transfer (s)
+    <input type="number" id="adjTransferTime" step="1" min="1" value="5"/>
+  </label>
+  <div style="grid-column: 1 / -1;">
+    <button id="adjAddTransfer" style="width:100%">Add Transfer</button>
+  </div>
+</div>
+
+<hr style="border:none;border-top:1px solid var(--line);margin:10px 0"/>
+<h4 style="margin:0 0 6px 0;font-size:13px">Current adjustments</h4>
+<div id="adjList"></div>
+
+<p class="muted" style="margin-top:8px;font-size:12px">
+  Offset shifts the entire UTC plan. Time transfers move time from one stage to another, respecting minimum greens and intergreens.
+  Fixed point determines which end of the stages are affected.
+</p>
+    </div>
+    <footer>
+      <button id="adjClear">Clear</button>
+      <button id="adjCommit">Update UTC plans</button>
+    </footer>
+  </div>
+</div>
+
+<!-- Overlays modal (temporary) -->
+<div id="ovlModal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-card" role="document" aria-labelledby="ovlTitle">
+    <header>
+      <h3 id="ovlTitle">Add overlay</h3>
+      <button id="ovlCloseBtn" aria-label="Close">✕</button>
+    </header>
+    <div class="body">
+      <div class="modal-grid">
+        <label>From
+          <select id="ovlFrom"></select>
+        </label>
+        <label>To
+          <select id="ovlTo"></select>
+        </label>
+        <label>Mode
+  <select id="ovlMode">
+    <option value="stage" selected>Stage-based</option>
+    <option value="stage-to-stage">Stage-to-stage</option>
+    <option value="time">Time-based</option>
+  </select>
+</label>
+<div id="stageGroup">
+  <label>Stage (origin)
+    <select id="ovlStage"></select>
+  </label>
+</div>
+<div id="stageToStageGroup" style="display:none;grid-column:1 / -1">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+    <label>Start stage
+      <select id="ovlFromStage"></select>
+    </label>
+    <label>Edge
+      <select id="ovlFromEdge">
+        <option value="start">Start of green</option>
+        <option value="end">End of green</option>
+      </select>
+    </label>
+    <label>End stage
+      <select id="ovlToStage"></select>
+    </label>
+    <label>Edge
+      <select id="ovlToEdge">
+        <option value="start">Start of green</option>
+        <option value="end">End of green</option>
+      </select>
+    </label>
+  </div>
+</div>
+<div id="timeGroup" style="display:none">
+  <label>Start (s)
+    <input type="number" id="ovlStart" min="0" step="1" value="0"/>
+  </label>
+  <label>End (s)
+    <input type="number" id="ovlEnd" min="0" step="1" value="10"/>
+  </label>
+</div>      
+  <div>
+  <div class="swatch-row" id="ovlColorQuick" aria-label="Quick colours">
+    <button type="button" class="swatch-btn" data-color="#e74c3c" title="Red"></button>
+    <button type="button" class="swatch-btn" data-color="#3498db" title="Blue"></button>
+    <button type="button" class="swatch-btn" data-color="#27ae60" title="Green"></button>
+    <button type="button" class="swatch-btn" data-color="#ffa500" title="Orange"></button>
+    <button type="button" class="swatch-btn" data-color="#9b59b6" title="Purple"></button>
+  </div>
+  <label>Color
+    <input type="color" id="ovlColor" value="#ffa500"/>
+  </label>
+</div>      
+        
+        
+        <label>Opacity (0–1)
+          <input type="number" id="ovlAlpha" min="0" max="1" step="0.05" value="0.3"/>
+        </label>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--line);margin:10px 0"/>
+      <h4 style="margin:0 0 6px 0;font-size:13px">Current overlays</h4>
+      <div id="ovlList"></div>
+      <p class="muted" style="margin-top:8px;font-size:12px">
+        This is a temporary overlay editor. Saving stores to memory only; drawing integration comes next.
+      </p>
+    </div>
+    <footer>
+      <button id="ovlCancel">Cancel</button>
+      <button id="ovlSave">Save overlay</button>
+    </footer>
+  </div>
+</div>
+
+  
+    
+      
+      
+    
+     
+<script type="application/json" id="initCfg">
+{
+  "appName": "Signal Plan Checker",
+  "ui": { "debug": { "enabled": true, "dock": { "showOnLoad": true }, "logLevel": "info", "validationOnActions": false, "perfMarkers": true } },
+  "mainCycleTime": { "default": 60, "min": 1, "max": 240, "mustBeEvenWhenAnyDouble": true },
+  "junctionCount": { "default": 3, "min": 2, "max": 5 },
+  "doubleCycle": { "allowed": true, "requireAtLeastOneMainCycle": true },
+  "stageCount": { "default": 2, "min": 2 },
+  "stage": { "minGreen": { "default": 7, "min": 1 } },
+  "intergreen": { "diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": { "offDiagonal": 5 }, "domain": { "min": 0, "max": 60 } },
+  "journeyTime": { "default": 20, "min": 0, "max": 60 },
+  "utcPlan": { "requireAtLeastOneChange": true, "markRequestsBlue": true, "showQueuedChangeMarkers": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [ { "to": "S1", "at": 0 }, { "to": "S2", "at": 30 } ] },
+  "plot": { "hiddenWindowMultiplier": 5, "viewCycles": { "options": [1, 2, 3], "default": 2 }, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4 },
+  "overlays": { "adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true },
+  "packaging": { "includeDocs": true }
+}
+</script>
+
+
+<!-- JavaScript Modules (Load Order is Critical) -->
+<script src="js/core.js?v=20"></script>
+<script src="js/validation.js?v=18"></script>
+<script src="js/plan-computation.js?v=22"></script>
+<script src="js/canvas-renderer.js?v=34"></script>
+<script src="js/ui-handlers.js?v=37"></script>
+<script src="js/file-io.js?v=20"></script>
+<script src="js/interactions.js?v=18"></script>
+<script src="js/boot.js?v=39"></script>
+<script src="js/tab-manager.js?v=18"></script>
+
+<!-- Initialize after all scripts load -->
+<script>
+// Wait for window.load to ensure all scripts are executed
+window.addEventListener('load', function() {
+  // Verify all required functions exist
+  if (typeof boot === 'undefined') {
+    console.error('boot() not defined!');
+    return;
+  }
+  if (typeof rebuildTabs === 'undefined') {
+    console.error('rebuildTabs() not defined! ui-handlers.js did not load properly.');
+    return;
+  }
+  boot();
+});
+</script>
+
+</body>
+</html>
