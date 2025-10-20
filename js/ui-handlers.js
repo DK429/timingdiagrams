@@ -1125,3 +1125,219 @@ if(clearAllBtn){
 
     if(btn){ btn.addEventListener('click', openModal); }
   }
+
+  // View Plans modal
+  function wirePlansModal(){
+    const btn = document.getElementById('viewPlansBtn');
+    let modal, closeBtn1, closeBtn2, copyBtn, printBtn, content;
+    let modalWired = false;
+
+    function wireModalElements(){
+      modal = document.getElementById('plansModal');
+      closeBtn1 = document.getElementById('plansCloseBtn');
+      closeBtn2 = document.getElementById('plansClose');
+      copyBtn = document.getElementById('plansCopy');
+      printBtn = document.getElementById('plansPrint');
+      content = document.getElementById('plansContent');
+      if(!(modal && closeBtn1 && closeBtn2 && copyBtn && printBtn && content)) return false;
+      closeBtn1.addEventListener('click', closeModal);
+      closeBtn2.addEventListener('click', closeModal);
+      copyBtn.addEventListener('click', handleCopy);
+      printBtn.addEventListener('click', handlePrint);
+      modal.addEventListener('click', (e)=>{ if(e.target === modal) closeModal(); });
+      document.addEventListener('keydown', (ev)=>{
+        const m = document.getElementById('plansModal');
+        if(ev.key==='Escape' && m && m.classList.contains('show')) closeModal();
+      });
+      modalWired = true;
+      return true;
+    }
+
+    function renderPlans(){
+      const junctions = App.state.junctions || [];
+      if(junctions.length === 0){
+        content.innerHTML = '<p class="muted">No junctions defined.</p>';
+        return;
+      }
+
+      // Create columns for each junction
+      let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;">';
+
+      junctions.forEach(j => {
+        const cycleTime = j.doubleCycle ? App.state.mainCycle / 2 : App.state.mainCycle;
+        const offset = j.offset || 0;
+        const plan = getAdjustedPlan(j);
+
+        html += `<div style="border:1px solid var(--line);border-radius:8px;padding:12px;font-family:monospace;">`;
+        html += `<div style="margin-bottom:8px;"><strong>Junction: ${j.name}</strong></div>`;
+
+        // Single grid for all rows with aligned colons and right-aligned values
+        html += `<div style="display:grid;grid-template-columns:auto auto auto;gap:0 8px;width:fit-content;">`;
+        html += `<div style="text-align:right;">Cycle</div><div>:</div><div style="text-align:right;">${cycleTime}s</div>`;
+        html += `<div style="text-align:right;">Offset</div><div>:</div><div style="text-align:right;">${offset}s</div>`;
+
+        if(plan && plan.length > 0){
+          // Group by stage number
+          const stageMap = new Map();
+          plan.forEach(p => {
+            const stageNum = j.stages.findIndex(s => s.label === p.to) + 1;
+            if(!stageMap.has(stageNum)){
+              stageMap.set(stageNum, []);
+            }
+            stageMap.get(stageNum).push(p.at);
+          });
+
+          // Add separator row
+          html += `<div style="grid-column:1/-1;border-top:1px solid var(--line);margin:4px 0;"></div>`;
+
+          // Force stage times - continue in same grid
+          const sortedStages = Array.from(stageMap.keys()).sort((a,b) => a-b);
+          sortedStages.forEach(stageNum => {
+            const times = stageMap.get(stageNum).sort((a,b) => a-b);
+            times.forEach(time => {
+              html += `<div style="text-align:right;">F${stageNum}</div><div>:</div><div style="text-align:right;">${time}s</div>`;
+            });
+          });
+        } else {
+          // Add separator row
+          html += `<div style="grid-column:1/-1;border-top:1px solid var(--line);margin:4px 0;"></div>`;
+          html += `<div style="grid-column:1/-1;" class="muted">No plan defined</div>`;
+        }
+
+        html += `</div></div>`;
+      });
+
+      html += '</div>';
+      content.innerHTML = html;
+    }
+
+    function openModal(){
+      if(!modalWired){ if(!wireModalElements()) return; }
+      renderPlans();
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden','false');
+      enableDragModal('plansModal');
+    }
+
+    function closeModal(){
+      const m = document.getElementById('plansModal');
+      if(m){ m.classList.remove('show'); m.setAttribute('aria-hidden','true'); }
+    }
+
+    function handleCopy(){
+      const junctions = App.state.junctions || [];
+      if(junctions.length === 0) return;
+
+      let text = 'UTC Plans\n\n';
+
+      junctions.forEach(j => {
+        const cycleTime = j.doubleCycle ? App.state.mainCycle / 2 : App.state.mainCycle;
+        const offset = j.offset || 0;
+        const plan = getAdjustedPlan(j);
+
+        text += `Junction: ${j.name}\n`;
+        text += `Cycle  : ${cycleTime}s\n`;
+        text += `Offset : ${offset}s\n`;
+
+        if(plan && plan.length > 0){
+          const stageMap = new Map();
+          plan.forEach(p => {
+            const stageNum = j.stages.findIndex(s => s.label === p.to) + 1;
+            if(!stageMap.has(stageNum)){
+              stageMap.set(stageNum, []);
+            }
+            stageMap.get(stageNum).push(p.at);
+          });
+
+          const sortedStages = Array.from(stageMap.keys()).sort((a,b) => a-b);
+          sortedStages.forEach(stageNum => {
+            const times = stageMap.get(stageNum).sort((a,b) => a-b);
+            times.forEach(time => {
+              text += `F${stageNum}     : ${time}s\n`;
+            });
+          });
+        } else {
+          text += 'No plan defined\n';
+        }
+
+        text += '\n';
+      });
+
+      navigator.clipboard.writeText(text).then(() => {
+        const originalText = copyBtn.textContent;
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => { copyBtn.textContent = originalText; }, 2000);
+      }).catch(err => {
+        alert('Failed to copy to clipboard');
+        console.error('Copy failed:', err);
+      });
+    }
+
+    function handlePrint(){
+      const junctions = App.state.junctions || [];
+      if(junctions.length === 0) return;
+
+      // Create a print-friendly version
+      let printContent = '<html><head><title>UTC Plans</title>';
+      printContent += '<style>body{font-family:monospace;padding:20px;}';
+      printContent += '.junction{page-break-inside:avoid;margin-bottom:30px;border:1px solid #ccc;padding:15px;border-radius:8px;}';
+      printContent += '.header{font-weight:bold;margin-bottom:10px;}';
+      printContent += '.grid{display:grid;grid-template-columns:auto auto auto;gap:0 8px;width:fit-content;}';
+      printContent += '.grid div{text-align:right;}';
+      printContent += '.separator{border-top:1px solid #ccc;margin:8px 0;grid-column:1/-1;}';
+      printContent += '@media print{.junction{page-break-inside:avoid;}}</style></head><body>';
+
+      printContent += '<h1>UTC Plans</h1>';
+
+      junctions.forEach(j => {
+        const cycleTime = j.doubleCycle ? App.state.mainCycle / 2 : App.state.mainCycle;
+        const offset = j.offset || 0;
+        const plan = getAdjustedPlan(j);
+
+        printContent += '<div class="junction">';
+        printContent += `<div class="header">Junction: ${j.name}</div>`;
+        printContent += '<div class="grid">';
+        printContent += `<div>Cycle</div><div>:</div><div>${cycleTime}s</div>`;
+        printContent += `<div>Offset</div><div>:</div><div>${offset}s</div>`;
+
+        if(plan && plan.length > 0){
+          const stageMap = new Map();
+          plan.forEach(p => {
+            const stageNum = j.stages.findIndex(s => s.label === p.to) + 1;
+            if(!stageMap.has(stageNum)){
+              stageMap.set(stageNum, []);
+            }
+            stageMap.get(stageNum).push(p.at);
+          });
+
+          printContent += '<div class="separator"></div>';
+
+          const sortedStages = Array.from(stageMap.keys()).sort((a,b) => a-b);
+          sortedStages.forEach(stageNum => {
+            const times = stageMap.get(stageNum).sort((a,b) => a-b);
+            times.forEach(time => {
+              printContent += `<div>F${stageNum}</div><div>:</div><div>${time}s</div>`;
+            });
+          });
+        } else {
+          printContent += '<div class="separator"></div>';
+          printContent += '<div style="grid-column:1/-1;">No plan defined</div>';
+        }
+
+        printContent += '</div></div>';
+      });
+
+      printContent += '</body></html>';
+
+      // Open print window
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+      }, 250);
+    }
+
+    if(btn){ btn.addEventListener('click', openModal); }
+  }

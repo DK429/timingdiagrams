@@ -929,19 +929,11 @@ async function boot(){
     e.target.value=c; rebuildTabs(); setDirty();
   });
   document.getElementById('viewCycles').addEventListener('change', (e)=>{
-    App.state.viewCycles=parseInt(e.target.value||2,10);
-    setDirty();
-    // Pre-plot: recompute to keep [C, C*N]
-    if(!App.state.readyToPlot){
-      const vp = measureViewportPx();
-      const Cj = App.state.mainCycle;
-      const N  = App.state.viewCycles || 2;
-      if(vp>0 && Cj){
-        App.state.pxPerSec = Math.max(1, Math.round(vp / (N*Cj)));
-        setViewStart(Cj);
-        const zoom = document.getElementById('zoom');
-        if(zoom){ const zmin=1,zmax=12; zoom.value = String(Math.max(zmin, Math.min(zmax, zmax - (Math.round(App.state.pxPerSec) - zmin)))); }
-      }
+    App.state.viewCycles=parseFloat(e.target.value||2);
+    // Trigger fit button if we're already on the plot tab
+    if(App.state.readyToPlot){
+      const fitBtn = document.getElementById('fitBtn');
+      if(fitBtn) fitBtn.click();
     }
   });
 
@@ -994,7 +986,9 @@ async function boot(){
   if(fit){ fit.addEventListener('click', ()=>{
     const Cj = App.state.mainCycle; const N = App.state.viewCycles || 2;
     const viewportPx = measureViewportPx();
-    const pps = Math.max(1, Math.floor(viewportPx / Math.max(1, N*Cj)));
+    // Round up the visible timeframe to nearest second
+    const targetSeconds = Math.ceil(N * Cj);
+    const pps = Math.max(1, Math.floor(viewportPx / Math.max(1, targetSeconds)));
     App.state.pxPerSec = pps;
     if(zoom){ const zmin=1,zmax=12; zoom.value = String(zmax - (App.state.pxPerSec - zmin)); }
     const centerSec = 1*Cj + (N*Cj)/2; // focus cycles 1..N
@@ -1010,14 +1004,20 @@ async function boot(){
         const plot  = document.getElementById('hiddenCanvas');
         if(!(label && plot)) throw new Error('Canvas not ready');
 
-        // Ensure latest drawing and wait for it to complete
+        // Ensure latest drawing (synchronous - no await to maintain user gesture context)
         if(App.state.readyToPlot && App.state.validOk){
           drawHidden();
           drawLabels();
         }
 
-        // Small delay to ensure drawing completes
-        await new Promise(resolve => setTimeout(resolve, 50));
+        // Get visible viewport area
+        const timelineScroll = document.getElementById('timelineScroll');
+        if(!timelineScroll) throw new Error('Timeline scroll container not found');
+
+        const scrollLeft = timelineScroll.scrollLeft;
+        const scrollTop = timelineScroll.scrollTop;
+        const viewportWidth = timelineScroll.clientWidth;
+        const viewportHeight = timelineScroll.clientHeight;
 
         // Get CSS dimensions (what's actually displayed on screen)
         const labelRect = label.getBoundingClientRect();
@@ -1027,35 +1027,37 @@ async function boot(){
         const dpr = window.devicePixelRatio || 1;
         log('=== CANVAS COPY DEBUG ===', 'info');
         log(`Device Pixel Ratio: ${dpr}`, 'info');
+        log(`Viewport: ${viewportWidth}×${viewportHeight}, scroll: ${scrollLeft},${scrollTop}`, 'info');
         log(`Label Canvas - CSS: ${Math.round(labelRect.width)}×${Math.round(labelRect.height)}`, 'info');
         log(`Label Canvas - Backing: ${label.width}×${label.height}`, 'info');
-        log(`Label Canvas - Style: ${label.style.width} × ${label.style.height}`, 'info');
         log(`Plot Canvas - CSS: ${Math.round(plotRect.width)}×${Math.round(plotRect.height)}`, 'info');
         log(`Plot Canvas - Backing: ${plot.width}×${plot.height}`, 'info');
-        log(`Plot Canvas - Style: ${plot.style.width} × ${plot.style.height}`, 'info');
 
-        // Use the ACTUAL backing store dimensions since both canvases should be properly sized
-        const labelW = label.width;
-        const labelH = label.height;
-        const plotW = plot.width;
-        const plotH = plot.height;
+        // Calculate visible portion of plot canvas in backing store coordinates
+        const scaleX = plot.width / plotRect.width;
+        const scaleY = plot.height / plotRect.height;
 
-        // Check if heights match
-        if (labelH !== plotH) {
-          log(`⚠️ HEIGHT MISMATCH! Label: ${labelH}px, Plot: ${plotH}px`, 'warn');
-          log('This will cause vertical scaling issues in the output.', 'warn');
-        } else {
-          log(`✅ Heights match! Both: ${labelH}px`, 'info');
-        }
+        const srcX = scrollLeft * scaleX;
+        const srcY = scrollTop * scaleY;
+        const srcW = Math.min(viewportWidth * scaleX, plot.width - srcX);
+        const srcH = Math.min(viewportHeight * scaleY, plot.height - srcY);
 
-        // Both canvases should have the same height
-        const outputW = labelW + plotW;
-        const outputH = Math.max(labelH, plotH);
+        // Use label's full height (it's always visible) but match plot's visible height
+        const labelScaleY = label.height / labelRect.height;
+        const labelSrcY = scrollTop * labelScaleY;
+        const labelSrcH = Math.min(viewportHeight * labelScaleY, label.height - labelSrcY);
 
-        log(`Output Canvas: ${outputW}×${outputH}`, 'info');
-        log(`Composition: label(${labelW}×${labelH}) + plot(${plotW}×${plotH})`, 'info');
+        // Output at 2x CSS size for good quality without being excessive
+        const outputScale = 2;
+        const outputLabelW = Math.round(labelRect.width * outputScale);
+        const outputPlotW = Math.round(viewportWidth * outputScale);
+        const outputH = Math.round(viewportHeight * outputScale);
+        const outputW = outputLabelW + outputPlotW;
 
-        // Create output canvas using backing store dimensions
+        log(`Output Canvas: ${outputW}×${outputH} (${outputScale}x CSS size)`, 'info');
+        log(`Copying visible area - Plot source: ${Math.round(srcX)},${Math.round(srcY)} ${Math.round(srcW)}×${Math.round(srcH)}`, 'info');
+
+        // Create output canvas at reasonable size
         const off = document.createElement('canvas');
         off.width = outputW;
         off.height = outputH;
@@ -1065,11 +1067,15 @@ async function boot(){
         octx.fillStyle = '#fff';
         octx.fillRect(0, 0, outputW, outputH);
 
-        // Draw label canvas at actual size (top-left aligned)
-        octx.drawImage(label, 0, 0);
+        // Draw visible portion of label canvas
+        octx.drawImage(label,
+          0, labelSrcY, label.width, labelSrcH,  // source
+          0, 0, outputLabelW, outputH);           // destination
 
-        // Draw plot canvas to the right of label (top-left aligned)
-        octx.drawImage(plot, labelW, 0);
+        // Draw visible portion of plot canvas
+        octx.drawImage(plot,
+          srcX, srcY, srcW, srcH,                     // source (visible area)
+          outputLabelW, 0, outputPlotW, outputH);     // destination
 
         // Helper: convert dataURL to Blob without fetch() (Safari/Firefox robustness)
         function dataURLtoBlob(dataURL){
@@ -1093,43 +1099,48 @@ async function boot(){
         async function tryClipboard(blob){
           // Check feature support; some browsers (Safari/Firefox) may not support image writes.
           const canWrite = !!(navigator.clipboard && window.ClipboardItem);
-          if(!canWrite) return false;
+          log(`Clipboard API available: ${canWrite}`, 'info');
+          if(!canWrite){
+            log('Clipboard API not supported - will download instead', 'warn');
+            return false;
+          }
           try{
-            const item = new ClipboardItem({ [blob.type || 'image/png']: blob });
+            // Check if clipboard-write permission is granted
+            if(navigator.permissions){
+              try{
+                const permissionStatus = await navigator.permissions.query({name: 'clipboard-write'});
+                log(`Clipboard write permission: ${permissionStatus.state}`, 'info');
+              }catch(e){
+                log('Could not query clipboard-write permission (not critical)', 'info');
+              }
+            }
+
+            const item = new ClipboardItem({ 'image/png': blob });
+            log(`Attempting to write ${blob.size} bytes to clipboard`, 'info');
             await navigator.clipboard.write([item]);
-            log('TD Diagram copied to clipboard (PNG)', 'info');
+            log('✅ TD Diagram copied to clipboard (PNG)', 'info');
             // Set status chip after successful copy
             setStatus('✅ Diagram copied to clipboard.');
             return true;
           }catch(err){
-            console.warn('Clipboard write failed, falling back to download:', err && err.name ? err.name : err);
+            log(`❌ Clipboard write failed: ${err.name} - ${err.message}`, 'err');
+            console.warn('Clipboard write failed, falling back to download:', err);
             return false;
           }
         }
 
-        const handleBlob = async (blob)=>{
-          if(!blob) throw new Error('toBlob failed');
-          const ok = await tryClipboard(blob);
-          if(!ok){
-            await saveAsDownload(blob);
-            // Set status chip after download
-            setStatus('📁 Diagram downloaded as PNG.');
-            alert('Clipboard not available — downloaded PNG instead.');
-          }
-        };
+        // Use synchronous toDataURL to maintain user gesture context for clipboard API
+        const dataURL = off.toDataURL('image/png');
+        const blob = dataURLtoBlob(dataURL);
 
-        if(off.toBlob){
-          off.toBlob(async (blob)=>{
-            try{ await handleBlob(blob); }
-            catch(err){ console.error(err); alert('Copy failed: '+(err && err.message ? err.message : err)); }
-          }, 'image/png');
-        }else{
-          // Older Safari fallback via dataURL (no fetch to avoid platform issues)
-          const dataURL = off.toDataURL('image/png');
-          try{
-            const blob = dataURLtoBlob(dataURL);
-            await handleBlob(blob);
-          }catch(err){ console.error(err); alert('Copy failed: '+(err && err.message ? err.message : err)); }
+        if(!blob) throw new Error('Failed to create blob');
+
+        const ok = await tryClipboard(blob);
+        if(!ok){
+          await saveAsDownload(blob);
+          // Set status chip after download
+          setStatus('📁 Diagram downloaded as PNG.');
+          alert('Clipboard not available — downloaded PNG instead.');
         }
       }catch(err){
         console.error(err);
@@ -1137,6 +1148,108 @@ async function boot(){
       }
     });
   }
+
+  // Print TD Diagram
+  const printBtn = document.getElementById('printBtn');
+  if(printBtn){
+    printBtn.addEventListener('click', ()=>{
+      try{
+        const label = document.getElementById('labelCanvas');
+        const plot  = document.getElementById('hiddenCanvas');
+        if(!(label && plot)) throw new Error('Canvas not ready');
+
+        // Ensure latest drawing
+        if(App.state.readyToPlot && App.state.validOk){
+          drawHidden();
+          drawLabels();
+        }
+
+        // Get visible viewport area
+        const timelineScroll = document.getElementById('timelineScroll');
+        if(!timelineScroll) throw new Error('Timeline scroll container not found');
+
+        const scrollLeft = timelineScroll.scrollLeft;
+        const scrollTop = timelineScroll.scrollTop;
+        const viewportWidth = timelineScroll.clientWidth;
+        const viewportHeight = timelineScroll.clientHeight;
+
+        const labelRect = label.getBoundingClientRect();
+        const plotRect = plot.getBoundingClientRect();
+
+        // Calculate visible portion of plot canvas in backing store coordinates
+        const scaleX = plot.width / plotRect.width;
+        const scaleY = plot.height / plotRect.height;
+
+        const srcX = scrollLeft * scaleX;
+        const srcY = scrollTop * scaleY;
+        const srcW = Math.min(viewportWidth * scaleX, plot.width - srcX);
+        const srcH = Math.min(viewportHeight * scaleY, plot.height - srcY);
+
+        // Use label's full height but match plot's visible height
+        const labelScaleY = label.height / labelRect.height;
+        const labelSrcY = scrollTop * labelScaleY;
+        const labelSrcH = Math.min(viewportHeight * labelScaleY, label.height - labelSrcY);
+
+        // Create canvas with visible area at good print resolution
+        const printScale = 2;
+        const outputLabelW = Math.round(labelRect.width * printScale);
+        const outputPlotW = Math.round(viewportWidth * printScale);
+        const outputH = Math.round(viewportHeight * printScale);
+        const outputW = outputLabelW + outputPlotW;
+
+        const off = document.createElement('canvas');
+        off.width = outputW;
+        off.height = outputH;
+        const octx = off.getContext('2d');
+
+        // White background
+        octx.fillStyle = '#fff';
+        octx.fillRect(0, 0, outputW, outputH);
+
+        // Draw visible portion of label canvas
+        octx.drawImage(label,
+          0, labelSrcY, label.width, labelSrcH,
+          0, 0, outputLabelW, outputH);
+
+        // Draw visible portion of plot canvas
+        octx.drawImage(plot,
+          srcX, srcY, srcW, srcH,
+          outputLabelW, 0, outputPlotW, outputH);
+
+        // Convert to data URL
+        const dataURL = off.toDataURL('image/png');
+
+        // Create print window
+        const printWindow = window.open('', '_blank');
+        const printDoc = printWindow.document;
+
+        printDoc.write('<html><head><title>TD Diagram</title>');
+        printDoc.write('<style>');
+        printDoc.write('body { margin: 0; padding: 20px; display: flex; justify-content: center; align-items: flex-start; }');
+        printDoc.write('img { max-width: 100%; height: auto; display: block; }');
+        printDoc.write('@media print { body { padding: 0; } img { max-width: 100%; page-break-inside: avoid; } }');
+        printDoc.write('</style>');
+        printDoc.write('</head><body>');
+        printDoc.write('<img src="' + dataURL + '" alt="TD Diagram"/>');
+        printDoc.write('</body></html>');
+        printDoc.close();
+
+        // Wait for image to load then print
+        printWindow.focus();
+        setTimeout(() => {
+          printWindow.print();
+        }, 250);
+
+        log('Print dialog opened', 'info');
+        setStatus('🖨️ Print dialog opened');
+
+      }catch(err){
+        console.error(err);
+        alert('Print failed: ' + (err && err.message ? err.message : err));
+      }
+    });
+  }
+
   // Add scroll event to timelineScroll to keep labels synced
   const scroller = document.getElementById('timelineScroll');
   if(scroller){
@@ -1163,5 +1276,11 @@ async function boot(){
     wireOverlaysModal();
   } else {
     log('ERROR: wireOverlaysModal not found!', 'err');
+  }
+  if (typeof wirePlansModal === 'function') {
+    log('wirePlansModal found, calling...', 'info');
+    wirePlansModal();
+  } else {
+    log('ERROR: wirePlansModal not found!', 'err');
   }
 }

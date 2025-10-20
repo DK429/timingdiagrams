@@ -3,27 +3,27 @@
 
 // Compute vertical layout for hidden/label canvas: expand to fill, distribute rows/gaps
 function computeVerticalLayout(){
-  const plotCard = document.getElementById('plotPanel');
-  const toolbar  = document.getElementById('plotToolbar');
-  const wrap     = document.getElementById('hiddenWrap');
-  const topPad   = App.initCfg.plot.topMargin || 24;
-  const bottomPad= 20;
-  const n        = (App.state && App.state.junctions ? App.state.junctions.length : 0) || 1;
-  const minRow   = Math.max(24, App.initCfg.plot.rowHeight || 48);
-  const minGap   = Math.max(8,  App.initCfg.plot.rowGap || 18);
+  const toolbar   = document.getElementById('plotToolbar');
+  const header    = document.querySelector('header');
+  const masterTabs = document.getElementById('masterTabs');
+  const topPad    = App.initCfg.plot.topMargin || 24;
+  const bottomPad = App.initCfg.plot.bottomMargin || 32;
+  const n         = (App.state && App.state.junctions ? App.state.junctions.length : 0) || 1;
+  const minRow    = Math.max(24, App.initCfg.plot.rowHeight || 48);
+  const minGap    = Math.max(8,  App.initCfg.plot.rowGap || 18);
 
-  // Cap the canvas area to a fraction of the viewport height (configurable, default 65%)
-  const vhFrac   = (App.initCfg.plot && App.initCfg.plot.maxHeightVH ? App.initCfg.plot.maxHeightVH : 0.65);
-  const maxPx    = Math.floor(window.innerHeight * Math.max(0.3, Math.min(0.95, vhFrac)));
+  // Calculate available height by measuring from viewport down
+  const headerH = header ? Math.floor(header.getBoundingClientRect().height) : 0;
+  const masterTabsH = masterTabs ? Math.floor(masterTabs.getBoundingClientRect().height) : 0;
+  const masterTabsMargin = 8; // masterTabs has margin:8px 10px 0 (top margin not included in getBoundingClientRect)
+  const mainPadding = 20; // main has 10px padding top + 10px bottom
+  const cardPadding = 20; // .card has 10px padding top + 10px bottom
+  const toolbarH = toolbar ? Math.floor(toolbar.getBoundingClientRect().height) : 0;
+  const plotPanelGap = 8; // grid gap from #plotPanel
 
-  // Measure the visible space inside the Plot card, below the toolbar
-  const panelH   = plotCard ? Math.floor(plotCard.getBoundingClientRect().height) : window.innerHeight;
-  const toolH    = toolbar ? Math.floor(toolbar.getBoundingClientRect().height) : 0;
-  const padH     = 24; // internal padding/margins within the card
-
-  // Usable height is min(panel content area, viewport cap)
-  // Don't use wrapper height as it creates a circular dependency
-  const contentH = Math.max(120, Math.min(maxPx, panelH - toolH - padH));
+  // Available height = viewport - header - masterTabs - margins - main padding - card padding - toolbar - gaps
+  const containerH = Math.max(120, window.innerHeight - headerH - masterTabsH - masterTabsMargin - mainPadding - cardPadding - toolbarH - plotPanelGap);
+  const contentH = containerH;
 
   let rowH = minRow, gap = minGap;
   const avail = Math.max(50, contentH - topPad - bottomPad);
