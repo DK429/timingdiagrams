@@ -1,4 +1,4 @@
-// Signal Plan Checker v2.6.1h - Boot Module
+// Signal Plan Checker v2.6.2 - Boot Module
 // Application initialization
 
 async function loadBundledInit(){
@@ -32,15 +32,35 @@ function mkDefaultUTCPlan(cfg){
 
 function mkJunction(id, cfg){
   const nStages = Math.max(cfg.stageCount.min, cfg.stageCount.default);
-  const stages = []; 
+  const stages = [];
   const minG = cfg.stage.minGreen.default;
   for(let i=0;i<nStages;i++)
-    { 
+    {
       stages.push({ label: 'S'+(i+1), minGreenSec: minG, dir: 'none' });
     }
-  const N = nStages; const ig = [];
-  for(let r=0;r<N;r++){ const row=[]; for(let c=0;c<N;c++){ row.push(r===c ? cfg.intergreen.diagonalLockedValue : cfg.intergreen.defaults.offDiagonal); } ig.push(row); }
-  return { id, name:'Junction '+id, doubleCycle:false, utcPlan: mkDefaultUTCPlan(cfg), stages, intergreen: ig, travelPrev: cfg.journeyTime.default, travelNext: cfg.journeyTime.default };
+  const N = nStages; const ig = []; const igMax = [];
+  for(let r=0;r<N;r++){
+    const row=[];
+    const rowMax=[];
+    for(let c=0;c<N;c++){
+      row.push(r===c ? cfg.intergreen.diagonalLockedValue : cfg.intergreen.defaults.offDiagonal);
+      rowMax.push(r===c ? cfg.intergreen.diagonalLockedValue : cfg.intergreen.defaults.offDiagonal);
+    }
+    ig.push(row);
+    igMax.push(rowMax);
+  }
+  return {
+    id,
+    name:'Junction '+id,
+    doubleCycle:false,
+    utcPlan: mkDefaultUTCPlan(cfg),
+    stages,
+    intergreen: ig,
+    intergreenMax: igMax,
+    activeIntergreenSet: 'min',
+    travelPrev: cfg.journeyTime.default,
+    travelNext: cfg.journeyTime.default
+  };
 }
 
 function buildState(cfg){

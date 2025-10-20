@@ -1,4 +1,4 @@
-// Signal Plan Checker v2.6.1h - Configuration
+// Signal Plan Checker v2.6.2 - Configuration
 // Extracted from embedded JSON config
 
 export const DEFAULT_CONFIG = {

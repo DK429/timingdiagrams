@@ -1,4 +1,4 @@
-// Signal Plan Checker v2.6.1h - Tab Manager Module
+// Signal Plan Checker v2.6.2 - Tab Manager Module
 // Master tab switching (Data/Plot/Debug)
 
 // Master Data / Plot / Debug tab handling..

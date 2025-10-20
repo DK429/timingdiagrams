@@ -1,4 +1,4 @@
-// Signal Plan Checker v2.6.1h - UI Handlers Module
+// Signal Plan Checker v2.6.2 - UI Handlers Module
 // UI rendering, modals, and event handling
 
 function enableDragModal(modalId){
@@ -142,18 +142,33 @@ function renderJunctionPanel(j){
     </td>
   </tr>`;
   }
-  let ig = '<table class="grid compact auto"><thead><tr><th>From \\ To</th>';
-  for(let c=0;c<N;c++){ ig += `<th>${j.stages[c].label}</th>`; }
-  ig += '</tr></thead><tbody>';
+  // Min intergreens table
+  let igMin = '<table class="grid compact auto"><thead><tr><th>From \\ To</th>';
+  for(let c=0;c<N;c++){ igMin += `<th>${j.stages[c].label}</th>`; }
+  igMin += '</tr></thead><tbody>';
   for(let r=0;r<N;r++){
-    ig += `<tr><th>${j.stages[r].label}</th>`;
+    igMin += `<tr><th>${j.stages[r].label}</th>`;
     for(let c=0;c<N;c++){
-      if(r===c){ ig += `<td><input class="ig-lock" value="${cfg.intergreen.diagonalLockedValue}" disabled></td>`; }
-      else{ ig += `<td><input type="number" step="1" min="-1" max="${cfg.intergreen.domain.max}" value="${j.intergreen[r][c]}" data-t="ig" data-id="${j.id}" data-r="${r}" data-c="${c}"></td>`; }
+      if(r===c){ igMin += `<td><input class="ig-lock" value="${cfg.intergreen.diagonalLockedValue}" disabled></td>`; }
+      else{ igMin += `<td><input type="number" step="1" min="-1" max="${cfg.intergreen.domain.max}" value="${j.intergreen[r][c]}" data-t="ig" data-id="${j.id}" data-r="${r}" data-c="${c}"></td>`; }
     }
-    ig += '</tr>';
+    igMin += '</tr>';
   }
-  ig += '</tbody></table>';
+  igMin += '</tbody></table>';
+
+  // Max intergreens table
+  let igMax = '<table class="grid compact auto"><thead><tr><th>From \\ To</th>';
+  for(let c=0;c<N;c++){ igMax += `<th>${j.stages[c].label}</th>`; }
+  igMax += '</tr></thead><tbody>';
+  for(let r=0;r<N;r++){
+    igMax += `<tr><th>${j.stages[r].label}</th>`;
+    for(let c=0;c<N;c++){
+      if(r===c){ igMax += `<td><input class="ig-lock" value="${cfg.intergreen.diagonalLockedValue}" disabled></td>`; }
+      else{ igMax += `<td><input type="number" step="1" min="-1" max="${cfg.intergreen.domain.max}" value="${(j.intergreenMax && j.intergreenMax[r] && j.intergreenMax[r][c]) || cfg.intergreen.defaults.offDiagonal}" data-t="igMax" data-id="${j.id}" data-r="${r}" data-c="${c}"></td>`; }
+    }
+    igMax += '</tr>';
+  }
+  igMax += '</tbody></table>';
 // (5)
 return `
   <div class="row">
@@ -174,9 +189,25 @@ return `
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <div class="ig-col">
-      <h4>Intergreen matrix (leading intergreen; -1 = not permitted)</h4>
-      ${ig}
+  </div>
+
+  <div style="margin-top:12px;">
+    <h4 style="margin:0 0 6px 0;">Intergreen matrices (leading intergreen; -1 = not permitted)</h4>
+    <label style="display:block;margin-bottom:8px;">Active set:
+      <select data-t="activeIgSet" data-id="${j.id}">
+        <option value="min" ${j.activeIntergreenSet === 'min' ? 'selected' : ''}>Min Intergreens</option>
+        <option value="max" ${j.activeIntergreenSet === 'max' ? 'selected' : ''}>Max Intergreens</option>
+      </select>
+    </label>
+    <div style="display:flex;gap:12px;">
+      <div>
+        <h5 style="margin:4px 0;">Min Intergreens</h5>
+        ${igMin}
+      </div>
+      <div>
+        <h5 style="margin:4px 0;">Max Intergreens</h5>
+        ${igMax}
+      </div>
     </div>
   </div>
 
@@ -375,6 +406,12 @@ function onPanelChange(e){
   if(t==='ig'){ const r=parseInt(e.target.getAttribute('data-r'),10), c=parseInt(e.target.getAttribute('data-c'),10);
     let v = parseInt(e.target.value||0,10); if(v!==-1) v = Math.max(App.initCfg.intergreen.domain.min, Math.min(App.initCfg.intergreen.domain.max, v));
     j.intergreen[r][c] = v; e.target.value = v; }
+  if(t==='igMax'){ const r=parseInt(e.target.getAttribute('data-r'),10), c=parseInt(e.target.getAttribute('data-c'),10);
+    if(!j.intergreenMax) j.intergreenMax = [];
+    while(j.intergreenMax.length < j.stages.length){ j.intergreenMax.push([]); }
+    let v = parseInt(e.target.value||0,10); if(v!==-1) v = Math.max(App.initCfg.intergreen.domain.min, Math.min(App.initCfg.intergreen.domain.max, v));
+    j.intergreenMax[r][c] = v; e.target.value = v; }
+  if(t==='activeIgSet'){ j.activeIntergreenSet = e.target.value; }
   if(t==='planTo'){ const idx=parseInt(e.target.getAttribute('data-idx'),10); j.utcPlan[idx].to = e.target.value; }
   if(t==='planAt'){ const idx=parseInt(e.target.getAttribute('data-idx'),10); j.utcPlan[idx].at = Math.max(0, parseInt(e.target.value||0,10)); }
 }
@@ -388,8 +425,18 @@ function resizeStages(j, n){
   j.stages.forEach(s => { if(!('dir' in s)) s.dir = 'none'; });
     const N = j.stages.length;
     const igNew = [];
-    for(let r=0;r<N;r++){ const row=[]; for(let c=0;c<N;c++){ row.push(r===c ? App.initCfg.intergreen.diagonalLockedValue : (j.intergreen[r] && typeof j.intergreen[r][c]==='number' ? j.intergreen[r][c] : App.initCfg.intergreen.defaults.offDiagonal)); } igNew.push(row); }
+    const igMaxNew = [];
+    for(let r=0;r<N;r++){
+      const row=[]; const rowMax=[];
+      for(let c=0;c<N;c++){
+        row.push(r===c ? App.initCfg.intergreen.diagonalLockedValue : (j.intergreen[r] && typeof j.intergreen[r][c]==='number' ? j.intergreen[r][c] : App.initCfg.intergreen.defaults.offDiagonal));
+        rowMax.push(r===c ? App.initCfg.intergreen.diagonalLockedValue : (j.intergreenMax && j.intergreenMax[r] && typeof j.intergreenMax[r][c]==='number' ? j.intergreenMax[r][c] : App.initCfg.intergreen.defaults.offDiagonal));
+      }
+      igNew.push(row);
+      igMaxNew.push(rowMax);
+    }
       j.intergreen = igNew;
+      j.intergreenMax = igMaxNew;
       j.utcPlan.forEach(p=>{ if(!j.stages.find(s=>s.label===p.to)) p.to = j.stages[0].label; });
   }
 

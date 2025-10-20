@@ -1,4 +1,4 @@
-// Signal Plan Checker v2.6.1h - Validation Module
+// Signal Plan Checker v2.6.2 - Validation Module
 // Junction and plan validation logic
 
 // ---- validation

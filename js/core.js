@@ -1,4 +1,4 @@
-// Signal Plan Checker v2.6.1h - Core Module
+// Signal Plan Checker v2.6.2 - Core Module
 // App state, utilities, and core UI functions
 
 function runSanityChecks(){

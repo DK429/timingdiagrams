@@ -1,5 +1,11 @@
-// Signal Plan Checker v2.6.1h - Plan Computation Module
+// Signal Plan Checker v2.6.2 - Plan Computation Module
 // Business logic for cycle computation and scaling
+
+// Get the active intergreen matrix for a junction (min or max)
+function getActiveIntergreen(j){
+  const useMax = (j.activeIntergreenSet === 'max');
+  return useMax ? (j.intergreenMax || j.intergreen) : j.intergreen;
+}
 
 function ensureTD2(name){
   // Strip illegal path chars for safety and force .TD2 extension
@@ -50,11 +56,12 @@ function computeMinCycleSuggestion(){
       return { error: rc.err && rc.err[0] ? rc.err[0] : `Invalid UTC plan for ${j.name}` };
     }
     const N = rc.plan.length; const toIdx = rc.toIdx.slice();
+    const activeIg = getActiveIntergreen(j);
     let sumIG = 0, sumMin = 0;
     for(let i=0;i<N;i++){
       const curIdx  = toIdx[i];
       const prevIdx = toIdx[(i-1+N)%N];
-      const ig = j.intergreen[prevIdx][curIdx];
+      const ig = activeIg[prevIdx][curIdx];
       sumIG  += Math.max(0, ig); // fixed intergreens for the **used** moves
       sumMin += (j.stages[curIdx] && (j.stages[curIdx].minGreenSec|0)) || 0;
     }
@@ -186,7 +193,7 @@ function exportScalePreviewJSON(){
   if(!result.ok){ alert('Preview must be OK for all junctions before exporting.'); return; }
   const payload = {
     type: 'scaled-utc-plan',
-    version: 'v2.6.1h',
+    version: 'v2.6.2',
     targetCycle: target|0,
     generatedAt: new Date().toISOString(),
     main: { mainCycle: target|0 },
@@ -259,19 +266,20 @@ function computeScaledPlanForJunction(j, targetMain){
 
   const N = rc.plan.length;
   const toIdx = rc.toIdx.slice();
+  const activeIg = getActiveIntergreen(j);
 
   // Fixed intergreens (preceding each stage)
   const igPrev = new Array(N).fill(0).map((_,i)=>{
     const curIdx  = toIdx[i];
     const prevIdx = toIdx[(i-1+N)%N];
-    return Math.max(0, j.intergreen[prevIdx][curIdx]);
+    return Math.max(0, activeIg[prevIdx][curIdx]);
   });
 
   // Actual green durations per stage (current)
   const greens = new Array(N).fill(0).map((_,i)=>{
     const curIdx  = toIdx[i];
     const prevIdx = toIdx[(i-1+N)%N];
-    const start   = rc.RC[i] + Math.max(0, j.intergreen[prevIdx][curIdx]);
+    const start   = rc.RC[i] + Math.max(0, activeIg[prevIdx][curIdx]);
     const end     = rc.RC[i+1];
     return Math.max(0, end - start);
   });
@@ -417,15 +425,35 @@ function mkDefaultUTCPlan(cfg){
 
 function mkJunction(id, cfg){
   const nStages = Math.max(cfg.stageCount.min, cfg.stageCount.default);
-  const stages = []; 
+  const stages = [];
   const minG = cfg.stage.minGreen.default;
   for(let i=0;i<nStages;i++)
-    { 
+    {
       stages.push({ label: 'S'+(i+1), minGreenSec: minG, dir: 'none' });
     }
-  const N = nStages; const ig = [];
-  for(let r=0;r<N;r++){ const row=[]; for(let c=0;c<N;c++){ row.push(r===c ? cfg.intergreen.diagonalLockedValue : cfg.intergreen.defaults.offDiagonal); } ig.push(row); }
-  return { id, name:'Junction '+id, doubleCycle:false, utcPlan: mkDefaultUTCPlan(cfg), stages, intergreen: ig, travelPrev: cfg.journeyTime.default, travelNext: cfg.journeyTime.default };
+  const N = nStages; const ig = []; const igMax = [];
+  for(let r=0;r<N;r++){
+    const row=[];
+    const rowMax=[];
+    for(let c=0;c<N;c++){
+      row.push(r===c ? cfg.intergreen.diagonalLockedValue : cfg.intergreen.defaults.offDiagonal);
+      rowMax.push(r===c ? cfg.intergreen.diagonalLockedValue : cfg.intergreen.defaults.offDiagonal);
+    }
+    ig.push(row);
+    igMax.push(rowMax);
+  }
+  return {
+    id,
+    name:'Junction '+id,
+    doubleCycle:false,
+    utcPlan: mkDefaultUTCPlan(cfg),
+    stages,
+    intergreen: ig,
+    intergreenMax: igMax,
+    activeIntergreenSet: 'min',
+    travelPrev: cfg.journeyTime.default,
+    travelNext: cfg.journeyTime.default
+  };
 }
 
 function buildState(cfg){
@@ -475,10 +503,11 @@ function computeRealisedCycle(j){
   const N = plan.length;
   if(N===0) return {ok:false, err:['UTC plan empty']};
   const toIdx = plan.map(p=>stageIndex(j,p.to));
+  const activeIg = getActiveIntergreen(j);
   for(let i=0;i<N;i++){
     const from = toIdx[i];
     const to = toIdx[(i+1)%N];
-    if(j.intergreen[from][to] === -1){
+    if(activeIg[from][to] === -1){
       const a=j.stages[from].label, b=j.stages[to].label;
       return {ok:false, err:[`${j.name}: Stage move not permitted ${a} → ${b}`]};
     }
@@ -496,7 +525,7 @@ function computeRealisedCycle(j){
     const curIdx = toIdx[i%N];
     const prevIdx = toIdx[(i-1+N)%N];
     const nextIdx = toIdx[(i+1)%N];
-    const igPrev = Math.max(0, j.intergreen[prevIdx][curIdx]);
+    const igPrev = Math.max(0, activeIg[prevIdx][curIdx]);
     const mgCur = j.stages[curIdx].minGreenSec|0;
     const nextReq = Rq[i+1];
     const nextNextReq = (i+2 < Rq.length) ? Rq[i+2] : (Rq[(i+2)%N] + Math.floor((i+2)/N)*Cj);
@@ -525,7 +554,7 @@ function computeRealisedCycle(j){
     const curIdx = toIdx[i];
     const prevIdx = toIdx[(i-1+N)%N];
     const nextIdx = toIdx[(i+1)%N];
-    const igPrev = Math.max(0, j.intergreen[prevIdx][curIdx]);
+    const igPrev = Math.max(0, activeIg[prevIdx][curIdx]);
     const mgCur = j.stages[curIdx].minGreenSec|0;
     const rqCur = plan[i].at;
     const rqNext = (i+1 < N) ? plan[i+1].at : (plan[0].at + Cj);

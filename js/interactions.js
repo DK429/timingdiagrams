@@ -1,4 +1,4 @@
-// Signal Plan Checker v2.6.1h - Interactions Module
+// Signal Plan Checker v2.6.2 - Interactions Module
 // Drag, pan, zoom, and gesture handling
 
 // === Drag-to-pan (pointer drag on the timeline) ===

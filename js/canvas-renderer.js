@@ -1,4 +1,4 @@
-// Signal Plan Checker v2.6.1h - Canvas Renderer Module
+// Signal Plan Checker v2.6.2 - Canvas Renderer Module
 // All canvas drawing and rendering logic
 
 // Compute vertical layout for hidden/label canvas: expand to fill, distribute rows/gaps
@@ -50,6 +50,12 @@ function computeVerticalLayout(){
 
 function rowY(top, rowH, gap, idx){
   return top + idx*(rowH+gap);
+}
+
+// Get the active intergreen matrix for a junction (min or max)
+function getActiveIntergreen(j){
+  const useMax = (j.activeIntergreenSet === 'max');
+  return useMax ? (j.intergreenMax || j.intergreen) : j.intergreen;
 }
 
 function drawArrowMarker(ctx, x, yMid, dir){
@@ -757,7 +763,8 @@ function drawHidden(){
         const prevIdx = rc.toIdx[(i-1+N)%N];
         const nextIdx = rc.toIdx[(i+1)%N];
 
-        const igPrev = Math.max(0, j.intergreen[prevIdx][curIdx]);
+        const activeIg = getActiveIntergreen(j);
+        const igPrev = Math.max(0, activeIg[prevIdx][curIdx]);
         const RCi = rc.RC[i];
         const RCn = rc.RC[i+1];
 
@@ -912,7 +919,7 @@ if(wpx >= 28){
         }
 
         // intergreen shading (clipped)
-        const igNext = Math.max(0, j.intergreen[curIdx][nextIdx]);
+        const igNext = Math.max(0, activeIg[curIdx][nextIdx]);
         if(igNext>0){
           const igStartAbs = base + RCn, igEndAbs = igStartAbs + igNext;
           const is = Math.max(v0, igStartAbs), ie = Math.min(v1, igEndAbs);
@@ -927,7 +934,18 @@ if(wpx >= 28){
       const fromIdx = ovl.from, toIdx = ovl.to;
       if(fromIdx==null || toIdx==null) return;
       const Jfrom = App.state.junctions[fromIdx];
+
+      // Apply active intergreen set for overlay calculation
+      // Temporarily swap intergreen array to use the active set (min or max)
+      const originalIntergreen = Jfrom.intergreen;
+      if (Jfrom.activeIntergreenSet === 'max' && Jfrom.intergreenMax) {
+        Jfrom.intergreen = Jfrom.intergreenMax;
+      }
+
       const rcFrom = computeRealisedCycleAdj(Jfrom);
+
+      // Restore original intergreen array
+      Jfrom.intergreen = originalIntergreen;
       if(!rcFrom.ok) return;
       const travel = travelTimeBetween(fromIdx, toIdx);
 
@@ -1133,12 +1151,48 @@ function drawLabels() {
   lctx.fillStyle = '#fff';
   lctx.fillRect(0, 0, cssW, height);
 
-  // Junction names
+  // Junction names with intergreen set indicators
   lctx.fillStyle = '#111';
   lctx.font = '12px system-ui';
   App.state.junctions.forEach((j, idx) => {
     const y0 = top + idx * (rowH + gap);
-    lctx.fillText(j.name, 12, y0 + rowH * 0.6);
+    const yMid = y0 + rowH * 0.6;
+
+    // Draw junction name
+    lctx.fillText(j.name, 12, yMid);
+
+    // Draw intergreen set indicator badge below the junction name, left-aligned
+    const badgeX = 12; // Left-aligned with junction name
+    const badgeY = yMid + 4; // Just below the junction name
+    const badgeW = 32;
+    const badgeH = 14;
+
+    // Store clickable region for event handling (will be used by click handler)
+    if (!label._igIndicators) label._igIndicators = [];
+    label._igIndicators[idx] = { x: badgeX, y: badgeY, w: badgeW, h: badgeH, jIdx: idx };
+
+    // Badge background (light blue for min, light orange for max)
+    const isMin = (j.activeIntergreenSet === 'min' || !j.activeIntergreenSet);
+    lctx.fillStyle = isMin ? '#d4e6f1' : '#ffe6cc';
+    lctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+
+    // Badge border
+    lctx.strokeStyle = isMin ? '#5dade2' : '#f39c12';
+    lctx.lineWidth = 1;
+    lctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
+
+    // Badge text
+    lctx.fillStyle = isMin ? '#1a5490' : '#b8610f';
+    lctx.font = '10px system-ui';
+    lctx.textAlign = 'center';
+    lctx.textBaseline = 'middle';
+    lctx.fillText(isMin ? 'Min' : 'Max', badgeX + badgeW/2, badgeY + badgeH/2);
+
+    // Reset text styling
+    lctx.textAlign = 'start';
+    lctx.textBaseline = 'alphabetic';
+    lctx.font = '12px system-ui';
+    lctx.fillStyle = '#111';
   });
 
   // Between-junction journey times in the left margin (A→B down, B→A up)
@@ -1166,6 +1220,80 @@ function drawLabels() {
     lctx.restore();
   } catch (_) { /* ignore */ }
 }
+
+// Click handler for intergreen set toggle on label canvas
+(function wireLabelCanvasClickHandler(){
+  if (window.__labelCanvasClickWired) return;
+  window.__labelCanvasClickWired = true;
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const label = document.getElementById('labelCanvas');
+    if (!label || label.__clickWired) return;
+    label.__clickWired = true;
+
+    label.addEventListener('click', (e)=>{
+      if (!label._igIndicators) return;
+
+      // Get click coordinates relative to canvas
+      const rect = label.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      // Check if click is within any indicator badge
+      for (let i = 0; i < label._igIndicators.length; i++){
+        const ind = label._igIndicators[i];
+        if (!ind) continue;
+
+        if (x >= ind.x && x <= ind.x + ind.w && y >= ind.y && y <= ind.y + ind.h){
+          // Toggle the intergreen set for this junction
+          const jIdx = ind.jIdx;
+          const j = App.state.junctions[jIdx];
+          if (!j) continue;
+
+          const newSet = (j.activeIntergreenSet === 'min' || !j.activeIntergreenSet) ? 'max' : 'min';
+
+          // Update the junction's active intergreen set directly on the state object
+          App.state.junctions[jIdx].activeIntergreenSet = newSet;
+
+          // Update status
+          setStatus(`Switched ${j.name} to ${newSet === 'min' ? 'Min' : 'Max'} intergreens`);
+
+          // Also update the Data tab selector if that junction's panel is visible
+          const selector = document.querySelector(`select[data-t="activeIgSet"][data-id="${j.id}"]`);
+          if (selector) selector.value = newSet;
+
+          // Redraw the plot with the updated intergreen set
+          drawLabels();
+          drawHidden();
+
+          break;
+        }
+      }
+    });
+
+    // Add hover cursor styling
+    label.addEventListener('mousemove', (e)=>{
+      if (!label._igIndicators) return;
+
+      const rect = label.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      let isOverBadge = false;
+      for (let i = 0; i < label._igIndicators.length; i++){
+        const ind = label._igIndicators[i];
+        if (!ind) continue;
+
+        if (x >= ind.x && x <= ind.x + ind.w && y >= ind.y && y <= ind.y + ind.h){
+          isOverBadge = true;
+          break;
+        }
+      }
+
+      label.style.cursor = isOverBadge ? 'pointer' : 'default';
+    });
+  });
+})();
 
 
 

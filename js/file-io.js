@@ -1,4 +1,4 @@
-// Signal Plan Checker v2.6.1h - File I/O Module
+// Signal Plan Checker v2.6.2 - File I/O Module
 // Save and load functionality
 
 // Get UK local time string (GMT/BST aware)
@@ -41,11 +41,13 @@ function buildExportObject(){
     travelNext: j.travelNext|0,
     stages: (j.stages||[]).map(s=>({ label:s.label, minGreenSec: s.minGreenSec|0, dir: (s.dir||'none') })),
     intergreen: (j.intergreen||[]).map(row=> row.slice()),
+    intergreenMax: (j.intergreenMax||[]).map(row=> row.slice()),
+    activeIntergreenSet: j.activeIntergreenSet || 'min',
     utcPlan: (j.utcPlan||[]).map(r=>({ to:r.to, at: r.at|0 }))
   }));
   const overlays = Array.isArray(App.state._overlays)? App.state._overlays.slice() : [];
   const temp = { offsets: {...(App.state.temp&&App.state.temp.offsets||{})}, boundary: {...(App.state.temp&&App.state.temp.boundary||{})} };
-  return { version: '2.6.1h', exportedAt: getUKLocalTimeString(), main, junctions, overlays, temp };
+  return { version: '2.6.2', exportedAt: getUKLocalTimeString(), main, junctions, overlays, temp };
 }
 
 function makeHumanReadableText(obj){
@@ -148,6 +150,8 @@ if(saveBtn){
             travelNext: j.travelNext|0,
             stages: (j.stages||[]).map(s=>({ label: s.label, minGreenSec: s.minGreenSec|0, dir: (s.dir||'none') })),
             intergreen: (j.intergreen||[]).map(row => row.slice()),
+            intergreenMax: (j.intergreenMax||[]).map(row => row.slice()),
+            activeIntergreenSet: j.activeIntergreenSet || 'min',
             utcPlan: (j.utcPlan||[]).map(r => ({ to: r.to, at: r.at|0 }))
           }));
         }
