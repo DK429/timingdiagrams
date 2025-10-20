@@ -43,15 +43,11 @@
       <span class="badge">Init auto-loaded</span>
       <label>Main cycle (s)<input id="mainCycle" type="number" min="1" max="240" value="60"/></label>
       <label>Junctions<input id="jCount" type="number" min="2" max="5" value="3"/></label>
-      <label>View cycles
-        <select id="viewCycles">
-          <option value="1">1</option><option value="2" selected>2</option><option value="3">3</option>
-        </select>
-      </label>
   <button id="validateBtn">Validate</button>
   <button id="plotBtn" disabled>Plot</button>
   <!-- --- Scale Plans button definition -->
   <button id="scaleBtn" disabled>Scale Plans</button>
+  <button id="viewPlansBtn">View Plans</button>
     </div>
     <div class="tabs" id="jtabs"></div>
     <div id="tabpanels"></div>
@@ -61,6 +57,15 @@
     <div id="plotToolbar">
       <strong>TD Diagram</strong>
       <label>Zoom (px/s)<input type="range" id="zoom" min="1" max="12" step="1" value="4"/></label>
+      <label>View cycles
+        <select id="viewCycles">
+          <option value="1">1</option>
+          <option value="1.5">1.5</option>
+          <option value="2" selected>2</option>
+          <option value="2.5">2.5</option>
+          <option value="3">3</option>
+        </select>
+      </label>
       <button id="fitBtn">Fit</button>
       <button id="overlayBtn">Overlays…</button>
       <button id="adjustBtn">Adjust…</button>
@@ -68,6 +73,7 @@
       <label style="display:flex;align-items:center;gap:6px"><input id="debugToggle" type="checkbox"> Enable Debug</label>
       <span id="info" class="badge">—</span>
       <button id="copyBtn" style="margin-left:auto" title="Copy TD Diagram as image">Copy</button>
+      <button id="printBtn" title="Print TD Diagram">Print</button>
     </div>
     <div id="twoCols">
       <div id="hiddenWrap">
@@ -165,7 +171,7 @@
   "intergreen": { "diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": { "offDiagonal": 5 }, "domain": { "min": 0, "max": 60 } },
   "journeyTime": { "default": 20, "min": 0, "max": 60 },
   "utcPlan": { "requireAtLeastOneChange": true, "markRequestsBlue": true, "showQueuedChangeMarkers": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [ { "to": "S1", "at": 0 }, { "to": "S2", "at": 30 } ] },
-  "plot": { "hiddenWindowMultiplier": 5, "viewCycles": { "options": [1, 2, 3], "default": 2 }, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4 },
+  "plot": { "hiddenWindowMultiplier": 5, "viewCycles": { "options": [1, 2, 3], "default": 2 }, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "bottomMargin": 32, "pxPerSec": 4 },
   "overlays": { "adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true },
   "packaging": { "includeDocs": true }
 }
@@ -320,12 +326,30 @@
   </div>
 </div>
 
-  
-    
-      
-      
-    
-     
+<!-- View Plans modal -->
+<div id="plansModal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-card" style="width:min(1200px,95vw);max-width:95vw;max-height:85vh;" role="document" aria-labelledby="plansTitle">
+    <header>
+      <h3 id="plansTitle">UTC Plans</h3>
+      <button id="plansCloseBtn" aria-label="Close">✕</button>
+    </header>
+    <div class="body" style="overflow:auto;">
+      <div id="plansContent"></div>
+    </div>
+    <footer>
+      <button id="plansCopy">Copy</button>
+      <button id="plansPrint">Print</button>
+      <button id="plansClose" style="margin-left:auto;">Close</button>
+    </footer>
+  </div>
+</div>
+
+
+
+
+
+
+
 <script type="application/json" id="initCfg">
 {
   "appName": "Signal Plan Checker",
@@ -338,7 +362,7 @@
   "intergreen": { "diagonalLockedValue": -1, "allowNotPermittedValue": -1, "defaults": { "offDiagonal": 5 }, "domain": { "min": 0, "max": 60 } },
   "journeyTime": { "default": 20, "min": 0, "max": 60 },
   "utcPlan": { "requireAtLeastOneChange": true, "markRequestsBlue": true, "showQueuedChangeMarkers": true, "warnOnDelay": true, "alertOnMissedChange": true, "defaults": [ { "to": "S1", "at": 0 }, { "to": "S2", "at": 30 } ] },
-  "plot": { "hiddenWindowMultiplier": 5, "viewCycles": { "options": [1, 2, 3], "default": 2 }, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "pxPerSec": 4 },
+  "plot": { "hiddenWindowMultiplier": 5, "viewCycles": { "options": [1, 2, 3], "default": 2 }, "grid10s": true, "ticks1s": true, "ticks5s": true, "rowHeight": 48, "rowGap": 18, "leftMargin": 120, "topMargin": 24, "bottomMargin": 32, "pxPerSec": 4 },
   "overlays": { "adjacentOnly": true, "defaultOpacity": 0.8, "shadeAlpha": 0.15, "repeatByCycle": true, "allowCustomIntervals": true },
   "packaging": { "includeDocs": true }
 }
@@ -349,11 +373,11 @@
 <script src="js/core.js?v=20"></script>
 <script src="js/validation.js?v=18"></script>
 <script src="js/plan-computation.js?v=22"></script>
-<script src="js/canvas-renderer.js?v=34"></script>
-<script src="js/ui-handlers.js?v=37"></script>
+<script src="js/canvas-renderer.js?v=43"></script>
+<script src="js/ui-handlers.js?v=50"></script>
 <script src="js/file-io.js?v=20"></script>
 <script src="js/interactions.js?v=18"></script>
-<script src="js/boot.js?v=39"></script>
+<script src="js/boot.js?v=54"></script>
 <script src="js/tab-manager.js?v=18"></script>
 
 <!-- Initialize after all scripts load -->

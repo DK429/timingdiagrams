@@ -55,6 +55,7 @@ main {
   grid-template-rows: auto 1fr;
   gap: 10px;
   padding: 10px;
+  overflow: hidden; /* Prevent main from growing beyond viewport */
 }
 
 .row {
@@ -194,6 +195,7 @@ input[type=number], select {
   grid-template-rows: auto 1fr;
   gap: 8px;
   height: 100%;
+  min-height: 0; /* Allow grid items to shrink below content size */
 }
 
 #plotToolbar {
@@ -203,19 +205,22 @@ input[type=number], select {
   flex-wrap: wrap;
 }
 
+#plotToolbar button {
+  min-width: 85px;
+}
+
 #hiddenWrap {
   border: 1px dashed #bbb;
   border-radius: 8px;
   background: #fff;
-  overflow: hidden;
+  overflow: auto;
   position: relative;
-  height: 100%;
+  min-height: 0;
 }
 
 .plot-row {
   display: flex;
   align-items: stretch;
-  height: 100%;
 }
 
 #timelineScroll {
@@ -503,6 +508,7 @@ input[type=number], select {
   grid-template-columns: 1fr;
   gap: 10px;
   height: 100%;
+  min-height: 0; /* Allow content to size properly */
 }
 
 /* Data panel layout */
@@ -540,11 +546,20 @@ label {
 input[type=number] {
   min-width: 5ch;
   padding: 4px 6px;
+  text-align: right;
+}
+
+/* Min stage times, intergreens, and force stage times: wider */
+input[data-t="minGreen"],
+input[data-t="ig"],
+input[data-t="planAt"] {
+  min-width: 6ch;
 }
 
 select {
   min-width: 6ch;
   padding: 4px 6px;
+  text-align: right;
 }
 
 .grid.auto {
